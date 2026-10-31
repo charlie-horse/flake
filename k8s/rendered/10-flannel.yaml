@@ -40,7 +40,7 @@ spec:
         - --ip-masq
         - --kube-subnet-mgr
         - --public-ip=$(HOST_IP)
-        - --healthz-port=8081
+        - --healthz-port=8475
         env:
         - name: POD_NAME
           valueFrom:
@@ -67,7 +67,7 @@ spec:
           periodSeconds: 30
         name: kube-flannel
         ports:
-        - containerPort: 8081
+        - containerPort: 8475
           name: healthz
           protocol: TCP
         readinessProbe:
