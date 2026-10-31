@@ -39,7 +39,7 @@ commits never race each other.
 | Job | Runner | What it does |
 | --- | --- | --- |
 | `secrets-guard` | ubuntu-24.04 | Fails if the diff adds a key file, a kubeconfig or a plaintext password ([details](#secrets-guard)). |
-| `flake-check` | ubuntu-24.04 | Runs `nix flake check --no-build --keep-going`, which evaluates every output: all NixOS hosts including the desktops, the ISOs and the packages. |
+| `flake-check` | ubuntu-24.04 | Runs `nix flake check --keep-going`, which evaluates every output: all NixOS hosts including the desktops, the ISOs and the packages. Not `--no-build`: that cannot realise the import-from-derivation in the catenix chart renders. The flake has no `checks`, so nothing heavy is built. |
 | `eval-hosts` (matrix) | x86: ubuntu-24.04, m2mini: ubuntu-24.04-arm | Runs `nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath` with import-from-derivation (IFD) disabled for c4130, r440 and m2mini. It also checks that `.system` matches the expected system, and writes the drvPath to the job summary. |
 | `k8s-manifests` | ubuntu-24.04 | Runs `nix build .#k8s-manifests` and compares the result with `k8s/rendered/`. It fails if the render contains key material. It runs `k8s-check-images` as an advisory step (amd64+arm64), and uploads the render as an artifact. |
 | `publish-rendered` | ubuntu-24.04 | Runs only on a push to `main` when the render changed and every other job passed. It commits `k8s/rendered/`. This is the only job with `contents: write`. |
@@ -164,7 +164,7 @@ tag points to. Then re-run actionlint.
 
 ```sh
 nix shell nixpkgs#actionlint nixpkgs#shellcheck -c actionlint
-nix flake check --no-build --keep-going
+nix flake check --keep-going
 for h in c4130 r440 m2mini; do
   nix eval --raw --option allow-import-from-derivation false \
     ".#nixosConfigurations.$h.config.system.build.toplevel.drvPath"; echo

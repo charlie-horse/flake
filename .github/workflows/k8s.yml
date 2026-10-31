@@ -137,7 +137,7 @@ jobs:
 
   # ------------------------------------------------------------------------
   flake-check:
-    name: nix flake check --no-build
+    name: nix flake check
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -147,10 +147,12 @@ jobs:
       - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      # Evaluates every output (all NixOS hosts, ISOs, packages). `--no-build`
-      # still realises import-from-derivation, i.e. the k8s chart renders
-      # (`helm template`, small); the NixOS hosts have no IFD.
-      - run: nix flake check --no-build --keep-going -L
+      # Evaluates every output (all NixOS hosts, ISOs, packages). Not
+      # `--no-build`: it can't realise import-from-derivation (the catenix
+      # chart renders, `helm template`, small), so evaluation fails with
+      # "helm-template-*.json.drv is not valid". The flake has no `checks`
+      # outputs, so nothing else gets built; the NixOS hosts have no IFD.
+      - run: nix flake check --keep-going -L
 
   # ------------------------------------------------------------------------
   eval-hosts:
