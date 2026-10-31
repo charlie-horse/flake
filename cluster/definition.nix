@@ -40,6 +40,8 @@
 #                        (kubernetes.io/arch etc. are set by the kubelet)
 #     taints             attrs of { key?; value; effect; }  kubelet
 #                        --register-with-taints (NixOS kubelet.taints shape)
+#     trustTailscale     bool (default true)  trust all of tailscale0; when
+#                        false only this node's cluster ports are opened there
 #     extraSANs          list of string  extra SANs for this node's leaves
 #     kubeletConfig      attrs  merged into the KubeletConfiguration
 #                        (services.kubernetes.kubelet.extraConfig), e.g.
@@ -95,7 +97,20 @@
       cri = "containerd";
       keepalivedPriority = 150;
       labels = { };
-      taints = { };
+      # Production vLLM owns both V100s. Only pods that tolerate this land
+      # here (the NVIDIA device plugin and flannel do); opt a pod in with
+      #   tolerations: [{ key: nvidia.com/gpu, operator: Equal,
+      #                   value: vllm, effect: NoSchedule }]
+      # plus runtimeClassName: nvidia and a nvidia.com/gpu resource limit
+      # (only while vLLM is stopped: the GPUs are not shareable).
+      taints.gpu = {
+        key = "nvidia.com/gpu";
+        value = "vllm";
+        effect = "NoSchedule";
+      };
+      # Only the cluster ports on tailscale0 (vLLM 8000, LMCache UI 8081 and
+      # Open WebUI 8082 are opened there by the host's own config).
+      trustTailscale = false;
       extraSANs = [ ];
       # / is 96% full (17G free of 366G, 2026-10-31): with the upstream
       # defaults (nodefs.available<10%, imagefs.available<15%) the node

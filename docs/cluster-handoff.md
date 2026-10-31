@@ -76,17 +76,24 @@ Defaults I chose (change them in `cluster/definition.nix` or the module):
 
 Open questions (decide before the step named):
 
-- **Before step 5: GPUs vs production vLLM.** The device plugin will advertise
-  c4130's two V100s as `nvidia.com/gpu`, but vLLM (systemd, outside k8s)
-  uses all their memory. Any pod requesting a GPU would contend with
-  production. Either taint c4130 (`nvidia.com/gpu=present:NoSchedule`; the
-  plugin tolerates it) or drop `30-nvidia-device-plugin` from
-  `k8s/default.nix` until GPU sharing is designed.
-- **Before step 2 (c4130): tailnet exposure.** `modules/cluster/firewall.nix`
-  trusts `tailscale0` on every node. On c4130 that is new: today only
-  8000/8081/8082 are open there. Every listener (kubelet 10250, an unknown
-  `*:54663`, …) becomes reachable from the tailnet, subject to the Tailscale
-  ACLs. Keep it (and say so), or replace it with per-port rules.
+- **Decided: GPUs vs production vLLM.** The device plugin stays, but c4130
+  registers with the taint `nvidia.com/gpu=vllm:NoSchedule`
+  (`cluster/definition.nix`, `nodes.c4130.taints`), so only pods that
+  tolerate it land there (the device plugin and flannel do). To opt a pod
+  in (only while vLLM is stopped; the V100s aren't shareable):
+  ```yaml
+  spec:
+    runtimeClassName: nvidia
+    tolerations:
+      - { key: nvidia.com/gpu, operator: Equal, value: vllm, effect: NoSchedule }
+    containers:
+      - resources: { limits: { nvidia.com/gpu: 1 } }
+  ```
+- **Decided: tailnet exposure on c4130.** `tailscale0` is NOT trusted on
+  c4130 (`nodes.c4130.trustTailscale = false`): only its cluster ports for
+  the active stage (2379/2380; plus 6443, 10250 and 8472/udp at the full
+  stage) are opened there, next to the host's own 8000/8081/8082. r440 and
+  m2mini keep `tailscale0` trusted (default `trustTailscale = true`).
 - **Before step 2 (m2mini): `/etc/containers`.** On m2mini, cri-o implicitly
   enabled `virtualisation.containers`; the new config drops
   `/etc/containers/{containers.conf,policy.json,registries.conf,storage.conf}`
@@ -394,7 +401,7 @@ Verify:
 systemctl is-active containerd kubelet kube-proxy      # (m2mini also: keepalived haproxy)
 kubectl get nodes -o wide                              # node registered, NotReady until flannel
 kubectl get node c4130 -o jsonpath='{.metadata.labels.nvidia\.com/gpu\.present}'   # true
-kubectl describe node c4130 | grep -E 'DiskPressure|Taints'       # False, <none>
+kubectl describe node c4130 | grep -E 'DiskPressure|Taints'       # False, nvidia.com/gpu=vllm:NoSchedule
 ```
 
 r440 again: charlie's podman still running, `/etc/containers` unchanged.
@@ -511,7 +518,6 @@ Done in this commit: `cluster-pki-deploy` no longer prints a non-existent
 - [ ] **m2mini 16 KiB pages**: label it (e.g.
       `node.kubernetes.io/page-size=16k` in `labels`) and note it in
       `k8s/README.md`; 4K-page arm64 images (jemalloc) can crash there.
-- [ ] **tailscale0 trusted on c4130** (see open questions).
 - [ ] **Parity targets**: use the live derivers (r440 `z14bn097…`, c4130
       `kqf7s007…`, m2mini `c5qh6rz1…`), not `s0sgd…`/`z8hx…`.
 - [ ] **Action SHAs**: confirm on github.com that actions/checkout

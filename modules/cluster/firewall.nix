@@ -6,9 +6,10 @@
 #   tcp 10250        kubelet              (workers)
 #   udp 8472         flannel VXLAN        (workers)
 #   VRRP (proto 112) keepalived           (every node)
-# Sources: every node's LAN IP and the VIP. tailscale0 is trusted (the
-# cluster names resolve to tailnet IPs, so etcd/apiserver traffic between
-# nodes mostly arrives there). Pods (podCidr) may reach the local apiserver
+# Sources: every node's LAN IP and the VIP. tailscale0 carries most
+# node-to-node traffic (the cluster names resolve to tailnet IPs): it is
+# trusted on nodes with trustTailscale = true (default); otherwise only the
+# node's cluster ports above are opened on it (c4130). Pods (podCidr) may reach the local apiserver
 # and kubelet (in-cluster clients, metrics-server).
 { config, lib, cluster, ... }:
 let
@@ -43,6 +44,7 @@ in
     description = ''
       Extra sources (IPs/CIDRs) allowed to reach the apiserver port on this
       node (e.g. LAN admins using the VIP). Cluster nodes and tailscale0
+      (whole interface, or its cluster ports with trustTailscale = false)
       are always allowed.
     '';
   };
@@ -50,7 +52,11 @@ in
   config = mkIf cfg.enable {
     networking.firewall = {
       enable = lib.mkDefault true;
-      trustedInterfaces = [ "tailscale0" ];
+      trustedInterfaces = lib.optional node.trustTailscale "tailscale0";
+      interfaces.tailscale0 = mkIf (!node.trustTailscale) {
+        allowedTCPPorts = tcpPorts;
+        allowedUDPPorts = udpPorts;
+      };
       extraCommands = concatStrings (
         map (src: accept "tcp" tcpPorts src + accept "udp" udpPorts src)
           nodeSources

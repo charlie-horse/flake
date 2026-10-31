@@ -124,6 +124,7 @@ in
           keepalivedPriority = 100;
           labels = { };
           taints = { };
+          trustTailscale = true;
           extraSANs = [ ];
           kubeletConfig = { };
           rollout = { };
