@@ -146,7 +146,7 @@
       taints = { };
       extraSANs = [ ];
       rollout = {
-        stage = "etcd";
+        stage = "controlPlane";
         etcdPhase = "final";
       };
     };
