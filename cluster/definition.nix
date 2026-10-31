@@ -128,7 +128,7 @@
         imageGCLowThresholdPercent = 97;
       };
       rollout = {
-        stage = "controlPlane";
+        stage = "full";
         etcdPhase = "final";
       };
     };
