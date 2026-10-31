@@ -492,7 +492,8 @@ deploy() {
   if has_role "$n" controlPlane; then
     units="kube-apiserver kube-controller-manager kube-scheduler"
   fi
-  if has_role "$n" worker; then units="$units kubelet kube-proxy flannel"; fi
+  # flannel is a DaemonSet (k8s/), not a unit.
+  if has_role "$n" worker; then units="$units kubelet kube-proxy"; fi
   cat <<EOF
 
 # ---- on $n: 'ssh -t $host bash' (bash, not fish), then paste ----

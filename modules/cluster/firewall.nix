@@ -15,7 +15,7 @@ let
   inherit (lib) mkOption types mkIf concatStrings concatStringsSep;
   cfg = config.clusterNode;
   node = cfg.node;
-  has = r: lib.elem r node.roles;
+  has = r: lib.elem r cfg.activeRoles;
   vipHolder = cfg.keepalived.enable;
   apiserverHere = has "controlPlane" || vipHolder;
 

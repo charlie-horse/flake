@@ -66,6 +66,7 @@ let
   # objects). Flux itself applies everything as one Kustomization.
   components = {
     "00-runtime-classes" = ./components/runtime-classes.nix;
+    "05-rbac" = ./components/rbac.nix;
     "10-flannel" = ./components/flannel.nix;
     "20-coredns" = ./components/coredns.nix;
     "30-nvidia-device-plugin" = ./components/nvidia-device-plugin.nix;

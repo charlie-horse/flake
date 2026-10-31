@@ -20,7 +20,7 @@ let
   cfg = config.clusterNode;
   node = cfg.node;
   port = toString cluster.apiserverPort;
-  isControlPlane = lib.elem "controlPlane" node.roles;
+  isControlPlane = lib.elem "controlPlane" cfg.activeRoles;
   others = lib.filterAttrs (n: _: n != cfg.name) cluster.nodes;
   controlPlanes = lib.filterAttrs
     (_: n: lib.elem "controlPlane" n.roles) cluster.nodes;
@@ -28,7 +28,11 @@ in
 {
   options.clusterNode.keepalived.enable = mkOption {
     type = types.bool;
-    default = true;
+    # Not in the "etcd" stage: no apiserver runs anywhere yet, and the old
+    # multicast keepalived (instance api-frontend) is still up on c4130
+    # until c4130 itself is switched.
+    default = cfg.stage != "etcd";
+    defaultText = "clusterNode.stage != \"etcd\"";
     description = "Run keepalived for the apiserver VIP on this node.";
   };
 

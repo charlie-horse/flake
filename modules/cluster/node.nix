@@ -61,7 +61,7 @@ in
     '';
   };
 
-  config = mkIf (cfg.enable && lib.elem "worker" node.roles) (mkMerge [
+  config = mkIf (cfg.enable && lib.elem "worker" cfg.activeRoles) (mkMerge [
     {
       services.kubernetes.kubelet = {
         enable = true;
@@ -86,6 +86,9 @@ in
         unschedulable = false;
         cni.configDir = cniConfigDir;
         extraOpts = nodeLabelsFlag;
+        # Per-node KubeletConfiguration fields (e.g. c4130's absolute
+        # evictionHard / image GC thresholds; its / is 96% full).
+        extraConfig = node.kubeletConfig;
       };
 
       services.kubernetes.proxy = {

@@ -20,9 +20,10 @@ modules read.
 | Rendered file | What | Source |
 | --- | --- | --- |
 | `00-runtime-classes.yaml` | RuntimeClass `runc` (default handler) and `nvidia` (handler `nvidia`, nodeSelector `nvidia.com/gpu.present=true`); `crun` documented, off | hand-written |
+| `05-rbac.yaml` | ClusterRoleBinding `system:kube-apiserver:kubelet-api-admin` (User `system:kube-apiserver`, the apiserver's kubelet client cert → ClusterRole `system:kubelet-api-admin`; without it `kubectl logs/exec/port-forward` get 403 from the kubelets) | hand-written (what NixOS's disabled addon manager would create) |
 | `10-flannel.yaml` | flannel VXLAN DaemonSet, `Network` = `podCidr`, kube-subnet-mgr, `--public-ip=$(status.hostIP)` (the node's LAN IP); no CNI install init containers (the host ships the plugin + conflist) | flannel chart v0.28.10 |
 | `20-coredns.yaml` | CoreDNS, Service `kube-system/kube-dns` at `dnsServiceIP` (10.96.0.10), zone `clusterDomain` (cluster.local), 2 replicas | coredns chart 1.48.2 (CoreDNS 1.14.7) |
-| `30-nvidia-device-plugin.yaml` | NVIDIA device plugin on `nvidia.com/gpu.present=true` nodes, `runtimeClassName: nvidia` | nvidia-device-plugin chart 0.20.1 |
+| `30-nvidia-device-plugin.yaml` | NVIDIA device plugin on `nvidia.com/gpu.present=true` nodes, `runtimeClassName: nvidia`, `DEVICE_ID_STRATEGY=index` (matches the host's index-named CDI spec) | nvidia-device-plugin chart 0.20.1 |
 | `40-flux-system.yaml` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers | fluxcd-community flux2 chart 2.19.1 |
 | `50-flux-sync.yaml` | GitRepository `https://github.com/charlie-horse/flake` (public HTTPS, no secretRef), branch `main`; Kustomization `./k8s/rendered`, prune | hand-written, typed by the flux2 CRDs |
 | `90-podinfo.yaml` | podinfo smoke app (namespace `podinfo`), 3 replicas spread one per node (incl. the arm64 m2mini) | hand-written |
@@ -86,6 +87,7 @@ manual; afterwards Flux owns everything in `k8s/rendered/`, itself included.
 
 ```sh
 kubectl apply --server-side -f k8s/rendered/00-runtime-classes.yaml \
+  -f k8s/rendered/05-rbac.yaml \
   -f k8s/rendered/10-flannel.yaml -f k8s/rendered/20-coredns.yaml \
   -f k8s/rendered/30-nvidia-device-plugin.yaml
 kubectl apply --server-side -f k8s/rendered/40-flux-system.yaml

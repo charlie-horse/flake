@@ -12,6 +12,8 @@ let
   local = "https://127.0.0.1:${port}";
   secret = cfg.secret;
   leaf = cfg.leaf;
+  etcdClient = if cfg.etcd.phase == "final"
+    then "etcd-client-apiserver" else "legacy-etcd-client-apiserver";
 
   etcdNodes = lib.filter (n: lib.elem "etcd" cluster.nodes.${n}.roles)
     (lib.attrNames cluster.nodes);
@@ -94,7 +96,7 @@ in
     };
   };
 
-  config = lib.mkIf (cfg.enable && lib.elem "controlPlane" node.roles) {
+  config = lib.mkIf (cfg.enable && lib.elem "controlPlane" cfg.activeRoles) {
     services.kubernetes.apiserver = {
       enable = true;
       advertiseAddress = node.lanIP;
@@ -126,8 +128,10 @@ in
       etcd = {
         servers = etcdServers;
         caFile = secret "etcd-ca.pem";
-        certFile = (leaf "etcd-client-apiserver").cert;
-        keyFile = (leaf "etcd-client-apiserver").key;
+        # "trust" phase: the legacy client cert (tls/apiserver/etcd-client,
+        # ETCD CA 1), which the not-yet-switched members accept.
+        certFile = (leaf etcdClient).cert;
+        keyFile = (leaf etcdClient).key;
       };
 
       extraOpts = lib.concatStringsSep " " ([

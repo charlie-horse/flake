@@ -41,6 +41,24 @@
 #     taints             attrs of { key?; value; effect; }  kubelet
 #                        --register-with-taints (NixOS kubelet.taints shape)
 #     extraSANs          list of string  extra SANs for this node's leaves
+#     kubeletConfig      attrs  merged into the KubeletConfiguration
+#                        (services.kubernetes.kubelet.extraConfig), e.g.
+#                        evictionHard / image GC thresholds per node
+#     rollout            { stage; etcdPhase; }  where this node is in the
+#                        cut-over from the legacy cluster (docs/
+#                        cluster-handoff.md). Flip these per step:
+#       stage      "etcd"          only etcd (+ firewall) runs
+#                  "controlPlane"  + apiserver/controller-manager/scheduler
+#                                  + keepalived (the VIP)
+#                  "full"          + kubelet/kube-proxy/containerd (end state)
+#       etcdPhase  "trust"  new etcd-ca.pem bundle (new + legacy CA), but the
+#                           LEGACY leaves, copied to secretsDir as
+#                           legacy-etcd-peer-<n>{,-key}.pem and (control
+#                           planes) legacy-etcd-client-apiserver-<n>{,-key}.pem;
+#                           peerClientCertAuth off, as today
+#                  "final"  new etcd-server/-peer/-client-apiserver leaves,
+#                           peerClientCertAuth on (end state)
+#   apiserverExtraSANs   list of string  extra SANs on every apiserver leaf
 {
   name = "solaris";
   domain = "leaffish-monster.ts.net";
@@ -57,6 +75,13 @@
   dnsServiceIP = "10.96.0.10";
   clusterDomain = "cluster.local";
 
+  # STOPGAP: etcd still holds the legacy `kubernetes` Service at 192.0.0.1
+  # (ClusterIP is immutable), so in-cluster clients get
+  # KUBERNETES_SERVICE_HOST=192.0.0.1 until the Service-CIDR cut-over step
+  # in docs/cluster-handoff.md (step 3d) recreates it at 10.96.0.1. Drop
+  # this after that step and re-issue the apiserver leaves.
+  apiserverExtraSANs = [ "192.0.0.1" ];
+
   secretsDir = "/var/lib/kubernetes/secrets";
 
   nodes = {
@@ -72,6 +97,25 @@
       labels = { };
       taints = { };
       extraSANs = [ ];
+      # / is 96% full (17G free of 366G, 2026-10-31): with the upstream
+      # defaults (nodefs.available<10%, imagefs.available<15%) the node
+      # would sit in DiskPressure forever. Absolute thresholds instead.
+      # Every signal is listed: a partial evictionHard zeroes the others.
+      kubeletConfig = {
+        evictionHard = {
+          "memory.available" = "100Mi";
+          "nodefs.available" = "5Gi";
+          "nodefs.inodesFree" = "5%";
+          "imagefs.available" = "5Gi";
+          "imagefs.inodesFree" = "5%";
+        };
+        imageGCHighThresholdPercent = 98;
+        imageGCLowThresholdPercent = 97;
+      };
+      rollout = {
+        stage = "etcd";
+        etcdPhase = "trust";
+      };
     };
 
     r440 = {
@@ -86,6 +130,10 @@
       labels = { };
       taints = { };
       extraSANs = [ ];
+      rollout = {
+        stage = "etcd";
+        etcdPhase = "trust";
+      };
     };
 
     m2mini = {
@@ -100,6 +148,10 @@
       labels = { };
       taints = { };
       extraSANs = [ ];
+      rollout = {
+        stage = "etcd";
+        etcdPhase = "trust";
+      };
     };
   };
 }

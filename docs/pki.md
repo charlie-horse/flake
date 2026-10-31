@@ -118,10 +118,18 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
 - **apiserver SANs**: the node SANs, plus the VIP `10.0.0.200`, the
   `kubernetesServiceIP` `10.96.0.1`, `kubernetes`, `kubernetes.default`,
   `kubernetes.default.svc`, `kubernetes.default.svc.<clusterDomain>`, and
-  `apiserverExtraSANs`.
-- **Subjects** match what the nixpkgs Kubernetes modules bind RBAC to:
-  - `system:kube-apiserver` gets the `system:kubelet-api-admin` bootstrap binding.
-  - `flannel-client` gets the `flannel` ClusterRoleBinding.
+  `apiserverExtraSANs` (today `192.0.0.1`, the legacy `kubernetes` Service
+  IP, as a stopgap until the Service-CIDR cut-over in
+  [cluster-handoff.md](cluster-handoff.md) step 3).
+- **Subjects** and the RBAC that uses them:
+  - `system:kube-apiserver` (the apiserver's kubelet client) is bound to
+    `system:kubelet-api-admin` by `k8s/rendered/05-rbac.yaml` (catenix,
+    `k8s/components/rbac.nix`). NixOS would create this binding through
+    the addon manager, which is disabled here, so it must be applied with
+    the admin cert during bootstrap; until then `kubectl logs/exec` get 403.
+  - `flannel-client` and `system:kube-addon-manager` are **unused**: flannel
+    runs as a DaemonSet with its own ServiceAccount and there is no addon
+    manager. Nothing binds them (see the TODO in cluster-handoff.md).
   - `system:node:<n>` is what the Node authorizer expects.
 - **`etcd-server-<n>` also has client auth**, so `etcdctl` on a member can
   use it for health checks.
@@ -231,10 +239,29 @@ all.
   cluster-pki --trust etcd /tmp/legacy-etcd-ca.pem    # etcd-ca.pem = new + legacy
   ```
 
-  Then run steps 1 to 3 of the runbook, skipping `--phase begin` and `--phase reissue`: the leaves from the first run are already signed by the new CA. Step 2 swaps the members from the
-  legacy leaves (Nix paths) to `etcd-{server,peer}-<n>` and the apiservers to
-  `etcd-client-apiserver-<n>`. Step 3 is `--phase finish`, which drops the
-  legacy CA from the bundle.
+  Then run steps 1 to 3 of the runbook, skipping `--phase begin` and
+  `--phase reissue`: the leaves from the first run are already signed by the
+  new CA. The two intermediate states are selected per node with
+  `cluster.nodes.<n>.rollout.etcdPhase` (option `clusterNode.etcd.phase`):
+  - `"trust"` (runbook step 1): `etcd-ca.pem` (new + legacy) is trusted, but
+    the member still presents the **legacy** leaf, copied out of
+    `/etc/nixos/tls` into the secrets dir as `legacy-etcd-peer-<n>{,-key}.pem`
+    (and `legacy-etcd-client-apiserver-<n>{,-key}.pem` on control planes);
+    `peerClientCertAuth` stays off, as today. The legacy keys are already
+    exposed (finding 1), so copying them is no new exposure; they are
+    deleted after step 3.
+  - `"final"` (runbook step 2): `etcd-{server,peer}-<n>` and
+    `etcd-client-apiserver-<n>`, `peerClientCertAuth` on. Switch a member to
+    `"final"` only when **all three** run `"trust"`.
+
+  Step 3 is `--phase finish`, which drops the legacy CA from the bundle.
+  The exact commands per node are in
+  [cluster-handoff.md](cluster-handoff.md) step 2.
+
+  Switching a node straight from the legacy config to `"final"` is a hard
+  cut-over: the legacy members trust only `ETCD CA 1` and reject its new
+  leaf, so that member (and its apiserver) is cut off until a second member
+  is switched, and quorum hangs on the third. Don't.
 - **Kubernetes: hard cut-over.** It happens in the same window as the move
   to `Node,RBAC` and the new pod and service CIDRs.
   - Every legacy client identity stops being authorized under RBAC anyway.
@@ -243,6 +270,17 @@ all.
   - If legacy clients must keep working during the window, run
     `cluster-pki --trust k8s legacy-k8s-ca.pem`, and later
     `--rotate-ca k8s --phase finish` to drop it.
+- **Service CIDR (192.0.0.0/24 → 10.96.0.0/12).** etcd keeps the legacy
+  `kubernetes` ServiceCIDR object and the `default/kubernetes` Service at
+  `192.0.0.1`; ClusterIP is immutable and the apiserver only reconciles
+  the Service's ports, so new flags alone don't move it. Until the
+  cut-over step (delete the Service, migrate the ServiceCIDR; exact
+  commands in [cluster-handoff.md](cluster-handoff.md) step 3d) pods get
+  `KUBERNETES_SERVICE_HOST=192.0.0.1`, which is why the apiserver leaves
+  carry `192.0.0.1` as a stopgap SAN (`apiserverExtraSANs`). Run that step
+  before flannel/CoreDNS/Flux are applied, then drop the SAN and re-issue.
+  Stale `Node` objects with a `podCIDR` outside `10.244.0.0/16` must be
+  deleted in the same step (`spec.podCIDR` is immutable too).
 - **Service accounts.** The new `sa.key` replaces the legacy key, so tokens
   signed with the old key stop verifying. Projected tokens are re-minted by
   the kubelet. Legacy Secret-based tokens must be recreated.
@@ -270,8 +308,9 @@ sudo journalctl -u etcd --since -5min | grep -iE 'tls|x509|handshake'   # empty
 ```
 
 During the legacy cut-over, before `etcd-server-<n>` is installed, use the
-apiserver etcd client cert, or the old member cert at its Nix path, for
-`--cert` and `--key`.
+apiserver etcd client cert, or the old member cert, for `--cert` and
+`--key`: in the `"trust"` phase that is
+`$D/legacy-etcd-peer-$n.pem` / `$D/legacy-etcd-peer-$n-key.pem`.
 
 If any check fails, stop and roll back the last member only. The other two
 still hold quorum.
@@ -293,7 +332,10 @@ current leader r440 last):
 2. Point `services.etcd.trustedCaFile` (and the peer CA) and, on control
    planes, `services.kubernetes.apiserver.etcd.caFile` at
    `/var/lib/kubernetes/secrets/etcd-ca.pem`. Leave the cert and key options
-   on the old leaves. Build, then `switch`.
+   on the old leaves. Build, then `switch`. With this flake that is
+   `rollout.etcdPhase = "trust"` for the node in `cluster/definition.nix`
+   (the legacy cut-over; for a later CA rotation every node is already
+   `"final"` and only the bundle file changes, so restart instead).
 3. If only the file changed, restart instead:
    `sudo systemctl restart etcd`, and on control planes also
    `kube-apiserver`.
@@ -312,7 +354,9 @@ still presents an old leaf.
    2. Set `certFile`/`keyFile` to `etcd-server-<n>`, `peerCertFile` and
       `peerKeyFile` to `etcd-peer-<n>`, and on control planes
       `apiserver.etcd.{certFile,keyFile}` to `etcd-client-apiserver-<n>`.
-      Then switch, or restart `etcd` (and `kube-apiserver`).
+      Then switch, or restart `etcd` (and `kube-apiserver`). With this
+      flake: `rollout.etcdPhase = "final"` for the node (this also turns
+      `peerClientCertAuth` on for it).
    3. Run the health check. A member with new leaves must still talk to the
       members with old leaves. It does, because everyone trusts both CAs.
 

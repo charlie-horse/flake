@@ -38,6 +38,13 @@ in
         gfd.enabled = false;
         nfd.enabled = false;
         deviceListStrategy = "envvar";
+        # The CDI spec the NixOS module generates on c4130 names the GPUs
+        # by index (hardware.nvidia-container-toolkit.device-name-strategy
+        # = "index": nvidia.com/gpu=0, =1, =all). With the default "uuid"
+        # the plugin would hand out NVIDIA_VISIBLE_DEVICES=GPU-<uuid>,
+        # which nvidia-container-runtime (CDI mode) turns into the
+        # unresolvable device nvidia.com/gpu=GPU-<uuid>.
+        deviceIDStrategy = "index";
       };
       # The chart always renders the MPS control daemon (it only schedules
       # on nodes labelled nvidia.com/mps.capable); MPS isn't used here.

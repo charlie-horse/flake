@@ -14,6 +14,11 @@
 #                                         cri-o, NVIDIA runtime on gpu nodes)
 #   every node   -> ./keepalived.nix    (apiserver VIP, local /readyz check)
 #                   ./firewall.nix      (cluster ports open to the nodes only)
+# limited by clusterNode.stage (cluster.nodes.<n>.rollout.stage) during the
+# cut-over: "etcd" -> etcd only, "controlPlane" -> + control plane and
+# keepalived, "full" -> everything. clusterNode.etcd.phase picks the etcd
+# leaves ("trust": legacy leaves + new bundle, "final": new leaves). See
+# docs/cluster-handoff.md for the order.
 #
 # Secrets: every key and cert is a STRING path under cluster.secretsDir
 # (/var/lib/kubernetes/secrets), put there by `cluster-pki deploy`
@@ -58,7 +63,38 @@ in
       description = "Directory holding every cluster key and cert.";
     };
 
+    stage = mkOption {
+      type = types.enum [ "etcd" "controlPlane" "full" ];
+      default = cfg.node.rollout.stage or "full";
+      defaultText = "cluster.nodes.<name>.rollout.stage or \"full\"";
+      description = ''
+        Cut-over stage (docs/cluster-handoff.md): which of the node's roles
+        actually run. "etcd": etcd only; "controlPlane": + apiserver,
+        controller-manager, scheduler and keepalived; "full": every role.
+      '';
+    };
+
+    etcd.phase = mkOption {
+      type = types.enum [ "trust" "final" ];
+      default = cfg.node.rollout.etcdPhase or "final";
+      defaultText = "cluster.nodes.<name>.rollout.etcdPhase or \"final\"";
+      description = ''
+        etcd PKI phase. "trust": trust the new etcd-ca.pem bundle (new +
+        legacy CA) but keep presenting the LEGACY leaves, copied into
+        secretsDir as legacy-etcd-peer-<n>{,-key}.pem and
+        legacy-etcd-client-apiserver-<n>{,-key}.pem; peerClientCertAuth
+        stays off as today. "final": the new leaves, peerClientCertAuth on.
+        Every member must be in "trust" before any member goes "final".
+      '';
+    };
+
     # ---- read-only values shared by the sub-modules -----------------------
+    activeRoles = mkOption {
+      type = types.listOf types.str;
+      readOnly = true;
+      internal = true;
+      description = "The node's roles that run in the current stage.";
+    };
     node = mkOption {
       type = types.attrs;
       readOnly = true;
@@ -89,8 +125,17 @@ in
           labels = { };
           taints = { };
           extraSANs = [ ];
+          kubeletConfig = { };
+          rollout = { };
           roles = [ ];
         } // (cluster.nodes.${cfg.name} or { });
+        activeRoles = lib.filter
+          (r: lib.elem r ({
+            etcd = [ "etcd" ];
+            controlPlane = [ "etcd" "controlPlane" ];
+            full = [ "etcd" "controlPlane" "worker" ];
+          }.${cfg.stage}))
+          cfg.node.roles;
         secret = n: "${cfg.secretsDir}/${n}";
         leaf = component: {
           cert = cfg.secret "${component}-${cfg.name}.pem";
@@ -144,6 +189,12 @@ in
           "https://${cluster.vip}:${toString cluster.apiserverPort}";
         clusterCidr = cluster.podCidr;
       };
+
+      # The kubelet module sets net.ipv4.ip_forward = 1 (hosts rely on it,
+      # e.g. for Tailscale). Keep it in the stages without a kubelet; a
+      # second definition next to the kubelet's would be a conflict.
+      boot.kernel.sysctl."net.ipv4.ip_forward" =
+        lib.mkIf (!config.services.kubernetes.kubelet.enable) 1;
     })
   ];
 }

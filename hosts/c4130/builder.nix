@@ -5,7 +5,7 @@
 let
   r440 = "10.25.0.2";
   # `nix key convert-secret-to-public` output on r440 (see the switch steps).
-  r440CacheKey = "r440-cache-1:REPLACE_WITH_R440_CACHE_PUBLIC_KEY=";
+  r440CacheKey = "r440-cache-1:8fh7/X6s7t2jRyhLZZRc6boWitD/RSJt2B9DxmF5Gj8=";
 in
 {
   # --- Direct link -----------------------------------------------------
