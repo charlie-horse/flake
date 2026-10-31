@@ -82,7 +82,7 @@
   # KUBERNETES_SERVICE_HOST=192.0.0.1 until the Service-CIDR cut-over step
   # in docs/cluster-handoff.md (step 3d) recreates it at 10.96.0.1. Drop
   # this after that step and re-issue the apiserver leaves.
-  apiserverExtraSANs = [ "192.0.0.1" ];
+  apiserverExtraSANs = [ ];
 
   secretsDir = "/var/lib/kubernetes/secrets";
 
