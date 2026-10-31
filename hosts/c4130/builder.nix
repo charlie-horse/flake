@@ -56,4 +56,10 @@ in
     substituters = [ "http://${r440}:5000?priority=30" ];
     trusted-public-keys = [ r440CacheKey ];
   };
+  # Root's own ssh (e.g. `nix store ping --store ssh-ng://nixremote@10.25.0.2`)
+  # needs r440's host key too; the daemon uses publicHostKey above.
+  programs.ssh.knownHosts.r440-builder = {
+    hostNames = [ r440 ];
+    publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKEBW4ZqM6suV2KILiqUgRSOiXs14BvUaZNp3fkE3AuG";
+  };
 }
