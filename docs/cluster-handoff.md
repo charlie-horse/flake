@@ -1,7 +1,29 @@
 # Cluster hand-off: solaris (c4130, r440, m2mini)
 
-Status on 2026-10-31, branch `claude/cluster`. Nothing here has been
-switched on a live host yet. Every step below is run by a person with sudo.
+**Status (2026-10-31): steps 0–4 are done on the live cluster; step 5
+(Flux) is next, step 6 after it.**
+
+- All 3 nodes are Ready on containerd with `rollout.stage = "full"` and
+  `etcdPhase = "final"` (commits `rollout: …` in this branch).
+- etcd runs on the new etcd CA only; the legacy CA and leaves are gone.
+- Service CIDR is cut over: `kubernetes` Service at 10.96.0.1. The stopgap
+  apiserver SAN 192.0.0.1 is dropped and the apiserver leaves re-issued.
+- flannel and CoreDNS work (pod DNS resolves).
+- Operator checkout: `r440:~/src/flake`. PKI (CAs and leaves):
+  `r440:~/.local/share/cluster-pki/solaris` — back it up; it holds the CA keys.
+- **flannel health port is 8475, not the chart's 8081.** flanneld runs in the
+  host network and 8081 is the LMCache dashboard on c4130
+  (`k8s/components/flannel.nix`, `healthzPort`).
+- Rendering `k8s/rendered` on r440: Nix's git fetcher fails on
+  `catenix/kubernetes-src` there, so clone the tag with the git CLI and
+  override it:
+  ```sh
+  git clone --depth 1 --branch v1.37.0 https://github.com/kubernetes/kubernetes /tmp/k8s-src
+  rm -rf /tmp/k8s-src/.git
+  nix run --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s-render
+  ```
+
+Every step below is run by a person with sudo.
 
 > **Order.** This whole runbook comes **after** Ada's r440 → c4130
 > vLLM/builder switches, which run from Ada's standalone flakes
