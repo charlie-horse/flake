@@ -1,0 +1,343 @@
+# Cluster CI: c4130 / r440 / m2mini, modules/cluster, cluster/, k8s/ (catenix).
+#
+# Eval only for the NixOS hosts: nothing here builds a toplevel, the CUDA
+# stack or vLLM (far too heavy for a hosted runner). The only build is the
+# catenix render of ./k8s (.#k8s-manifests, small: YAML + `helm template`).
+# On a push to main the render is committed to k8s/rendered/ (what Flux
+# reads), by a separate job that alone holds `contents: write`.
+# See docs/ci.md.
+name: k8s
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "hosts/c4130/**"
+      - "hosts/r440/**"
+      - "hosts/m2mini/**"
+      - "modules/cluster/**"
+      - "cluster/**"
+      - "k8s/**"
+      - "pkgs/**"
+      - "lib/**"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/k8s.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "hosts/c4130/**"
+      - "hosts/r440/**"
+      - "hosts/m2mini/**"
+      - "modules/cluster/**"
+      - "cluster/**"
+      - "k8s/**"
+      - "pkgs/**"
+      - "lib/**"
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/k8s.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: k8s-${{ github.ref }}
+  # PRs: newest push wins. main: queue, so render commits never race.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Evaluation must never build: an IFD would be a build (CUDA/vLLM included).
+  # The host evals pass this; the k8s render needs IFD and does not.
+  NO_IFD: --option allow-import-from-derivation false
+
+jobs:
+  # ------------------------------------------------------------------------
+  secrets-guard:
+    name: Secrets guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fail on keys, kubeconfigs or plaintext passwords in the diff
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          zero=0000000000000000000000000000000000000000
+          head=$(git rev-parse HEAD)
+          if [ "$EVENT" = pull_request ]; then
+            base=$(git merge-base "$PR_BASE" "$PR_HEAD")
+            head=$PR_HEAD
+          elif [ -n "${PUSH_BEFORE:-}" ] && [ "$PUSH_BEFORE" != "$zero" ] \
+            && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
+            base=$PUSH_BEFORE
+          elif git rev-parse -q --verify HEAD~1 >/dev/null; then
+            base=$(git rev-parse HEAD~1)
+          else
+            base=$(git hash-object -t tree /dev/null) # first commit
+          fi
+          echo "scanning $base..$head"
+          status=0
+          hits=$(mktemp)
+
+          # 1. File names (added/copied/modified/renamed, not deleted).
+          while IFS= read -r -d '' f; do
+            b=${f##*/}
+            case "$b" in
+              *.nix | *.md) continue ;; # e.g. modules that build kubeconfigs
+            esac
+            case "$b" in
+              *-key.pem | *.key | kubeconfig | kubeconfig.* | *.kubeconfig \
+                | *-kubeconfig | *_kubeconfig)
+                echo "::error file=$f::secret-looking file name: $f"
+                status=1
+                ;;
+            esac
+          done < <(git diff --name-only -z --diff-filter=ACMRT "$base" "$head")
+
+          # 2. Added lines. Only file:line is printed, never the content.
+          #    Comment lines (#, //) are skipped, so docs may name the
+          #    pattern; a hashedPassword/hashedPasswordFile never matches
+          #    (the match is case-sensitive).
+          pattern='password[[:space:]]*=|-----BEGIN ([A-Z]+ )?PRIVATE KEY-----'
+          pattern+='|client-key-data[:]'
+          git diff -U0 --no-color --diff-filter=ACMRT "$base" "$head" \
+            | awk -v pat="$pattern" '
+                /^\+\+\+ / { f = substr($0, 7); next }
+                /^@@/ {
+                  split($3, a, ","); n = substr(a[1], 2) + 0; next
+                }
+                /^\+/ {
+                  line = substr($0, 2)
+                  if (line !~ /^[[:space:]]*(#|\/\/)/ && line ~ pat)
+                    printf "%s:%d\n", f, n
+                  n++
+                }' > "$hits"
+          while IFS= read -r hit; do
+            echo "::error file=${hit%%:*},line=${hit##*:}::password or private key"
+            status=1
+          done < "$hits"
+
+          if [ "$status" -ne 0 ]; then
+            echo "Secrets belong in /var/lib/kubernetes/secrets on the hosts" \
+              "(see docs/pki.md), never in git or the Nix store." >&2
+          else
+            echo "no secrets found"
+          fi
+          exit "$status"
+
+  # ------------------------------------------------------------------------
+  flake-check:
+    name: nix flake check --no-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      # Evaluates every output (all NixOS hosts, ISOs, packages). `--no-build`
+      # still realises import-from-derivation, i.e. the k8s chart renders
+      # (`helm template`, small); the NixOS hosts have no IFD.
+      - run: nix flake check --no-build --keep-going -L
+
+  # ------------------------------------------------------------------------
+  eval-hosts:
+    name: eval ${{ matrix.host }} (${{ matrix.system }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: c4130
+            system: x86_64-linux
+            runner: ubuntu-24.04
+          - host: r440
+            system: x86_64-linux
+            runner: ubuntu-24.04
+          # Native arm64 runner (free for public repos). The config also
+          # evaluates on x86_64 (no IFD), so ubuntu-24.04 works as a fallback.
+          - host: m2mini
+            system: aarch64-linux
+            runner: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Eval toplevel drvPath (no build)
+        env:
+          HOST: ${{ matrix.host }}
+          SYSTEM: ${{ matrix.system }}
+          # ==================================================================
+          # HOOK(Max): extra flags for the m2mini eval. The flake's default
+          # `m2mini-vendorfw` input is the firmware-free placeholder
+          # (hosts/m2mini/vendorfw), which is what CI must use: Apple's
+          # firmware.cpio is proprietary and never on a runner. If the
+          # firmware wiring changes, put the override here, e.g.
+          #   --override-input m2mini-vendorfw path:./hosts/m2mini/vendorfw
+          # (--override-input implies --no-write-lock-file).
+          # ==================================================================
+          M2MINI_EVAL_FLAGS: ""
+        run: |
+          set -euo pipefail
+          flags=()
+          if [ "$HOST" = m2mini ] && [ -n "$M2MINI_EVAL_FLAGS" ]; then
+            read -r -a flags <<< "$M2MINI_EVAL_FLAGS"
+          fi
+          attr=".#nixosConfigurations.$HOST.config.system.build.toplevel"
+          # shellcheck disable=SC2086 # NO_IFD is a list of flags
+          drv=$(nix eval --raw $NO_IFD "${flags[@]}" "$attr.drvPath")
+          # shellcheck disable=SC2086
+          sys=$(nix eval --raw $NO_IFD "${flags[@]}" "$attr.system")
+          if [ "$sys" != "$SYSTEM" ]; then
+            echo "::error::$HOST evaluates for $sys, expected $SYSTEM"
+            exit 1
+          fi
+          echo "$HOST: $drv"
+          {
+            echo "### $HOST ($SYSTEM)"
+            echo
+            echo "\`$drv\`"
+            echo
+            echo "Eval only: compare on the host with"
+            echo "\`nix-diff /run/current-system $drv\` before switching."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ------------------------------------------------------------------------
+  k8s-manifests:
+    name: Render k8s manifests (catenix)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: nix build .#k8s-manifests
+        run: nix build -L --out-link result-k8s .#k8s-manifests
+
+      - name: Compare with k8s/rendered
+        id: diff
+        run: |
+          set -euo pipefail
+          # Same layout as `nix run .#k8s-render` (k8s/default.nix).
+          rm -rf k8s/rendered
+          mkdir -p k8s/rendered
+          cp -r --no-preserve=mode result-k8s/. k8s/rendered/
+          if grep -rlE -- '-----BEGIN ([A-Z]+ )?PRIVATE KEY-----|client-key-data[:]' \
+            k8s/rendered; then
+            echo "::error::rendered manifests contain key material"
+            exit 1
+          fi
+          git add -N k8s/rendered
+          if git diff --quiet -- k8s/rendered; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "k8s/rendered is up to date" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "### k8s/rendered changes"
+              echo
+              echo '```'
+              git diff --stat -- k8s/rendered
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+              echo "::notice::k8s/rendered differs; it is re-rendered and" \
+                "committed on merge to main."
+            fi
+          fi
+
+      - name: Check images are multi-arch (amd64 + arm64)
+        # Network (registries); advisory until the image set settles.
+        continue-on-error: true
+        run: |
+          if nix eval .#apps.x86_64-linux.k8s-check-images.program \
+            >/dev/null 2>&1; then
+            nix run .#k8s-check-images
+          else
+            echo "apps.x86_64-linux.k8s-check-images not wired; skipped"
+          fi
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: k8s-rendered
+          path: k8s/rendered/
+          if-no-files-found: error
+          retention-days: 7
+
+  # ------------------------------------------------------------------------
+  # The only job with write access: runs on push to main, after every check.
+  publish-rendered:
+    name: Commit k8s/rendered
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && needs.k8s-manifests.outputs.changed == 'true'
+    needs: [secrets-guard, flake-check, eval-hosts, k8s-manifests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Replace k8s/rendered
+        run: rm -rf k8s/rendered && mkdir -p k8s/rendered
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: k8s-rendered
+          path: k8s/rendered
+      - name: Commit and push ([skip ci])
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898733+github-actions[bot]@users.noreply.github.com"
+          # main moved on since this run's commit: if the newer commits touch
+          # the render inputs, their own run publishes; don't push stale YAML.
+          if [ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ] \
+            && ! git diff --quiet "$SOURCE_SHA" HEAD -- \
+              k8s ':(exclude)k8s/rendered' cluster pkgs lib flake.nix \
+              flake.lock; then
+            echo "main has newer k8s inputs than $SOURCE_SHA; skipping"
+            exit 0
+          fi
+          git add -A k8s/rendered
+          if git diff --cached --quiet; then
+            echo "k8s/rendered already up to date on main"
+            exit 0
+          fi
+          git commit -q -m "k8s: re-render k8s/rendered [skip ci]" \
+            -m "Rendered by .github/workflows/k8s.yml from $SOURCE_SHA."
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then exit 0; fi
+            echo "push rejected (attempt $attempt); rebasing on main"
+            git pull --rebase origin main
+          done
+          echo "::error::could not push k8s/rendered"
+          exit 1

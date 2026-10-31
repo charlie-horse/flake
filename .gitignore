@@ -7,3 +7,16 @@ devenv.local.nix
 
 # pre-commit
 .pre-commit-config.yaml
+
+# nix build outputs
+result
+result-*
+
+# cluster-pki output (CA keys + leaves; never commit) and other secrets
+/pki-out/
+pki-out/
+*-key.pem
+*.key
+*.kubeconfig
+kubeconfig
+**/tls/
