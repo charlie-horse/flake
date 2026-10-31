@@ -181,6 +181,13 @@ sudo journalctl -u etcd --since -5min | grep -iE 'x509|tls|handshake'   # empty
 Never continue to the next member unless all three are healthy. If a step
 fails, roll back **that member only**; the other two hold quorum.
 
+**c4130 serving:** `vllm.service` requires `vllm-lmcache.service`, so any
+switch that changes the LMCache unit (its args, `l1SizeGb`/`l2SizeGb`,
+environment or package) restarts LMCache (L1 emptied) and vllm with it:
+~3 min without the API (165 s on 2026-10-31). Check with
+`nix store diff-closures /run/current-system ./result | grep -i lmcache`
+before switching c4130, and schedule such switches like a vLLM restart.
+
 ## Switch order
 
 ### Step 0: generate the PKI (operator machine)

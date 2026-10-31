@@ -20,7 +20,7 @@
     # L1 is pinned RAM, allocated in full at startup. Keep L1 + the active
     # model's vLLM RAM peak + ~30 GB under 125 GB.
     l1SizeGb = 64;
-    l2SizeGb = 180;
+    l2SizeGb = 100;
     # Dashboard (8081); no authentication.
     ui.firewallInterfaces = [ "eno1" "tailscale0" ];
   };
