@@ -1,7 +1,13 @@
 # Cluster hand-off: solaris (c4130, r440, m2mini)
 
-**Status (2026-10-31): steps 0–4 are done on the live cluster; step 5
-(Flux) is next, step 6 after it.**
+**Status (2026-10-31): steps 0–5 are done on the live cluster. Step 6 (GC
+of old generations and the leaked legacy keys) waits a few days, so a
+rollback stays possible.**
+
+- Flux syncs `main` (first sync at `59ae3f2`): GitRepository and
+  Kustomization Ready. podinfo runs 3/3 (r440 ×2, m2mini arm64); the NVIDIA
+  device plugin runs on c4130 (2 GPUs allocatable, node tainted
+  `nvidia.com/gpu=vllm:NoSchedule`); vLLM untouched.
 
 - All 3 nodes are Ready on containerd with `rollout.stage = "full"` and
   `etcdPhase = "final"` (commits `rollout: …` in this branch).
