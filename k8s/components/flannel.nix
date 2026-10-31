@@ -33,6 +33,7 @@
 let
   transport = "lan";
   namespace = "kube-flannel";
+  healthzPort = 8475;
 
   transportArgs =
     {
@@ -58,7 +59,22 @@ let
     // {
       volumes = lib.filter (v: !(lib.elem v.name hostCniVolumes)) spec.volumes;
       containers = map (
-        c: if c.name == "kube-flannel" then c // { env = c.env ++ [ hostIPEnv ]; } else c
+        c:
+        if c.name == "kube-flannel" then
+          c
+          // {
+            env = c.env ++ [ hostIPEnv ];
+            # flanneld runs in the host network, and 8081 (the chart's
+            # health port) is taken on c4130 by the LMCache dashboard.
+            command = map (
+              a: if a == "--healthz-port=8081" then "--healthz-port=${toString healthzPort}" else a
+            ) c.command;
+            ports = map (
+              p: if p.containerPort == 8081 then p // { containerPort = healthzPort; } else p
+            ) c.ports;
+          }
+        else
+          c
       ) spec.containers;
     };
 
