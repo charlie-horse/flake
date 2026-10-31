@@ -147,7 +147,7 @@
       extraSANs = [ ];
       rollout = {
         stage = "etcd";
-        etcdPhase = "trust";
+        etcdPhase = "final";
       };
     };
 
