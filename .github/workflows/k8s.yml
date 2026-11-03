@@ -20,6 +20,7 @@ on:
       - "k8s/**"
       - "pkgs/**"
       - "lib/**"
+      - "parts/**"
       - "flake.nix"
       - "flake.lock"
       - ".github/workflows/k8s.yml"
@@ -34,6 +35,7 @@ on:
       - "k8s/**"
       - "pkgs/**"
       - "lib/**"
+      - "parts/**"
       - "flake.nix"
       - "flake.lock"
       - ".github/workflows/k8s.yml"
@@ -324,7 +326,7 @@ jobs:
           # the render inputs, their own run publishes; don't push stale YAML.
           if [ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ] \
             && ! git diff --quiet "$SOURCE_SHA" HEAD -- \
-              k8s ':(exclude)k8s/rendered' cluster pkgs lib flake.nix \
+              k8s ':(exclude)k8s/rendered' cluster pkgs lib parts flake.nix \
               flake.lock; then
             echo "main has newer k8s inputs than $SOURCE_SHA; skipping"
             exit 0

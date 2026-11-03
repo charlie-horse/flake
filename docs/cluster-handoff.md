@@ -49,7 +49,7 @@ Every step below is run by a person with sudo.
 | Path | What |
 |---|---|
 | `cluster/definition.nix` | Pure data: CIDRs (pods `10.244.0.0/16`, services `10.96.0.0/12`, DNS `10.96.0.10`), VIP `10.0.0.200`, and per node: IPs, roles, `gpu`, `cri`, keepalived priority, labels/taints, `kubeletConfig`, and **`rollout`** (`stage`, `etcdPhase`), which says where the node is in this runbook. |
-| `lib/system/mkServer.nix` | Server builder: host dir + `modules/cluster` only (no desktop, home-manager or agenix). Famine/Pestilence still use `mkHost`. TODO(margaret): layout (update once the flake-parts layout settles). |
+| `lib/system/mkServer.nix` | Server builder: host dir + `modules/cluster` only (no desktop, home-manager or agenix). Famine/Pestilence still use `mkHost`. Both are called from `parts/hosts.nix` (flake-parts). |
 | `hosts/{c4130,r440,m2mini}` | Ports of the hosts' own flakes (c4130/r440 from Ada's copies). Their old `k8s.nix` and `tls/` are not carried over. |
 | `modules/cluster/` | Manual `services.kubernetes` (no easyCerts): etcd (same member names and peer URLs), apiserver `Node,RBAC`, controller-manager, scheduler, kubelet, kube-proxy, containerd (`nvidia` handler on c4130), keepalived on all 3 nodes, firewall. Secrets are **string** paths under `/var/lib/kubernetes/secrets`. |
 | `pkgs/cluster-pki` | `cluster-pki` (CAs, leaves, rotation) and `cluster-pki-deploy` (stages a node's files over ssh and prints the `sudo install` lines). See [pki.md](pki.md). |

@@ -27,9 +27,8 @@ cluster/**  k8s/**  pkgs/**  lib/**  flake.nix  flake.lock
 
 You can also start it by hand with `workflow_dispatch`.
 
-`lib/**` is on the list because `mkHost`/`mkServer` live there.
-TODO(margaret): layout (if the flake-parts conversion adds a directory of
-flake modules, add it to this list and to the `k8s.yml` path filters). So is
+`lib/**` is on the list because `mkHost`/`mkServer` live there, and
+`parts/**` because the flake-parts modules that call them live there. So is
 `flake.lock`, which means the nightly `update.yml` commit runs this workflow too.
 
 The default token permission is `contents: read`. On a pull request, a newer
