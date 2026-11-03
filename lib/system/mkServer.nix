@@ -10,7 +10,8 @@ in {
     #
     # Unlike mkHost it does NOT import ../../modules wholesale (desktop,
     # home-manager, agenix, ...): a server gets only its host dir, the shared
-    # cluster module (modules/cluster) and whatever `modules` adds.
+    # cluster module (modules/cluster), the server baseline (modules/server:
+    # git, cloudflared) and whatever `modules` adds.
     #
     #   mkServer {
     #       path = ./hosts/c4130;         # host dir (or file)
@@ -49,6 +50,7 @@ in {
             modules = preModules ++ [
                 path
                 ../../modules/cluster
+                ../../modules/server
                 {
                     networking.hostName = mkDefault name;
                     nixpkgs.hostPlatform = mkDefault system;

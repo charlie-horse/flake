@@ -13,6 +13,11 @@
     activeModel = "flint";
     # API (8000); no authentication.
     firewallInterfaces = [ "eno1" "tailscale0" ];
+    # Up to 20 concurrent sequences (the fork's profile uses 2). KV cache is
+    # ~979K tokens, so 20 long requests share it; above 2 the M<=2 decode
+    # fast paths (VLLM_SM70_MODELOPT_NVFP4_GEMV, ..._MOE_QPN_DECODE) give way
+    # to the batched kernels: more total throughput, less tok/s per request.
+    models.flint.maxNumSeqs = 20;
   };
 
   # Enabled by the active model's `lmcache` field.

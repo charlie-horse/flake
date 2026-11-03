@@ -7,11 +7,10 @@ let
   # switch steps). Only `nix-daemon --stdio` may run with it.
   c4130BuilderKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDXr3aoLaBGm+3dzLd3GmtM3URqjiJLX6Wy7Ox6YC3k+ root@c4130";
 
-  # Concurrent builds. One CUDA tree build peaks ~14 GiB at 16 cores.
-  # 1 while Ken's SWE-bench podman run shares r440's 46 GiB (started
-  # 2026-10-31, ~35 h). Raise to 2 once that run is over (and set
-  # maxJobs = 2 in c4130's builder.nix to match).
-  builderMaxJobs = 1;
+  # Concurrent builds. One CUDA tree build peaks ~14 GiB at 16 cores, so
+  # two fit in r440's 46 GiB. Was 1 during Ken's SWE-bench podman run
+  # (2026-10-31..11-02). Keep maxJobs in c4130's builder.nix equal to this.
+  builderMaxJobs = 2;
 in
 {
   # --- Direct link -----------------------------------------------------

@@ -43,7 +43,7 @@ in
       publicHostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUtFQlc0WnFNNnN1VjJLSUxpcVVnUlNPaVhzMTRCdlVhWk5wM2ZrRTNBdUcgcm9vdEByNDQwCg==";
       systems = [ "x86_64-linux" ];
       # Matches r440's builderMaxJobs (its builder.nix).
-      maxJobs = 1;
+      maxJobs = 2;
       speedFactor = 4;
       supportedFeatures = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
     }
