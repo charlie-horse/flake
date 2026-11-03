@@ -46,7 +46,7 @@
     },
     "apple-silicon-m2mini": {
       "inputs": {
-        "flake-compat": "flake-compat_3",
+        "flake-compat": "flake-compat_2",
         "nixpkgs": [
           "nixpkgs-m2mini"
         ]
@@ -141,7 +141,7 @@
         "type": "github"
       }
     },
-    "flake-compat_3": {
+    "flake-compat_2": {
       "locked": {
         "lastModified": 1761640442,
         "narHash": "sha256-AtrEP6Jmdvrqiv4x2xa5mrtaIp3OEe8uBYCDZDS+hu8=",
@@ -160,6 +160,26 @@
       "inputs": {
         "nixpkgs-lib": [
           "catenix",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788450739,
+        "narHash": "sha256-glZLQlzIn1fXH6PazR2iUmTo7kzzyYSshrWhLS9TqCU=",
+        "owner": "hercules-ci",
+        "repo": "flake-parts",
+        "rev": "31729ca8cbdb4fa927b34e5f4353e6a83f39e993",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hercules-ci",
+        "repo": "flake-parts",
+        "type": "github"
+      }
+    },
+    "flake-parts_2": {
+      "inputs": {
+        "nixpkgs-lib": [
           "nixpkgs"
         ]
       },
@@ -390,38 +410,6 @@
         "type": "github"
       }
     },
-    "np-master": {
-      "locked": {
-        "lastModified": 1732937961,
-        "narHash": "sha256-B5pYT+IVaqcrfOekkwKvx/iToDnuQWzc2oyDxzzBDc4=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "4703b8d2c708e13a8cab03d865f90973536dcdf5",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "master",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "np-stable": {
-      "locked": {
-        "lastModified": 1732749044,
-        "narHash": "sha256-T38FQOg0BV5M8FN1712fovzNakSOENEYs+CSkg31C9Y=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "0c5b4ecbed5b155b705336aa96d878e55acd8685",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixos-24.05",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
     "pyproject-build-systems": {
       "inputs": {
         "nixpkgs": [
@@ -478,6 +466,7 @@
         "agenix": "agenix",
         "apple-silicon-m2mini": "apple-silicon-m2mini",
         "catenix": "catenix",
+        "flake-parts": "flake-parts_2",
         "generators": "generators",
         "home-manager": "home-manager_2",
         "m2mini-vendorfw": "m2mini-vendorfw",
@@ -486,10 +475,7 @@
         "nixpkgs-2605": "nixpkgs-2605",
         "nixpkgs-m2mini": "nixpkgs-m2mini",
         "nixpkgs-unstable-c4130": "nixpkgs-unstable-c4130",
-        "np-master": "np-master",
-        "np-stable": "np-stable",
-        "vllm-fork": "vllm-fork",
-        "flake-parts": "flake-parts_2"
+        "vllm-fork": "vllm-fork"
       }
     },
     "systems": {
@@ -542,37 +528,17 @@
         "uv2nix": "uv2nix"
       },
       "locked": {
-        "lastModified": 1793735099,
-        "narHash": "sha256-RBB9Xi6CeBF583js1/7k2dHfoA5ObJpFgchMyGJtS5U=",
+        "lastModified": 1793735309,
+        "narHash": "sha256-MVf4avF2f37prVBoTETTH5ZYmLVq/DKDAKQfsaotSzA=",
         "owner": "charlie-horse",
         "repo": "vLLM",
-        "rev": "077a457d17363845b0dc94bd9c4f30531fb892f7",
+        "rev": "7510ca4d5292f9fec454558b3981bd4767075a37",
         "type": "github"
       },
       "original": {
         "owner": "charlie-horse",
+        "ref": "latest",
         "repo": "vLLM",
-        "rev": "b7b1753dc8565af4327d9d21c1ed5cf444c0ddc3",
-        "type": "github"
-      }
-    },
-    "flake-parts_2": {
-      "inputs": {
-        "nixpkgs-lib": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1788450739,
-        "narHash": "sha256-glZLQlzIn1fXH6PazR2iUmTo7kzzyYSshrWhLS9TqCU=",
-        "owner": "hercules-ci",
-        "repo": "flake-parts",
-        "rev": "31729ca8cbdb4fa927b34e5f4353e6a83f39e993",
-        "type": "github"
-      },
-      "original": {
-        "owner": "hercules-ci",
-        "repo": "flake-parts",
         "type": "github"
       }
     }

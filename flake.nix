@@ -1,8 +1,6 @@
 {
     inputs = {
         nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-        np-master.url = "github:NixOS/nixpkgs/master";
-        np-stable.url = "github:NixOS/nixpkgs/nixos-24.05";
 
         flake-parts.url = "github:hercules-ci/flake-parts";
         flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
@@ -35,9 +33,9 @@
         nixpkgs-m2mini.url =
             "github:NixOS/nixpkgs/6d663c0533ff269008fb84e45930151e37c99db9";
 
-        # c4130 vLLM (packages + nixosModules.vllm/lmcache).
-        vllm-fork.url =
-            "github:charlie-horse/vLLM/b7b1753dc8565af4327d9d21c1ed5cf444c0ddc3";
+        # c4130 vLLM (packages + nixosModules.vllm/lmcache). Tracks branch
+        # `latest` of the fork; `nix flake update vllm-fork` to move it.
+        vllm-fork.url = "github:charlie-horse/vLLM/latest";
         vllm-fork.inputs.nixpkgs.follows = "nixpkgs-2605";
 
         # m2mini's Asahi support.
