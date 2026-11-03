@@ -32,23 +32,35 @@ Every image is a multi-arch manifest list (linux/amd64 + linux/arm64);
 `nix run .#k8s-check-images` checks it. The device plugin is pinned to the
 gpu node by its nodeSelector (its image happens to be multi-arch too).
 
-## Wiring (flake.nix)
+## Wiring (parts/packages.nix)
+
+The flake is built with flake-parts; `flake.nix` imports
+`./parts/packages.nix`, whose `perSystem` imports this directory with the
+nodes' 26.05 nixpkgs (not flake-parts' `pkgs`, which is unstable):
 
 ```nix
-let
-  k8s = import ./k8s {
+# parts/packages.nix (abridged)
+perSystem = { system, ... }: let
+  pkgs2605 = inputs.nixpkgs-2605.legacyPackages.${system};
+  k8s = import ../k8s {
     inherit inputs;
-    pkgs = inputs.nixpkgs-2605.legacyPackages.x86_64-linux;
+    pkgs = pkgs2605;
     lib = inputs.nixpkgs-2605.lib;
   };
 in {
-  packages.x86_64-linux.k8s-manifests = k8s.packages.k8s-manifests;
-  apps.x86_64-linux.k8s-render = k8s.apps.render;
-  apps.x86_64-linux.k8s-check-images = k8s.apps.check-images;
-}
+  # only when system == "x86_64-linux":
+  packages.k8s-manifests = k8s.packages.k8s-manifests;
+  apps.k8s-render = k8s.apps.render;
+  apps.k8s-check-images = k8s.apps.check-images;
+};
 ```
 
-`inputs.catenix` must be the catenix flake (`github:charlie-horse/catenix`);
+So the outputs are `packages.x86_64-linux.k8s-manifests`,
+`apps.x86_64-linux.k8s-render` and `apps.x86_64-linux.k8s-check-images`
+(nothing for aarch64-linux).
+
+`inputs.catenix` (in `flake.nix`) is the catenix flake
+(`github:charlie-horse/catenix`);
 `catenix.inputs.nixpkgs.follows = "nixpkgs-2605"` avoids an extra nixpkgs.
 Rendering is import-from-derivation (catenix runs `helm template` in a
 derivation), so evaluating `k8s-manifests` builds the chart renders; it is
@@ -63,7 +75,8 @@ nix run .#k8s-check-images        # every image has amd64 + arm64
 ```
 
 CI (x86_64-linux runner with Nix) on every push to `main` that touches
-`k8s/**`, `cluster/definition.nix`, `flake.nix` or `flake.lock`:
+`k8s/**`, `cluster/**`, `parts/**`, `flake.nix` or `flake.lock` (full list
+in `.github/workflows/k8s.yml`):
 
 1. `nix run .#k8s-render`
 2. `nix run .#k8s-check-images`

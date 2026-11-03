@@ -12,25 +12,23 @@
 #   - the plaintext user password (see ./configuration.nix).
 #
 # Must NOT go through lib mkHost (that imports every modules/** file:
-# desktop, home-manager, agenix). Flake wiring (no specialArgs needed):
-#   inputs.nixpkgs-m2mini.url =
-#     "github:NixOS/nixpkgs/6d663c0533ff269008fb84e45930151e37c99db9";
-#   inputs.apple-silicon-m2mini.url =
-#     "github:nix-community/nixos-apple-silicon/57a14ae9be0eaf7bf66e95490ed2d7c6f4bd4c9e";
-#   inputs.apple-silicon-m2mini.inputs.nixpkgs.follows = "nixpkgs-m2mini";
-#   inputs.m2mini-vendorfw = {
-#     url = "path:./hosts/m2mini/vendorfw"; flake = false;
-#   };
-#   nixosConfigurations.m2mini = inputs.nixpkgs-m2mini.lib.nixosSystem {
-#     modules = [
-#       inputs.apple-silicon-m2mini.nixosModules.default
-#       ./hosts/m2mini
-#       { m2mini.vendorFirmware = inputs.m2mini-vendorfw; }
-#       # + modules/cluster with the m2mini node from cluster/definition.nix
-#     ];
-#   };
-# (The existing `apple-silicon` input is Miniserver's: tpwrules URL,
-# follows unstable nixpkgs. Don't repoint it.)
+# desktop, home-manager, agenix); it is built with lib mkServer
+# (lib/system/mkServer.nix: host dir + modules/cluster + modules/server).
+# Flake wiring, in parts/hosts.nix (no extra specialArgs needed):
+#   lib.system.aarch64-linux.mkServer {
+#     path = ../hosts/m2mini;
+#     nixpkgs = inputs.nixpkgs-m2mini;
+#     preModules = [ inputs.apple-silicon-m2mini.nixosModules.default ];
+#     modules = [ { m2mini.vendorFirmware = inputs.m2mini-vendorfw; } ];
+#   }
+# The inputs it uses (flake.nix) are all kept, and are m2mini's own:
+#   nixpkgs-m2mini        github:NixOS/nixpkgs @ 6d663c05 (nixos-26.05)
+#   apple-silicon-m2mini  github:nix-community/nixos-apple-silicon @ 57a14ae9,
+#                         nixpkgs follows nixpkgs-m2mini
+#   m2mini-vendorfw       path:./hosts/m2mini/vendorfw, flake = false
+#                         (placeholder, see ./firmware.nix)
+# apple-silicon-m2mini is the flake's only Asahi input; keep it pinned to
+# m2mini's lock rev (bump deliberately).
 #
 # Deploy on m2mini (firmware from the ESP, see ./firmware.nix):
 #   nixos-rebuild switch --flake .#m2mini \

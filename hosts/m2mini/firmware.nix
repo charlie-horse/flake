@@ -2,16 +2,15 @@
 #
 # It is proprietary and non-redistributable, so it is NOT committed for this
 # host. The Asahi installer put it on the ESP: /boot/vendorfw/firmware.cpio.
-# (hosts/Miniserver/firmware is an older, raw `all_firmware.tar.gz` for an
-# M2 machine; the current apple-silicon module needs `firmware.cpio`, so it
-# cannot stand in for /boot/vendorfw.)
+# (The current apple-silicon module needs `firmware.cpio`; an older, raw
+# `all_firmware.tar.gz` cannot stand in for /boot/vendorfw.)
 #
-# How the flake feeds it (see the contract in ./default.nix):
-#   inputs.m2mini-vendorfw = {
-#       url = "path:./hosts/m2mini/vendorfw";  # placeholder dir, no firmware
-#       flake = false;
-#   };
-#   modules = [ ... { m2mini.vendorFirmware = inputs.m2mini-vendorfw; } ];
+# How the flake feeds it (see the wiring in ./default.nix):
+#   flake.nix:
+#     m2mini-vendorfw.url = "path:./hosts/m2mini/vendorfw";  # placeholder, no firmware
+#     m2mini-vendorfw.flake = false;
+#   parts/hosts.nix (m2mini's mkServer call):
+#     modules = [ { m2mini.vendorFirmware = inputs.m2mini-vendorfw; } ];
 # and deploy on m2mini with
 #   nixos-rebuild switch --flake .#m2mini \
 #       --override-input m2mini-vendorfw path:/boot/vendorfw
