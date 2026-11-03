@@ -1,4 +1,4 @@
-{ lib, system, config, ... }: let
+{ lib, config, ... }: let
     inherit (lib)
         mkIf
         types
@@ -6,11 +6,9 @@
         mkOption
 	mkOverride
         mkDefault;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         bootMode;
-in switchSystem system { linux = {
+in {
     options.custom = {
         bootMode = mkOption {
             type = types.enum [ "legacy" "uefi" ];
@@ -65,4 +63,4 @@ in switchSystem system { linux = {
 
         services.journald.extraConfig = "SystemMaxUse=500M";
     };
-}; }
+}

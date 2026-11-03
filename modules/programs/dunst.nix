@@ -1,22 +1,20 @@
-{ lib, pkgs, config, system, ... }: let
+{ lib, pkgs, config, ... }: let
     inherit (lib)
         mkIf
         types
         mkOption;
     inherit (lib.generators)
         toINI;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         dunst
         theme;
-in switchSystem system {
-    linux.options.custom.dunst = {
+in {
+    options.custom.dunst = {
         enable = mkOption {
             type = types.bool; default = false;
         };
     };
-    linux.config = mkIf dunst.enable {
+    config = mkIf dunst.enable {
         environment.systemPackages = [ pkgs.dunst ];
         custom.user.configFile."dunst/dunstrc".text = toINI {} {
         };

@@ -1,12 +1,8 @@
-{ lib, pkgs, config, system, ... }: let
+{ lib, pkgs, config, ... }: let
     inherit (lib)
         mkMerge;
     inherit (lib.generators)
         toGitINI;
-    inherit (lib.custom)
-        switchSystem;
-    inherit (pkgs)
-        writeText;
     inherit (config.age)
         secrets;
     inherit (config.custom)
@@ -37,18 +33,12 @@
         alias.yk5c = "config --replace-all user.signingkey ${secrets.ssh-yubikey-5c.path}";
     } else {});
 in mkMerge [
-    (switchSystem system {
-        linux.programs.git = {
+    {
+        programs.git = {
             enable = true;
             package = pkgs.gitFull;
             config = systemConfig;
         };
-        darwin.environment = {
-            systemPackages = [ pkgs.gitFull ];
-            variables.GIT_CONFIG_SYSTEM = "${
-                writeText "gitconfig" (toGitINI systemConfig)
-            }";
-        };
-    })
+    }
     { custom.user.configFile."git/config".text = toGitINI userConfig; }
 ]

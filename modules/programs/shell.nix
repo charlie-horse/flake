@@ -1,8 +1,6 @@
-{ pkgs, lib, config, system, ... }: let
+{ pkgs, lib, config, ... }: let
     inherit (lib)
         mkMerge;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         user;
 in {
@@ -43,27 +41,8 @@ in {
                     + "--time modified";
             };
         }
-        (switchSystem system {
-            linux = {
-                programs.command-not-found.enable = false;
-            };
-            darwin = {
-                security.pam.enableSudoTouchIdAuth = true;
-                environment.shells = [ pkgs.fish ];
-                environment.loginShell = pkgs.fish;
-                programs.fish = {
-                    babelfishPackage = pkgs.babelfish;
-                    promptInit = ''
-                        fish_add_path --prepend --global \
-                            "$HOME/.nix-profile/bin" \
-                            /nix/var/nix/profiles/default/bin \
-                            /run/current-system/sw/bin
-
-                        any-nix-shell fish | source
-                        starship init fish | source
-                    '';
-                };
-            };
-        })
+        {
+            programs.command-not-found.enable = false;
+        }
     ];
 }

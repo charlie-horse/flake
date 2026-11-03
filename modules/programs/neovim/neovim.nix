@@ -73,5 +73,5 @@ in {
             cssmodules-language-server
             tailwindcss-language-server
     ]) else [])
-    ++ (if pkgs.stdenv.isLinux then [ pkgs.xclip ] else []));
+    ++ [ pkgs.xclip ]);
 }

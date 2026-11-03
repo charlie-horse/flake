@@ -1,14 +1,12 @@
-{ pkgs, lib, config, system, ... }: let
+{ pkgs, lib, config, ... }: let
     inherit (lib)
         mkIf
         types
         mkOption;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         user
         udisks;
-in switchSystem system { linux = {
+in {
     options.custom.udisks.enable = mkOption {
         type = types.bool;
         default = false;
@@ -18,4 +16,4 @@ in switchSystem system { linux = {
         services.udisks2.enable = true;
         #users.users.${user.name}.packages = mkIf desktop.enable [ pkgs.udiskie ];
     };
-}; }
+}

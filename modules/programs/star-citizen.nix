@@ -1,14 +1,12 @@
-{ pkgs, lib, config, system, ... }: let
+{ pkgs, lib, config, ... }: let
     inherit (lib)
         mkIf
         types
         mkOption;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         user
         star-citizen;
-in switchSystem system { linux = {
+in {
     options.custom.star-citizen.enable = mkOption {
         type = types.bool;
         default = false;
@@ -84,4 +82,4 @@ in switchSystem system { linux = {
             '';
         }))];
     };
-}; }
+}

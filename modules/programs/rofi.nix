@@ -1,15 +1,13 @@
-{ lib, pkgs, config, system, ... }: let
-    inherit (lib.custom)
-        switchSystem;
+{ lib, pkgs, config, ... }: let
     inherit (config.custom)
         theme;
     inherit (builtins)
         toString;
-in switchSystem system {
-    linux.environment.systemPackages = [ (pkgs.rofi.override {
+in {
+    environment.systemPackages = [ (pkgs.rofi.override {
         plugins = with pkgs; [ rofi-calc rofi-emoji ];
     }) ];
-    linux.custom.user.configFile."rofi/config.rasi".text = ''
+    custom.user.configFile."rofi/config.rasi".text = ''
         configuration {
             modes: [ drun, calc, emoji ];
             scroll-method: 0;

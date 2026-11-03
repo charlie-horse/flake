@@ -1,20 +1,14 @@
-{ lib, config, system, inputs, ... }: let
+{ lib, config, inputs, ... }: let
     inherit (lib)
         mkIf
         types
         mkOption;
-    inherit (lib.custom)
-        switchSystem;
     inherit (inputs.home-manager)
-        nixosModules
-        darwinModules;
+        nixosModules;
     inherit (config.custom)
         user;
 in {
-    imports = switchSystem system {
-        linux = [ nixosModules.home-manager ];
-        darwin = [ darwinModules.home-manager ];
-    };
+    imports = [ nixosModules.home-manager ];
 
     options.custom.user = {
         file = mkOption {

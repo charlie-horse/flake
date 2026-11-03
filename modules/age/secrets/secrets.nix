@@ -20,7 +20,5 @@ in {
     "vpn-password.age".publicKeys    = Pestilence;
     "acme-cloudflare.age".publicKeys = Pestilence;
 
-    "key-war.age".publicKeys    = War;
-    "key-death.age".publicKeys  = Death;
     "key-famine.age".publicKeys = Famine;
 }

@@ -2,20 +2,13 @@
     environment.systemPackages = [ pkgs.alacritty ];
     custom.user.configFile."alacritty/alacritty.yml".text = lib.generators.toYAML {} {
         env.TERM = "alacritty";
-        key_bindings = if pkgs.stdenv.isDarwin then [{
-            key = "N";
-            mods = "Command";
-            command = {
-                program = "open";
-                args = ["-n" "/Applications/Nix\ Apps/Alacritty.app"];
-            };
-        }] else [];
+        key_bindings = [];
 
         window = {
             padding.x = 10;
-            padding.y = if pkgs.stdenv.isDarwin then 24 else 10;
+            padding.y = 10;
             dynamic_padding = true;
-            decorations = if pkgs.stdenv.isDarwin then "transparent" else "none";
+            decorations = "none";
             opacity = 0.85;
             dynamic_title = true;
         };

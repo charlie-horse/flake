@@ -1,9 +1,7 @@
-{ lib, system, config, ... }: let
+{ lib, config, ... }: let
     inherit (lib)
         types
         mkOption;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         age
         user;
@@ -32,8 +30,8 @@ in {
         };
     };
 
-    config = switchSystem system {
-        linux.users = {
+    config = {
+        users = {
             mutableUsers = !age.enable;
             groups = {
                 "plugdev" = {};

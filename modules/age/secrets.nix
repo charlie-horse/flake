@@ -27,8 +27,6 @@ in mkIf age.enable {
     ];
 
     custom.age.systemIdentity.file = switch name (c: v: c==v) {
-        "War"        = ./secrets/key-war.age;
-        "Death"      = ./secrets/key-death.age;
         "Famine"     = ./secrets/key-famine.age;
         "Pestilence" = ./secrets/key-pestilence.age;
     };

@@ -1,14 +1,12 @@
-{ pkgs, lib, config, system, ... }: let
+{ pkgs, lib, config, ... }: let
     inherit (lib)
         mkIf
         types
         mkOption;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         user
         audio;
-in switchSystem system { linux = {
+in {
     options.custom.audio.enable = mkOption {
         type = types.bool;
         default = true;
@@ -28,4 +26,4 @@ in switchSystem system { linux = {
             pulseaudio
         ];
     };
-}; }
+}

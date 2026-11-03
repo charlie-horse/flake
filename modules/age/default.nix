@@ -1,19 +1,15 @@
-{ pkgs, lib, inputs, system, config, ... }: let
+{ pkgs, lib, inputs, config, ... }: let
     inherit (lib)
         mkIf
         types
         mkMerge
         mkOption;
     inherit (lib)
-        makeBinPath
         concatStringsSep;
     inherit (lib.custom)
-        flakePath
-        switchSystem;
+        flakePath;
     inherit (inputs)
         agenix;
-    inherit (config.environment.variables)
-        TERMINAL;
     ageConfig = config.custom.age;
 
     masterIdentities = [
@@ -38,15 +34,12 @@ in {
         };
     };
 
-    imports = (switchSystem system {
-        linux = [agenix.nixosModules.default ./secrets.nix];
-        darwin = [agenix.darwinModules.default ./secrets.nix];
-    }) ++ [ ./secrets.nix ];
+    imports = [ agenix.nixosModules.default ./secrets.nix ];
 
     #ERROR: Does not update key when master key is outdated
     config = mkIf ageConfig.enable (mkMerge [
         { age.identityPaths = [ ageConfig.systemIdentity.dest ]; }
-        (switchSystem system (let recipientInstall = ''
+        (let recipientInstall = ''
             echo "Recipient key is missing, running install script"
             for id in ${concatStringsSep " " masterIdentities}; do
                 age -d \
@@ -59,8 +52,8 @@ in {
         ''; in {
             #TODO: test switching tty in activation; would it work in terminal emulator?
             #system.activationScripts._check-recipient.text = "openvt -sw ${pkgs.bash}";
-            linux.services.pcscd.enable = mkIf ageConfig.enable true;
-            linux.systemd.services.check-recipient = {
+            services.pcscd.enable = mkIf ageConfig.enable true;
+            systemd.services.check-recipient = {
                 wantedBy = [ "default.target" ];
                 after = [ "default.target" ];
                 path = with pkgs; [ age age-plugin-yubikey kbd nixos-rebuild ];
@@ -74,17 +67,6 @@ in {
                     ''}
                 '';
             };
-
-            darwin.system.activationScripts.preActivation.text = ''
-                echo "installing recipient age key..."
-                export PATH=${makeBinPath (with pkgs; [
-                    age age-plugin-yubikey
-                ])}:$PATH
-
-                if [ ! -f ${ageConfig.systemIdentity.dest} ]; then
-                    ${TERMINAL} -e ${pkgs.writeScript "install-recipient" recipientInstall}
-                fi
-            '';
-        }))
+        })
     ]);
 }

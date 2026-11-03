@@ -1,7 +1,6 @@
-{ lib, pkgs, config, system, ... }: let
+{ lib, pkgs, config, ... }: let
     inherit (config.custom.theme)
         colors;
-    inherit (lib.custom) switchSystem;
 in {
     environment.systemPackages = [ pkgs.kitty ];
     environment.variables.TERMINAL = "kitty";
@@ -13,16 +12,10 @@ in {
             sha256 = "sha256-IyX100UVkSimqFAm/MqgkuUjwnaIrAaCUmK1AkWBme0=";
         }}/whiskers-tokyo.png";
 
-        "kitty/kitty.conf".text = switchSystem system {
-            linux = ''
-                font_family FiraCode Nerd Font Reg
-                background_opacity 0.85
-            '';
-            darwin = ''
-                font_family FiraCode Nerd Font Mono Medium
-                macos_titlebar_color #${colors.bg}
-            '';
-        } + ''
+        "kitty/kitty.conf".text = ''
+            font_family FiraCode Nerd Font Reg
+            background_opacity 0.85
+        '' + ''
             font_size 13.0
             undercurl_style thick-sparse
             cursor none

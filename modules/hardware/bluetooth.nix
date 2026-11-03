@@ -1,16 +1,14 @@
-{ lib, pkgs, config, system, ... }: let
+{ lib, pkgs, config, ... }: let
     inherit (builtins)
         elem;
     inherit (lib)
         mkIf
         types
         mkOption;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         user
         bluetooth;
-in switchSystem system { linux = {
+in {
     options.custom.bluetooth.enable = mkOption {
         type = types.bool;
         default = false;
@@ -22,4 +20,4 @@ in switchSystem system { linux = {
         services.blueman.enable = true;
         users.users.${user.name}.packages = [ pkgs.rofi-bluetooth ];
     };
-}; }
+}

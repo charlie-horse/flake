@@ -1,16 +1,15 @@
-{ lib, system, config, ... }: let
+{ lib, config, ... }: let
     inherit (lib)
         mkIf
         types
         mkOption;
     inherit (lib.custom)
-        switch
-        switchSystem;
+        switch;
     inherit (config.custom)
         cpu
         user
         virtualisation;
-in switchSystem system { linux = {
+in {
     options.custom.virtualisation.enable = mkOption {
         type = types.bool;
         default = false;
@@ -25,4 +24,4 @@ in switchSystem system { linux = {
         virtualisation.virtualbox.host.enable = true;
         users.extraGroups.vboxusers.members = [ user.name ];
     };
-}; }
+}

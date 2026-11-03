@@ -1,14 +1,12 @@
-{ pkgs, lib, config, system, ... }: let
+{ pkgs, lib, config, ... }: let
     inherit (lib)
         mkIf
         types
         mkOption;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         user
         networkmanager;
-in switchSystem system { linux = {
+in {
     options.custom.networkmanager.enable = mkOption {
         type = types.bool;
         default = true;
@@ -20,4 +18,4 @@ in switchSystem system { linux = {
             networkmanagerapplet
         ];
     };
-}; }
+}

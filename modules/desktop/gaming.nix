@@ -1,16 +1,14 @@
-{ pkgs, lib, config, system, ... }: let
+{ pkgs, lib, config, ... }: let
     inherit (lib)
         mkIf
         types
         mkMerge
         mkOption;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         gpu
         steam
         gaming;
-in switchSystem system { linux = {
+in {
     options.custom.gaming.enable = mkOption {
         type = types.bool;
         default = false;
@@ -56,4 +54,4 @@ in switchSystem system { linux = {
             };
         }
     ]);
-}; }
+}

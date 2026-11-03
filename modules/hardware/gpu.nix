@@ -1,15 +1,13 @@
-{ pkgs, lib, config, system, ... }: let
+{ pkgs, lib, config, ... }: let
     inherit (lib)
         mkIf
         types
         mkMerge
         mkOption;
-    inherit (lib.custom)
-        switchSystem;
     inherit (config.custom)
         xdg
         gpu;
-in switchSystem system { linux = {
+in {
     options.custom.gpu = mkOption {
         type = types.nullOr (types.enum [ "nvidia" ]);
         default = null;
@@ -57,4 +55,4 @@ in switchSystem system { linux = {
             };
         })
     ];
-}; }
+}

@@ -1,10 +1,8 @@
-{ lib, config, system, ... }: let
-    inherit (lib.custom)
-        switchSystem;
+{ lib, config, ... }: let
     inherit (config.custom.theme)
         colors;
-in switchSystem system {
-    linux.boot.initrd.preDeviceCommands = let
+in {
+    boot.initrd.preDeviceCommands = let
         color = number: color: ''printf "\e]P${number + color}"'';
     in ''
         ${ color "0" colors.bg }
