@@ -27,5 +27,6 @@
     ./hardware-configuration.nix
     ./vllm
     ./builder.nix
+    ./cloudflared.nix
   ];
 }
