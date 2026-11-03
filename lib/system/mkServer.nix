@@ -24,7 +24,7 @@ in {
     #
     # specialArgs always holds { inputs; cluster; hostName; } where cluster is
     # ./cluster/definition.nix (pure data; if it is a function it is called
-    # with { lib; }). `unstable` etc. are passed per host via `specialArgs`.
+    # with { lib; }). Extra args are passed per host via `specialArgs`.
     mkServer = {
         path,
         nixpkgs,

@@ -1,8 +1,8 @@
 { lib, ... }: let
     inherit (lib)
-        fold;
+        foldr;
     inherit (lib.attrsets)
         recursiveUpdate;
 in {
-    merge = sets: fold (x: y: recursiveUpdate x y) {} sets;
+    merge = sets: foldr (x: y: recursiveUpdate x y) {} sets;
 }

@@ -21,10 +21,6 @@ in {
         (lib.system.x86_64-linux.mkServer {
             path = ../hosts/c4130;
             nixpkgs = inputs.nixpkgs-2605;
-            specialArgs.unstable = import inputs.nixpkgs-unstable-c4130 {
-                system = "x86_64-linux";
-                config.allowUnfree = true;
-            };
         })
         (lib.system.x86_64-linux.mkServer {
             path = ../hosts/r440;

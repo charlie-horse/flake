@@ -10,11 +10,8 @@
 #
 # Required specialArgs:
 #   inputs   - flake inputs; needs inputs.vllm-fork
-#              (github:charlie-horse/vLLM, inputs.nixpkgs.follows = the
-#              26.05 nixpkgs; locked b7b1753dc8565af4327d9d21c1ed5cf444c0ddc3)
-#   unstable - import nixpkgs-unstable { system = "x86_64-linux";
-#              config.allowUnfree = true; }  (host lock rev
-#              c7def046b9a883d46974757852106483d741586f)
+#              (github:charlie-horse/vLLM/latest, inputs.nixpkgs.follows =
+#              the 26.05 nixpkgs)
 # nixpkgs itself: github:NixOS/nixpkgs/nixos-26.05 at
 # c3eea5b2156db11c7eeeada3dc737711255b253e.
 #

@@ -394,22 +394,6 @@
         "type": "github"
       }
     },
-    "nixpkgs-unstable-c4130": {
-      "locked": {
-        "lastModified": 1789370336,
-        "narHash": "sha256-6RSEDHIWQtesQKWSu5qRai8L2h4KgCgMEfJHstW99G4=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "c7def046b9a883d46974757852106483d741586f",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "c7def046b9a883d46974757852106483d741586f",
-        "type": "github"
-      }
-    },
     "pyproject-build-systems": {
       "inputs": {
         "nixpkgs": [
@@ -474,7 +458,6 @@
         "nixpkgs": "nixpkgs",
         "nixpkgs-2605": "nixpkgs-2605",
         "nixpkgs-m2mini": "nixpkgs-m2mini",
-        "nixpkgs-unstable-c4130": "nixpkgs-unstable-c4130",
         "vllm-fork": "vllm-fork"
       }
     },

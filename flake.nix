@@ -26,9 +26,6 @@
         # c4130 + r440: nixos-26.05 branch.
         nixpkgs-2605.url =
             "github:NixOS/nixpkgs/c3eea5b2156db11c7eeeada3dc737711255b253e";
-        # c4130's `unstable` specialArg (nixpkgs-unstable branch).
-        nixpkgs-unstable-c4130.url =
-            "github:NixOS/nixpkgs/c7def046b9a883d46974757852106483d741586f";
         # m2mini: nixos-26.05 branch at m2mini's lock rev.
         nixpkgs-m2mini.url =
             "github:NixOS/nixpkgs/6d663c0533ff269008fb84e45930151e37c99db9";
