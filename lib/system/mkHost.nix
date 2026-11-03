@@ -3,30 +3,22 @@
         baseNameOf;
     inherit (lib)
         mkForce
-        hasSuffix
         nixosSystem
         removeSuffix;
     inherit (lib.strings)
         makeBinPath;
     inherit (lib.custom)
-        flakePath
-        switchSystem;
+        flakePath;
     inherit (pkgs)
         writeScript;
 
-    inherit (inputs.darwin.lib)
-        darwinSystem;
     inherit (inputs.generators)
         nixosGenerate;
 in {
     mkHost = path: let
         name = removeSuffix ".nix" (baseNameOf path);
-        configSystem = switchSystem system {
-            linux = nixosSystem;
-            darwin = darwinSystem;
-        };
     in {
-        ${name} = configSystem {
+        ${name} = nixosSystem {
             inherit system;
             specialArgs = { inherit lib name inputs system; };
             modules = [
@@ -36,7 +28,7 @@ in {
             ];
         };
     };
-} // (if hasSuffix "linux" system then {
+
     mkHostIso = name: {
         ${system}.${name} = nixosGenerate {
             inherit system; format = "install-iso";
@@ -147,4 +139,4 @@ in {
             }];
         };
     };
-} else {})
+}
