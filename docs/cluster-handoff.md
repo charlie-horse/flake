@@ -49,7 +49,7 @@ Every step below is run by a person with sudo.
 | Path | What |
 |---|---|
 | `cluster/definition.nix` | Pure data: CIDRs (pods `10.244.0.0/16`, services `10.96.0.0/12`, DNS `10.96.0.10`), VIP `10.0.0.200`, and per node: IPs, roles, `gpu`, `cri`, keepalived priority, labels/taints, `kubeletConfig`, and **`rollout`** (`stage`, `etcdPhase`), which says where the node is in this runbook. |
-| `lib/system/mkServer.nix` | Server builder: host dir + `modules/cluster` only (no desktop, home-manager or agenix). Famine/Pestilence/Death/Miniserver/War still use `mkHost`. |
+| `lib/system/mkServer.nix` | Server builder: host dir + `modules/cluster` only (no desktop, home-manager or agenix). Famine/Pestilence still use `mkHost`. TODO(margaret): layout (update once the flake-parts layout settles). |
 | `hosts/{c4130,r440,m2mini}` | Ports of the hosts' own flakes (c4130/r440 from Ada's copies). Their old `k8s.nix` and `tls/` are not carried over. |
 | `modules/cluster/` | Manual `services.kubernetes` (no easyCerts): etcd (same member names and peer URLs), apiserver `Node,RBAC`, controller-manager, scheduler, kubelet, kube-proxy, containerd (`nvidia` handler on c4130), keepalived on all 3 nodes, firewall. Secrets are **string** paths under `/var/lib/kubernetes/secrets`. |
 | `pkgs/cluster-pki` | `cluster-pki` (CAs, leaves, rotation) and `cluster-pki-deploy` (stages a node's files over ssh and prints the `sudo install` lines). See [pki.md](pki.md). |
@@ -142,14 +142,14 @@ Open questions (decide before the step named):
 
 These are human actions; the repo can only stop making it worse.
 
-1. **charlie's login/sudo password (m2mini, Miniserver, and wherever else it
-   is reused, e.g. c4130/r440).** The plaintext that was in m2mini's
-   `/etc/nixos/m2mini.nix` is byte-identical to the one committed in
+1. **charlie's login/sudo password (m2mini, the former Miniserver, and
+   wherever else it is reused, e.g. c4130/r440).** The plaintext that was in
+   m2mini's `/etc/nixos/m2mini.nix` is byte-identical to the one committed in
    `hosts/Miniserver/default.nix` since 9a37de5, which is on `main` of the
-   **public** repo. It is compromised. This commit removes it from the tree
-   (Miniserver now uses `custom.user.passwordFile =
-   "/var/lib/secrets/charlie.passwd"`; with `mutableUsers = true` that
-   changes nothing on the running box), but it stays in git history.
+   **public** repo. It is compromised. It was first replaced by
+   `custom.user.passwordFile = "/var/lib/secrets/charlie.passwd"`, and
+   `hosts/Miniserver` has since been removed from the flake entirely, but
+   the plaintext stays in git history.
    On each host: `passwd` (choose a NEW password), then write the hash file
    for future installs:
    `mkpasswd -m yescrypt | sudo install -D -m 0600 /dev/stdin /var/lib/secrets/charlie.passwd`.
@@ -555,6 +555,6 @@ Done in this commit: `cluster-pki-deploy` no longer prints a non-existent
 - [ ] **c4130 disk**: free space on `/` or move `/var/lib/containerd` and
       `/var/lib/kubernetes` to a bigger filesystem; then relax the
       thresholds in `cluster/definition.nix`.
-- [ ] **War** (`darwinConfigurations.War`) fails to evaluate with
-      `attribute 'nixos' missing`, also at base 9a37de5 (pre-existing, not
-      touched here).
+- [x] **War** (`darwinConfigurations.War`) failed to evaluate with
+      `attribute 'nixos' missing`. Resolved by removal: War (the only
+      darwin host) and `darwinConfigurations` are gone from the flake.

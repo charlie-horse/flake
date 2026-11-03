@@ -27,7 +27,9 @@ cluster/**  k8s/**  pkgs/**  lib/**  flake.nix  flake.lock
 
 You can also start it by hand with `workflow_dispatch`.
 
-`lib/**` is on the list because `mkHost`/`mkServer` live there. So is
+`lib/**` is on the list because `mkHost`/`mkServer` live there.
+TODO(margaret): layout (if the flake-parts conversion adds a directory of
+flake modules, add it to this list and to the `k8s.yml` path filters). So is
 `flake.lock`, which means the nightly `update.yml` commit runs this workflow too.
 
 The default token permission is `contents: read`. On a pull request, a newer
@@ -138,8 +140,9 @@ and the CA key stays on the operator machine (`docs/pki.md`). Keep
 `cluster-pki`'s output directory (`pki-out/`) git-ignored.
 
 The guard is diff-only on purpose. The repo already contains older plaintext
-credentials in `hosts/Miniserver` and `hosts/Pestilence`, and they only trip
-the guard when those lines are edited. Rotate them and move them out of git
+credentials in `hosts/Pestilence` (and in git history, e.g. the removed
+`hosts/Miniserver`), and they only trip the guard when those lines are
+edited. Rotate them and move them out of git
 separately.
 
 ## Pinned actions
