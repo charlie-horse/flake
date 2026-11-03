@@ -14,8 +14,8 @@
         )
         (builtins.readDir dir)
     ));
-    # modules/cluster is server-only: lib/system/mkServer.nix imports it for
-    # c4130/r440/m2mini. The mkHost hosts (which import this file) must not
-    # get it.
-    serverOnly = [ "${./.}/cluster" ];
+    # modules/cluster and modules/server are server-only: lib/system/
+    # mkServer.nix imports them for c4130/r440/m2mini. The mkHost hosts
+    # (which import this file) must not get them.
+    serverOnly = [ "${./.}/cluster" "${./.}/server" ];
 in { imports = builtins.filter (p: !(builtins.elem p serverOnly)) (modules ./.); }
