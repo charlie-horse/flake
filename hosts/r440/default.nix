@@ -22,5 +22,6 @@
     ./builder.nix
     ./firewall.nix
     ./containers.nix
+    ./memory.nix
   ];
 }

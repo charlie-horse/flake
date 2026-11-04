@@ -7,10 +7,13 @@ let
   # switch steps). Only `nix-daemon --stdio` may run with it.
   c4130BuilderKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDXr3aoLaBGm+3dzLd3GmtM3URqjiJLX6Wy7Ox6YC3k+ root@c4130";
 
-  # Concurrent builds. One CUDA tree build peaks ~14 GiB at 16 cores, so
-  # two fit in r440's 46 GiB. Was 1 during Ken's SWE-bench podman run
-  # (2026-10-31..11-02). Keep maxJobs in c4130's builder.nix equal to this.
-  builderMaxJobs = 2;
+  # Concurrent builds. One CUDA tree at 16 nvcc jobs needs ~14-20 GiB (nvcc/
+  # cicc on CUTLASS kernels take ~1-2+ GiB each). Two trees at once (2 x 16
+  # nvcc) exhausted r440's 46 GiB on 2026-11-04 and hung the box, so 1.
+  # Lowering cores instead wouldn't help: LMCache's build pins MAX_JOBS=16
+  # regardless of NIX_BUILD_CORES. ./memory.nix caps nix-daemon at 36G as
+  # the backstop. Keep maxJobs in c4130's builder.nix equal to this.
+  builderMaxJobs = 1;
 in
 {
   # --- Direct link -----------------------------------------------------
@@ -46,6 +49,7 @@ in
   nix.settings = {
     trusted-users = [ "nixremote" ];
     max-jobs = builderMaxJobs;
+    # The flint vLLM tree runs min(NIX_BUILD_CORES, 16) nvcc jobs.
     cores = 16;
     system-features = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
   };
