@@ -12,8 +12,8 @@
 #   inputs   - flake inputs; needs inputs.vllm-fork
 #              (github:charlie-horse/vLLM/latest, inputs.nixpkgs.follows =
 #              the 26.05 nixpkgs)
-# nixpkgs itself: github:NixOS/nixpkgs/nixos-26.05 at
-# c3eea5b2156db11c7eeeada3dc737711255b253e.
+# nixpkgs itself: the flake's `nixpkgs` input (github:NixOS/nixpkgs/
+# nixos-26.05, rev pinned in flake.lock).
 #
 # Module order matters for byte-identical output (list-merged options such
 # as firewall ports); keep it as in the host flake.

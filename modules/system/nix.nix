@@ -1,6 +1,6 @@
 { config, inputs, ... }: let
-    inherit (inputs)
-        nixpkgs;
+    # modules/ is desktop-only (mkHost), so the desktops' nixpkgs.
+    nixpkgs = inputs.nixpkgs-unstable;
     inherit (config.custom)
         user;
 in {

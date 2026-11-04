@@ -7,7 +7,9 @@ in {
                 name = system;
                 value = lib (args // {
                     inherit system;
-                    pkgs = import inputs.nixpkgs {
+                    # Desktop-side pkgs (mkHost / mkHostIso); mkServer
+                    # never uses it.
+                    pkgs = import inputs.nixpkgs-unstable {
                         inherit system;
                         config.allowUnfree = true;
                     };

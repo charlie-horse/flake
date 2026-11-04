@@ -1,44 +1,51 @@
 {
     inputs = {
-        nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+        # Two nixpkgs, pinned by flake.lock (`nix flake update <name>` to move
+        # one deliberately):
+        #   nixpkgs           nixos-26.05: the servers (c4130, r440, m2mini),
+        #                     the per-system packages/apps and the flake-parts
+        #                     skeleton.
+        #   nixpkgs-unstable  nixos-unstable: ONLY the desktops (Famine,
+        #                     Pestilence), their ISOs and the flake-level `lib`
+        #                     that mkHost passes them. Every desktop-side
+        #                     input follows it.
+        nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+        nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
 
+        # Only lib from it, for the module system that wires the outputs.
         flake-parts.url = "github:hercules-ci/flake-parts";
         flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
 
+        # ---- Desktops (mkHost: Famine, Pestilence) -------------------------
         home-manager.url = "github:nix-community/home-manager";
-        home-manager.inputs.nixpkgs.follows = "nixpkgs";
+        home-manager.inputs.nixpkgs.follows = "nixpkgs-unstable";
 
         generators.url = "github:nix-community/nixos-generators";
-        generators.inputs.nixpkgs.follows = "nixpkgs";
+        generators.inputs.nixpkgs.follows = "nixpkgs-unstable";
 
         agenix.url = "github:ryantm/agenix";
-        agenix.inputs.nixpkgs.follows = "nixpkgs";
+        agenix.inputs.nixpkgs.follows = "nixpkgs-unstable";
 
         aagl.url = "github:ezKEa/aagl-gtk-on-nix";
-        aagl.inputs.nixpkgs.follows = "nixpkgs";
+        aagl.inputs.nixpkgs.follows = "nixpkgs-unstable";
 
+        # Desktop-only (modules/system/madness.nix). Its module defaults
+        # madness.enable = true: it sets environment.ldso to the madness
+        # loader and environment.stub-ld.enable = false, so it is in use.
         madness.url = "github:antithesishq/madness";
 
         # ---- Servers (mkServer: c4130, r440, m2mini) -------------------------
-        # Pinned to the revs the hosts' own flakes run today, so moving a host
-        # onto this flake does not change its nixpkgs. Bump deliberately.
-
-        # c4130 + r440: nixos-26.05 branch.
-        nixpkgs-2605.url =
-            "github:NixOS/nixpkgs/c3eea5b2156db11c7eeeada3dc737711255b253e";
-        # m2mini: nixos-26.05 branch at m2mini's lock rev.
-        nixpkgs-m2mini.url =
-            "github:NixOS/nixpkgs/6d663c0533ff269008fb84e45930151e37c99db9";
+        # All on `nixpkgs` (nixos-26.05).
 
         # c4130 vLLM (packages + nixosModules.vllm/lmcache). Tracks branch
         # `latest` of the fork; `nix flake update vllm-fork` to move it.
         vllm-fork.url = "github:charlie-horse/vLLM/latest";
-        vllm-fork.inputs.nixpkgs.follows = "nixpkgs-2605";
+        vllm-fork.inputs.nixpkgs.follows = "nixpkgs";
 
-        # m2mini's Asahi support.
+        # m2mini's Asahi support (pinned rev; bump deliberately).
         apple-silicon-m2mini.url =
             "github:nix-community/nixos-apple-silicon/57a14ae9be0eaf7bf66e95490ed2d7c6f4bd4c9e";
-        apple-silicon-m2mini.inputs.nixpkgs.follows = "nixpkgs-m2mini";
+        apple-silicon-m2mini.inputs.nixpkgs.follows = "nixpkgs";
 
         # TODO(Gus/m2mini): placeholder dir without firmware.cpio (proprietary,
         # never committed). Deploy on m2mini with
@@ -50,7 +57,7 @@
         # Kubernetes manifests in Nix (k8s/ renders every in-cluster resource).
         catenix.url = "github:charlie-horse/catenix";
         # One nixpkgs for the renders (helm, kubeconform): the nodes' 26.05.
-        catenix.inputs.nixpkgs.follows = "nixpkgs-2605";
+        catenix.inputs.nixpkgs.follows = "nixpkgs";
     };
 
     # flake-parts: ./parts/hosts.nix holds `lib` and nixosConfigurations,

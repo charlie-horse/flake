@@ -36,16 +36,16 @@ gpu node by its nodeSelector (its image happens to be multi-arch too).
 
 The flake is built with flake-parts; `flake.nix` imports
 `./parts/packages.nix`, whose `perSystem` imports this directory with the
-nodes' 26.05 nixpkgs (not flake-parts' `pkgs`, which is unstable):
+nodes' 26.05 nixpkgs (the flake's `nixpkgs` input):
 
 ```nix
 # parts/packages.nix (abridged)
 perSystem = { system, ... }: let
-  pkgs2605 = inputs.nixpkgs-2605.legacyPackages.${system};
+  pkgs = inputs.nixpkgs.legacyPackages.${system};
   k8s = import ../k8s {
     inherit inputs;
-    pkgs = pkgs2605;
-    lib = inputs.nixpkgs-2605.lib;
+    inherit pkgs;
+    lib = inputs.nixpkgs.lib;
   };
 in {
   # only when system == "x86_64-linux":
@@ -61,7 +61,7 @@ So the outputs are `packages.x86_64-linux.k8s-manifests`,
 
 `inputs.catenix` (in `flake.nix`) is the catenix flake
 (`github:charlie-horse/catenix`);
-`catenix.inputs.nixpkgs.follows = "nixpkgs-2605"` avoids an extra nixpkgs.
+`catenix.inputs.nixpkgs.follows = "nixpkgs"` avoids an extra nixpkgs.
 Rendering is import-from-derivation (catenix runs `helm template` in a
 derivation), so evaluating `k8s-manifests` builds the chart renders; it is
 small (no compilers) and never part of a NixOS system closure.

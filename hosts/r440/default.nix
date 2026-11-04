@@ -10,8 +10,8 @@
 #
 # Must NOT go through lib mkHost (that imports every modules/** file:
 # desktop, home-manager, agenix). Build it with nixpkgs.lib.nixosSystem,
-# nixpkgs = github:NixOS/nixpkgs/nixos-26.05 at
-# c3eea5b2156db11c7eeeada3dc737711255b253e. No specialArgs needed.
+# nixpkgs = the flake's `nixpkgs` input (github:NixOS/nixpkgs/nixos-26.05,
+# rev pinned in flake.lock). No specialArgs needed.
 #
 # Module order matters for byte-identical output; keep it as in the host
 # flake (configuration -> hardware -> [k8s] -> builder -> firewall).

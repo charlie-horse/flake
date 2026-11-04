@@ -15,7 +15,7 @@ in {
     #
     #   mkServer {
     #       path = ./hosts/c4130;         # host dir (or file)
-    #       nixpkgs = inputs.nixpkgs-2605; # per-host nixpkgs input
+    #       nixpkgs = inputs.nixpkgs;     # per-host nixpkgs input (26.05)
     #       preModules = [ ... ];         # optional, imported BEFORE path
     #       modules = [ ... ];            # optional extra modules (after)
     #       specialArgs = { ... };        # optional extra specialArgs

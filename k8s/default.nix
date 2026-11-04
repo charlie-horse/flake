@@ -19,13 +19,14 @@
 #                            component name (for `nix eval` / debugging)
 #
 # Wiring in flake.nix (x86_64-linux; `inputs.catenix` is the catenix flake,
-# ideally with `inputs.catenix.inputs.nixpkgs.follows = "nixpkgs-2605"`):
+# ideally with `inputs.catenix.inputs.nixpkgs.follows = "nixpkgs"`, the
+# 26.05 one):
 #
 #   let
 #     k8s = import ./k8s {
 #       inherit inputs;
-#       pkgs = inputs.nixpkgs-2605.legacyPackages.x86_64-linux;
-#       lib = inputs.nixpkgs-2605.lib;
+#       pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
+#       lib = inputs.nixpkgs.lib;
 #     };
 #   in {
 #     packages.x86_64-linux.k8s-manifests = k8s.packages.k8s-manifests;
@@ -57,7 +58,7 @@ let
   cluster = if lib.isFunction definition then definition { inherit lib; } else definition;
 
   # Kubernetes version the charts are rendered for (`helm template
-  # --kube-version`): the nixpkgs-2605 `kubernetes` package the nodes run.
+  # --kube-version`): the (26.05) nixpkgs `kubernetes` package the nodes run.
   kubeVersion = "v1.36.3";
 
   # Component name -> module. The name is the rendered file's name; the

@@ -17,14 +17,15 @@
 # Flake wiring, in parts/hosts.nix (no extra specialArgs needed):
 #   lib.system.aarch64-linux.mkServer {
 #     path = ../hosts/m2mini;
-#     nixpkgs = inputs.nixpkgs-m2mini;
+#     nixpkgs = inputs.nixpkgs;
 #     preModules = [ inputs.apple-silicon-m2mini.nixosModules.default ];
 #     modules = [ { m2mini.vendorFirmware = inputs.m2mini-vendorfw; } ];
 #   }
-# The inputs it uses (flake.nix) are all kept, and are m2mini's own:
-#   nixpkgs-m2mini        github:NixOS/nixpkgs @ 6d663c05 (nixos-26.05)
+# The inputs it uses (flake.nix):
+#   nixpkgs               github:NixOS/nixpkgs/nixos-26.05, shared with
+#                         c4130 and r440 (rev pinned in flake.lock)
 #   apple-silicon-m2mini  github:nix-community/nixos-apple-silicon @ 57a14ae9,
-#                         nixpkgs follows nixpkgs-m2mini
+#                         nixpkgs follows nixpkgs
 #   m2mini-vendorfw       path:./hosts/m2mini/vendorfw, flake = false
 #                         (placeholder, see ./firmware.nix)
 # apple-silicon-m2mini is the flake's only Asahi input; keep it pinned to

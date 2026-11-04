@@ -1,19 +1,20 @@
 # Per-system packages and apps.
 #
-# Everything here uses inputs.nixpkgs-2605 (the nodes' 26.05), not
-# flake-parts' perSystem `pkgs` (which would be nixpkgs unstable).
+# cluster-pki and the k8s renders use inputs.nixpkgs (nixos-26.05, what the
+# nodes run). The desktop ISOs come from the flake lib (nixpkgs-unstable, see
+# parts/hosts.nix).
 { inputs, config, ... }: {
     perSystem = { system, ... }: let
-        pkgs2605 = inputs.nixpkgs-2605.legacyPackages.${system};
+        pkgs = inputs.nixpkgs.legacyPackages.${system};
         # Operator-side PKI tool (docs/pki.md).
-        pki = pkgs2605.callPackage ../pkgs/cluster-pki {
+        pki = pkgs.callPackage ../pkgs/cluster-pki {
             definition = import ../cluster/definition.nix;
         };
         # In-cluster manifests (catenix); x86_64-linux only.
         k8s = import ../k8s {
             inherit inputs;
-            pkgs = pkgs2605;
-            lib = inputs.nixpkgs-2605.lib;
+            inherit pkgs;
+            lib = inputs.nixpkgs.lib;
         };
         x86 = system == "x86_64-linux";
         optional = cond: set: if cond then set else {};
