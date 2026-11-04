@@ -10,6 +10,16 @@ rollback stays possible.**
 r440 and c4130 is active only after their reboot. m2mini builds on itself
 (r440 has no aarch64).
 
+**r440 etcd slow applies: disk move dropped (2026-11-04).** r440's etcd
+logs ~17 "apply request took too long"/min. The cause is local disk: the
+WAL shares one 5400 rpm HDD (sdc2, `/`) with /nix/store, containerd and
+journald, while the peers are reached directly over tailscale. Moving
+/var/lib/etcd to its own disk was prepared (branch `claude/r440-etcd-disk`:
+ext4 on sda2, ZFS rejected; kept for reference, not merged) and dropped
+by the user, who doesn't expect a significant gain. sda2 stays untouched.
+Not applied either: a localhost etcd metrics listener and BFQ/IO weights.
+The analysis and read-only runbook are in that branch's history.
+
 **c4130 intentionally lags main (2026-11-04).** It runs `9bc080e`'s
 toplevel (`chl9lk9m…`, vllm-fork e66530b). From `2790d30` on, main locks
 vllm-fork at c3c4109 or later, which changes the vLLM env (LMCache
