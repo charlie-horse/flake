@@ -42,9 +42,9 @@ in
       # base64 of r440's /etc/ssh/ssh_host_ed25519_key.pub
       publicHostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUtFQlc0WnFNNnN1VjJLSUxpcVVnUlNPaVhzMTRCdlVhWk5wM2ZrRTNBdUcgcm9vdEByNDQwCg==";
       systems = [ "x86_64-linux" ];
-      # Matches r440's builderMaxJobs (its builder.nix): one build at a
-      # time since two CUDA trees ran r440 out of RAM (2026-11-04).
-      maxJobs = 1;
+      # Matches r440's builderMaxJobs (its builder.nix): 2 builds x 8
+      # cores, so at most 16 nvcc on r440 (2 x 16 ran it out of RAM).
+      maxJobs = 2;
       speedFactor = 4;
       supportedFeatures = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
     }
