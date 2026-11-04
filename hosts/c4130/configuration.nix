@@ -1,5 +1,15 @@
 { config, lib, pkgs, ... }:
 {
+  # md RAID (local_store, see hardware-configuration.nix): since nixos-26.05
+  # mdmonitor exits 1 without MAILADDR or PROGRAM. There is no MTA here, so
+  # md events (Fail, DegradedArray, ...) go to the journal instead:
+  # journalctl -t mdadm.
+  boot.swraid.mdadmConf = ''
+    PROGRAM ${pkgs.writeShellScript "mdadm-event-log" ''
+      exec ${pkgs.util-linux}/bin/logger -t mdadm -p daemon.warning -- "md event: $*"
+    ''}
+  '';
+
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
   nixpkgs.config.allowUnfree = true;
