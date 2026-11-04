@@ -225,6 +225,8 @@ D=/var/lib/kubernetes/secrets; n=$(hostname)
 # "trust" phase:  C=$D/legacy-etcd-peer-$n     "final" phase:  C=$D/etcd-server-$n
 E="sudo etcdctl --endpoints=https://r440:2379,https://c4130:2379,https://m2mini:2379 \
    --cacert=$D/etcd-ca.pem --cert=$C.pem --key=$C-key.pem"
+# snapshot save takes exactly ONE endpoint: use E1 (this member) for it.
+E1="sudo etcdctl --endpoints=https://$n:2379 --cacert=$D/etcd-ca.pem --cert=$C.pem --key=$C-key.pem"
 $E endpoint health --cluster -w table     # 3 x true
 $E endpoint status --cluster -w table     # 1 leader, raft index moving
 $E member list -w table                   # r440/c4130/m2mini, https://<n>:2380, unchanged
@@ -306,8 +308,8 @@ Rollback: `sudo rm -rf /var/lib/kubernetes/secrets` (nothing uses it yet).
 ### Step 2: etcd, member by member (r440, then m2mini, then c4130)
 
 Before the first member: snapshot on a healthy member (safety net only):
-`$E snapshot save /var/lib/etcd-snap-$(date +%F).db` (with `C` = the legacy
-cert path, as above, and `sudo`).
+`$E1 snapshot save /var/lib/etcd-snap-$(date +%F).db` (one endpoint only:
+`snapshot save` rejects several; `C` = the legacy cert path, as above).
 
 **2a. Trust phase** (committed config: `stage = "etcd"`,
 `etcdPhase = "trust"`). For each of r440, m2mini, c4130, one at a time:

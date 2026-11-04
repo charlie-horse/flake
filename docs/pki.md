@@ -389,7 +389,8 @@ chains to the bundle.
 
 Before step 1, take a snapshot on a healthy member as a safety net (it is not
 used by the runbook):
-`sudo etcdctl ... snapshot save /var/lib/etcd-snap-$(date +%F).db`.
+`sudo etcdctl --endpoints=https://$(hostname):2379 ... snapshot save /var/lib/etcd-snap-$(date +%F).db`
+(exactly one endpoint: `snapshot save` rejects a list).
 
 The same procedure works for the k8s CA, with the apiserver, kubelet and
 clients in place of the members, and for the front-proxy CA (apiserver only).
