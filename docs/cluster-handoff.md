@@ -514,6 +514,154 @@ Then delete the legacy sources (the old flakes are not in git):
 Verify: `nix-store -qR /run/current-system | grep -c -- '-key.pem$'` is 0
 on every host.
 
+## r440: etcd on its own disk (sdd)
+
+Why: r440's etcd logged ~17 `apply request took too long` per minute on
+2026-11-04. The network was ruled out (tailscale direct); the cause is the
+disk: `/var/lib/etcd` was on `/` (sdc2, one 5400 rpm IronWolf) together
+with `/nix/store` (c4130's CUDA builds, harmonia), containerd, journald and
+podman. `hosts/r440/etcd-disk.nix` mounts an ext4 labelled `R440-ETCD` (sdd,
+Hitachi HDS721010KLA330, 7200 rpm, ~15 years old, whole disk, no partition
+table) on `/var/lib/etcd`, switches rotational disks to BFQ, gives etcd
+`IOWeight=CPUWeight=1000` and nix-daemon `IOWeight=10`, and adds a
+localhost-only metrics listener on `127.0.0.1:2381`. A small SSD is the
+better long-term fix; sdd is a stop-gap.
+
+**The filesystem must exist and hold the data BEFORE r440 switches to this
+config.** etcd has `RequiresMountsFor=/var/lib/etcd`: without the disk it
+does not start (by design: with an empty data dir and
+`ETCD_INITIAL_CLUSTER_STATE=new` it would bootstrap a fresh raft log under
+r440's member ID and either panic against the leader or diverge, having
+silently lost its data). The mount is `nofail`, so a dead disk never stops
+r440 from booting; only etcd stays down.
+
+Do not use sda2 (5.5T ext4, unmounted, unknown content) or sdb (WD Green).
+
+As charlie on r440, `bash`. `sudo` prompts on the terminal; if you script it,
+feed the password on stdin (`read -rs PW; printf '%s\n' "$PW" | sudo -S -v;
+unset PW`), never as an argument. Only start when the health check
+(see "Before you start") is green: `$E endpoint health --cluster` 3 x true.
+r440 is `etcdPhase = "final"`, so `C=$D/etcd-server-r440`. No other member
+is touched; c4130 and m2mini carry quorum while r440's etcd is down, so
+check c4130's etcd especially (it has had quorum trouble before).
+
+**0. Snapshot, and identify the disk** (mkfs below is destructive).
+
+```sh
+D=/var/lib/kubernetes/secrets; C=$D/etcd-server-r440
+E="sudo etcdctl --endpoints=https://r440:2379,https://c4130:2379,https://m2mini:2379 \
+   --cacert=$D/etcd-ca.pem --cert=$C.pem --key=$C-key.pem"
+E1="sudo etcdctl --endpoints=https://r440:2379 --cacert=$D/etcd-ca.pem --cert=$C.pem --key=$C-key.pem"
+$E endpoint health --cluster -w table              # 3 x true, or stop here
+$E member list -w table > /var/tmp/etcd-members-before.txt
+$E1 snapshot save /var/tmp/etcd-snap-$(date +%F).db  # snapshot needs ONE endpoint
+sudo etcdutl snapshot status /var/tmp/etcd-snap-$(date +%F).db -w table   # hash, revision, keys
+
+# Address the disk by id, not by letter (sdX letters can change at boot):
+ls -l /dev/disk/by-id/ | grep -i HDS721010KLA330   # exactly ONE ata-... -> ../../sdd, no -part*
+DEV=/dev/disk/by-id/ata-Hitachi_HDS721010KLA330_<serial>   # from the line above
+lsblk -o NAME,SERIAL,MODEL,SIZE,ROTA,FSTYPE,MOUNTPOINTS "$DEV"   # 931.5G, no children, no FSTYPE
+sudo wipefs "$DEV"                                 # prints nothing = no signatures
+sudo blkid "$DEV"                                  # prints nothing
+# Health: overall PASSED; Reallocated_Sector_Ct, Current_Pending_Sector,
+# Offline_Uncorrectable all 0; no head-parking storm (Load_Cycle_Count).
+nix shell nixpkgs#smartmontools -c sh -c 'sudo "$(command -v smartctl)" -a "$0"' "$DEV"
+nix shell nixpkgs#smartmontools -c sh -c 'sudo "$(command -v smartctl)" -t short "$0"' "$DEV"
+# ~2 min later: "Completed without error"
+nix shell nixpkgs#smartmontools -c sh -c 'sudo "$(command -v smartctl)" -l selftest "$0"' "$DEV"
+```
+
+Any pending/reallocated sectors or a failed self-test: don't use the disk.
+
+**1. Filesystem** (whole disk, no partition table, so the label sits on
+`/dev/sdd` itself and `/dev/disk/by-label/R440-ETCD` points at it). The
+`-E` options do the inode-table/journal init now instead of in the
+background (ext4lazyinit) while etcd is writing:
+
+```sh
+sudo mkfs.ext4 -L R440-ETCD -E lazy_itable_init=0,lazy_journal_init=0 "$DEV"
+ls -l /dev/disk/by-label/R440-ETCD                 # -> ../../sdd
+```
+
+**2. Copy the data** (etcd is down from here until step 3 finishes; no
+builds should run on r440, since step 3 also restarts nix-daemon):
+
+```sh
+$E endpoint status --cluster -w table              # if r440 IS_LEADER=true:
+# $E move-leader <member id of m2mini, hex, from member list>
+sudo mkdir -p /mnt/etcd-new
+sudo mount /dev/disk/by-label/R440-ETCD /mnt/etcd-new
+sudo systemctl stop etcd                           # stays stopped (Restart= only acts on exits)
+systemctl is-active etcd                           # inactive
+sudo rsync -aHAX --numeric-ids /var/lib/etcd/ /mnt/etcd-new/
+sudo chown etcd:etcd /mnt/etcd-new && sudo chmod 0700 /mnt/etcd-new
+sudo ls -la /mnt/etcd-new                          # etcd etcd drwx------ ., member/, lost+found/
+sudo diff -r /var/lib/etcd /mnt/etcd-new | grep -v lost+found   # empty
+sudo umount /mnt/etcd-new
+```
+
+(`lost+found` in the data dir only makes etcd log a "found invalid file
+under data directory" warning; leave it, fsck needs it.)
+
+**3. Switch** (r440 is deployed from the flake; `/etc/nixos` is not a
+checkout):
+
+```sh
+sudo nixos-rebuild switch --flake ~/src/flake#r440
+```
+
+The switch mounts `R440-ETCD` over `/var/lib/etcd` and (re)starts etcd,
+which waits for the mount. It also restarts nix-daemon, systemd-udevd and
+systemd-modules-load (loads `bfq`). The old data stays on sdc2 underneath
+the mount (hidden), as the rollback copy. Exit status 4 means some unit
+failed: `systemctl --failed`.
+
+**4. Verify**
+
+```sh
+findmnt /var/lib/etcd                              # /dev/sdd ext4 rw,noatime
+systemctl is-active etcd; systemctl show etcd -p RequiresMountsFor -p IOWeight -p CPUWeight
+systemctl show nix-daemon -p IOWeight -p IOSchedulingClass   # 10, idle (=3)
+$E endpoint health --cluster -w table              # 3 x true
+$E endpoint status --cluster -w table              # 1 leader, raft index moving on all 3
+$E member list -w table | diff - /var/tmp/etcd-members-before.txt   # empty
+sudo journalctl -u etcd --since -10min | grep -c 'apply request took too long'
+# (was ~170 per 10 min; should drop to ~0 outside heavy builds)
+grep . /sys/block/sd[a-d]/queue/scheduler          # [bfq] on all four
+# if not: sudo udevadm trigger --action=change --subsystem-match=block
+cat /sys/fs/cgroup/system.slice/etcd.service/io.bfq.weight         # default 1000
+cat /sys/fs/cgroup/system.slice/nix-daemon.service/io.bfq.weight   # default 10
+curl -s http://127.0.0.1:2381/metrics \
+  | grep -E '^etcd_disk_(wal_fsync|backend_commit)_duration_seconds_(sum|count)'
+# mean = sum/count; a 7200 rpm disk alone should give ~5-15 ms for WAL fsync
+curl -s http://127.0.0.1:2381/health                # {"health":"true",...}
+```
+
+Repeat the warning count and metrics during a c4130 build to see the
+weights at work.
+
+**5. Rollback** (r440 only; the others are untouched):
+
+```sh
+sudo systemctl stop etcd
+sudo umount /var/lib/etcd                          # old data on sdc2 visible again
+sudo nixos-rebuild switch --rollback               # no mount, no RequiresMountsFor; starts etcd
+```
+
+etcd then runs on the old copy, stale by however long it ran on sdd. That
+is fine for a raft member that is still in the member list with the same
+ID: the leader sends it the missing entries, or a full snapshot if those
+were compacted, automatically. The same path is the quick recovery if sdd
+dies later (nofail keeps r440 up; etcd shows a dependency failure). Only if
+the old copy is unusable, or the member was removed meanwhile: with the
+other two healthy, `$E member remove <r440 id>`, `$E member add r440
+--peer-urls=https://r440:2380`, set `initialClusterState = "existing"` for
+r440 (see TODO), and start with an empty data dir.
+
+Later, once r440 has run fine on sdd for a while, reclaim the hidden copy on
+sdc2: `sudo mount --bind / /mnt/root && sudo rm -rf /mnt/root/var/lib/etcd/member
+&& sudo umount /mnt/root` (this removes the rollback copy for good).
+
 ## TODO (minor findings)
 
 Done in this commit: `cluster-pki-deploy` no longer prints a non-existent

@@ -23,5 +23,6 @@
     ./firewall.nix
     ./containers.nix
     ./memory.nix
+    ./etcd-disk.nix
   ];
 }
