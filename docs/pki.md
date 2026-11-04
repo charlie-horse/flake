@@ -141,6 +141,10 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
 
 ### On the operator machine: `./pki-out/` (gitignored, mode 0700)
 
+The operator machine is r440, whose `/etc/nixos` is the checkout of this
+repo. The live PKI there is `--out ~/.local/share/cluster-pki/solaris`
+(outside the checkout), run as `nix run /etc/nixos#cluster-pki -- --out …`.
+
 ```
 pki-out/
   .gitignore                 '*': the dir ignores itself
@@ -234,7 +238,7 @@ all.
   legacy `ETCD CA 1` as the old CA:
 
   ```sh
-  scp r440:/etc/nixos/tls/ca/etcd.pem /tmp/legacy-etcd-ca.pem   # public cert
+  scp r440:/etc/nixos/tls/ca/etcd.pem /tmp/legacy-etcd-ca.pem   # public cert (done 2026-10-31)
   cluster-pki                                         # new CAs + leaves
   cluster-pki --trust etcd /tmp/legacy-etcd-ca.pem    # etcd-ca.pem = new + legacy
   ```

@@ -43,7 +43,9 @@ update.yml re-locks vllm-fork to `latest` daily.
 - Service CIDR is cut over: `kubernetes` Service at 10.96.0.1. The stopgap
   apiserver SAN 192.0.0.1 is dropped and the apiserver leaves re-issued.
 - flannel and CoreDNS work (pod DNS resolves).
-- Operator checkout: `r440:~/src/flake`. PKI (CAs and leaves):
+- Checkouts: `/etc/nixos` on every server (c4130, r440, m2mini) is a git
+  checkout of this repo (`main`); `~/src/flake` is gone. Operator checkout:
+  `r440:/etc/nixos`. PKI (CAs and leaves):
   `r440:~/.local/share/cluster-pki/solaris` — back it up; it holds the CA keys.
 - **flannel health port is 8475, not the chart's 8081.** flanneld runs in the
   host network and 8081 is the LMCache dashboard on c4130
@@ -64,6 +66,9 @@ Every step below is run by a person with sudo.
 > (`~/flint-nix/builder/etc-nixos{,-c4130}`). Before step 2, re-sync
 > `hosts/c4130` and `hosts/r440` from Ada's final copies and re-check parity
 > against the **live** systems (see "Before you start").
+> (Historical: that re-sync is done. Since 2026-11-04 every host builds from
+> its `/etc/nixos` checkout of this repo; for the pre-checkout backups of the
+> old local configs see step 6.)
 
 - [What exists](#what-exists)
 - [Defaults chosen and open questions](#defaults-chosen-and-open-questions)
@@ -190,10 +195,11 @@ These are human actions; the repo can only stop making it worse.
 ## Before you start
 
 On the operator machine (a trusted machine with this flake checked out;
-not a node):
+in practice r440, whose `/etc/nixos` is the checkout):
 
 ```sh
-git -C ~/src/flake pull                     # branch claude/cluster or main
+git -C /etc/nixos pull                      # main
+# Historical (2026-10-31; Ada's copies are superseded by the /etc/nixos checkouts):
 # Re-sync from Ada's final copies (they were still changing on 2026-10-31):
 mkdir -p /tmp/ada/c4130 /tmp/ada/r440
 ssh c4130 'tar -C ~/flint-nix/builder/etc-nixos-c4130 -cf - --exclude=tls --exclude="*.kubeconfig" .' | tar -xf - -C /tmp/ada/c4130
@@ -208,7 +214,8 @@ Parity against the **live** systems (not the old targets): on each host,
 
 ```sh
 live=$(nix-store -q --deriver "$(readlink -f /run/current-system)")
-new=$(nix eval --raw ~/src/flake#nixosConfigurations.$(hostname).config.system.build.toplevel.drvPath)
+git -C /etc/nixos pull
+new=$(nix eval --raw /etc/nixos#nixosConfigurations.$(hostname).config.system.build.toplevel.drvPath)
 # m2mini: add --override-input m2mini-vendorfw path:/boot/vendorfw
 nix run nixpkgs#nix-diff -- "$live" "$new"
 ```
@@ -224,7 +231,8 @@ remote builder; **no CUDA rebuilds**: c4130's vLLM closure is already in its
 store and must come out identical):
 
 ```sh
-nixos-rebuild build --flake ~/src/flake#<host>     # as charlie, no sudo
+cd /etc/nixos && git pull
+nixos-rebuild build --flake /etc/nixos#<host>      # as charlie, no sudo
 nix store diff-closures /run/current-system ./result
 ```
 
@@ -262,13 +270,13 @@ or a non-git copy would copy the keys into `/nix/store`):
 
 ```sh
 PKI=~/.local/share/cluster-pki/solaris
-nix run ~/src/flake#cluster-pki -- --out $PKI
-scp r440:/etc/nixos/tls/ca/etcd.pem /tmp/legacy-etcd-ca.pem      # PUBLIC cert
+nix run /etc/nixos#cluster-pki -- --out $PKI
+scp r440:/etc/nixos/tls/ca/etcd.pem /tmp/legacy-etcd-ca.pem      # PUBLIC cert (legacy path; done 2026-10-31)
 openssl x509 -noout -subject -in /tmp/legacy-etcd-ca.pem         # CN = ETCD CA 1
-nix run ~/src/flake#cluster-pki -- --out $PKI --trust etcd /tmp/legacy-etcd-ca.pem
+nix run /etc/nixos#cluster-pki -- --out $PKI --trust etcd /tmp/legacy-etcd-ca.pem
 ```
 
-Verify: `nix run ~/src/flake#cluster-pki -- --out $PKI status` shows every
+Verify: `nix run /etc/nixos#cluster-pki -- --out $PKI status` shows every
 leaf `ok`, the etcd bundle lists the new CA **and** `CN=ETCD CA 1`, and
 `openssl x509 -noout -ext subjectAltName -in $PKI/apiserver-r440.pem` lists
 `10.96.0.1`, `10.0.0.200` and the stopgap `192.0.0.1`. Back `$PKI` up,
@@ -283,7 +291,7 @@ legacy store paths.
 
 ```sh
 for n in r440 m2mini c4130; do
-  nix run ~/src/flake#cluster-pki-deploy -- $n --out $PKI   # stages ~/cluster-pki-staging/$n
+  nix run /etc/nixos#cluster-pki-deploy -- $n --out $PKI   # stages ~/cluster-pki-staging/$n
 done
 ```
 
@@ -325,7 +333,7 @@ Before the first member: snapshot on a healthy member (safety net only):
 `etcdPhase = "trust"`). For each of r440, m2mini, c4130, one at a time:
 
 ```sh
-sudo nixos-rebuild switch --flake ~/src/flake#<host>   # m2mini: + --override-input m2mini-vendorfw path:/boot/vendorfw
+cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#<host>   # m2mini: + --override-input m2mini-vendorfw path:/boot/vendorfw
 # then the health check with C=$D/legacy-etcd-peer-$n
 ```
 
@@ -353,8 +361,8 @@ Rollback: set that node back to `"trust"` and switch (or `--rollback`).
 **2c. Drop the legacy etcd CA**, only when all three run `"final"`:
 
 ```sh
-nix run ~/src/flake#cluster-pki -- --out $PKI --rotate-ca etcd --phase finish
-nix run ~/src/flake#cluster-pki -- --out $PKI status   # etcd bundle: new CA only
+nix run /etc/nixos#cluster-pki -- --out $PKI --rotate-ca etcd --phase finish
+nix run /etc/nixos#cluster-pki -- --out $PKI status   # etcd bundle: new CA only
 ```
 
 Then per node, one at a time: `cluster-pki-deploy <n> --out $PKI`, install
@@ -531,9 +539,15 @@ sudo find /nix/store -maxdepth 1 -name '*-key.pem' | wc -l  # 0 (names only; nev
 - m2mini: this also removes the old generation that carries the plaintext
   password (`users-groups.json`).
 
-Then delete the legacy sources (the old flakes are not in git):
+Then delete the legacy sources (they are not in git):
 `sudo rm -rf /etc/nixos/tls` (c4130, r440) and `/etc/nixos/mod/tls`
-(m2mini), and rotate the password (see above).
+(m2mini), if they survived the conversion of `/etc/nixos` to a checkout
+(`**/tls/` is gitignored). The pre-checkout backups of the old local
+configs may also hold the legacy keys (m2mini's also the plaintext
+password in `m2mini.nix`): delete those too (c4130 `~/nixos-backup-20261103-pre-flake-checkout`, may now
+be under `~/archive/nixos-backups`; r440
+`~/archive/nixos-backups/r440-etc-nixos-20261104`; m2mini: any backup under
+`~/archive/nixos-backups`). Then rotate the password (see above).
 
 Verify: `nix-store -qR /run/current-system | grep -c -- '-key.pem$'` is 0
 on every host.
