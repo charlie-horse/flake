@@ -25,7 +25,9 @@
     # L1 is pinned RAM, allocated in full at startup. Keep L1 + the active
     # model's vLLM RAM peak + ~30 GB under 125 GB.
     l1SizeGb = 64;
-    l2SizeGb = 100;
+    # L2 on c4130's root disk (91% full). 32 GB since 2026-11-04 (the
+    # r440 L2 move was cancelled); the pruner trims to <= 80% of this.
+    l2SizeGb = 32;
     # Dashboard (8081); no authentication.
     ui.firewallInterfaces = [ "eno1" "tailscale0" ];
   };
