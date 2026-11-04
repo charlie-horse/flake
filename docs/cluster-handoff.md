@@ -542,12 +542,19 @@ sudo find /nix/store -maxdepth 1 -name '*-key.pem' | wc -l  # 0 (names only; nev
 Then delete the legacy sources (they are not in git):
 `sudo rm -rf /etc/nixos/tls` (c4130, r440) and `/etc/nixos/mod/tls`
 (m2mini), if they survived the conversion of `/etc/nixos` to a checkout
-(`**/tls/` is gitignored). The pre-checkout backups of the old local
-configs may also hold the legacy keys (m2mini's also the plaintext
-password in `m2mini.nix`): delete those too (c4130 `~/nixos-backup-20261103-pre-flake-checkout`, may now
-be under `~/archive/nixos-backups`; r440
-`~/archive/nixos-backups/r440-etc-nixos-20261104`; m2mini: any backup under
-`~/archive/nixos-backups`). Then rotate the password (see above).
+(`**/tls/` is gitignored). The backups of the old local configs may also
+hold the legacy keys (m2mini's also the plaintext password in
+`m2mini.nix`): delete their `tls` dirs too. All are in
+`~/archive/nixos-backups/` on each host:
+
+- c4130: `nixos-backup-20261028-1431`, `nixos-backup-20261029-0832-pre-flint`,
+  `nixos-backup-20261029-1151-pre-lmcache-ui`,
+  `nixos-backup-20261031-1033-pre-flake`,
+  `nixos-backup-20261103-pre-flake-checkout`
+- r440: `r440-etc-nixos-20261104`, `nixos-backup-20261031-1040-pre-builder`
+- m2mini: `nixos-backup`
+
+Then rotate the password (see above).
 
 Verify: `nix-store -qR /run/current-system | grep -c -- '-key.pem$'` is 0
 on every host.
