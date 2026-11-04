@@ -4,6 +4,13 @@
 of old generations and the leaked legacy keys) waits a few days, so a
 rollback stays possible.**
 
+**m2mini is behind main (2026-11-04).** It has not been switched since
+`modules/server` (git + cloudflared) landed, nor to the consolidated
+nixpkgs (nixos-26.05 @ 7dcdd87). That switch also moves its Asahi boot
+stage m1n1 from 1.6.0 to 2.0.0 (the Asahi kernel stays 7.1.13); it waits
+for the user's decision. r440 cannot pre-build it (no aarch64), so it
+builds on m2mini itself at switch time.
+
 - Flux syncs `main` (first sync at `59ae3f2`): GitRepository and
   Kustomization Ready. podinfo runs 3/3 (r440 ×2, m2mini arm64); the NVIDIA
   device plugin runs on c4130 (2 GPUs allocatable, node tainted

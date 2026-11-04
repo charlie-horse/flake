@@ -29,11 +29,6 @@
         aagl.url = "github:ezKEa/aagl-gtk-on-nix";
         aagl.inputs.nixpkgs.follows = "nixpkgs-unstable";
 
-        # Desktop-only (modules/system/madness.nix). Its module defaults
-        # madness.enable = true: it sets environment.ldso to the madness
-        # loader and environment.stub-ld.enable = false, so it is in use.
-        madness.url = "github:antithesishq/madness";
-
         # ---- Servers (mkServer: c4130, r440, m2mini) -------------------------
         # All on `nixpkgs` (nixos-26.05).
 

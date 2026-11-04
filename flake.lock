@@ -289,21 +289,6 @@
       },
       "parent": []
     },
-    "madness": {
-      "locked": {
-        "lastModified": 1720637547,
-        "narHash": "sha256-5MGG0iRBvP35VlcHvxVrapuLygZwHwMB3g0M0fWxz58=",
-        "owner": "antithesishq",
-        "repo": "madness",
-        "rev": "c22c9c03579b7175d94f63e44ee0e518bb5ccdba",
-        "type": "github"
-      },
-      "original": {
-        "owner": "antithesishq",
-        "repo": "madness",
-        "type": "github"
-      }
-    },
     "nix-unit": {
       "inputs": {
         "nix-github-actions": [
@@ -438,7 +423,6 @@
         "generators": "generators",
         "home-manager": "home-manager_2",
         "m2mini-vendorfw": "m2mini-vendorfw",
-        "madness": "madness",
         "nixpkgs": "nixpkgs",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "vllm-fork": "vllm-fork"
