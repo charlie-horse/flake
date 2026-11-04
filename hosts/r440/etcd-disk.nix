@@ -7,26 +7,41 @@
 # podman, so every WAL fsync queued behind build I/O on mq-deadline.
 #
 # Fix, in three parts:
-#   1. /var/lib/etcd is its own ext4 on sdd (Hitachi HDS721010KLA330,
-#      7200 rpm, whole disk, label R440-ETCD), so WAL fsyncs only wait for
-#      etcd's own writes. Migration: docs/cluster-handoff.md, section
-#      "r440: etcd on its own disk (sdd)". The filesystem must exist BEFORE
-#      switching to this config.
+#   1. /var/lib/etcd is its own ext4 on sda2 (label R440-ETCD; 5.5T
+#      partition of a Seagate IronWolf ST6000VN0033 that nothing else uses;
+#      sda1, a 488M vfat, is left alone), so WAL fsyncs only wait for etcd's
+#      own writes. Migration: docs/cluster-handoff.md, section "r440: etcd on
+#      its own disk (sda2)". The filesystem must exist BEFORE switching to
+#      this config.
 #   2. BFQ on every rotational disk, so cgroup IO weights are honoured
 #      (mq-deadline ignores them). This also makes the existing
 #      nix.daemonIOSchedClass = "idle" (./builder.nix) effective.
 #   3. etcd gets a high IO/CPU weight, nix-daemon (every build) a tiny one.
 #
-# sdd is a ~15-year-old desktop disk: a stop-gap. The real fix is a small
-# SSD (even a cheap SATA one has fsync latency ~100x better than any HDD)
-# for /var/lib/etcd; then change only the label/device below.
+# Why not ZFS on sda2 (evaluated 2026-11-04, rejected): on a lone HDD with
+# no SLOG the ZIL sits on the same spindle, so fsyncs are no faster than
+# ext4's (txg syncs add seeks to the labels at both ends of the 5.5T vdev);
+# bbolt's 4K page rewrites become CoW read-modify-write + fragmentation;
+# the out-of-tree module is only built for this generation's kernel (6.18.60,
+# not the running one), so it needs a reboot before the pool can even be
+# created; and enabling ZFS has side effects here: containerd's CRI
+# snapshotter defaults to "zfs" (breaks pods on the ext4 /var/lib/containerd),
+# zfs on containerd/kubelet PATH, a hostId, `nohibernate`, the ARC competing
+# for the ~10 GiB not given to nix-daemon (./memory.nix), and udev forcing
+# sda's scheduler to none. Checksums/snapshots don't outweigh that; etcd has
+# its own snapshots. The dedicated spindle is what fixes the contention.
 #
-# Not used: sda2 (5.5T ext4, unmounted, unknown content) and sdb (WD Green,
-# aggressive head parking: idle->park->spin-up stalls are poison for fsync).
+# A small SSD (even a cheap SATA one has fsync latency ~100x better than any
+# HDD) is still the real fix for /var/lib/etcd; then change only the
+# label/device below.
+#
+# Not used: sdd (Hitachi HDS721010KLA330, ~15 years old desktop disk) and
+# sdb (WD Green, aggressive head parking: idle->park->spin-up stalls are
+# poison for fsync).
 { ... }:
 {
   # --- 1. Own filesystem ------------------------------------------------------
-  # nofail (+ a short device timeout): if the old disk dies, r440 still boots
+  # nofail (+ a short device timeout): if the disk dies, r440 still boots
   # (sshd, harmonia, the builder) instead of dropping into emergency mode;
   # only etcd stays down (RequiresMountsFor below). With nofail the mount is
   # only wanted by local-fs.target, not ordered before it, so etcd's own

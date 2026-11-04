@@ -516,18 +516,25 @@ Then delete the legacy sources (the old flakes are not in git):
 Verify: `nix-store -qR /run/current-system | grep -c -- '-key.pem$'` is 0
 on every host.
 
-## r440: etcd on its own disk (sdd)
+## r440: etcd on its own disk (sda2)
 
 Why: r440's etcd logged ~17 `apply request took too long` per minute on
 2026-11-04. The network was ruled out (tailscale direct); the cause is the
 disk: `/var/lib/etcd` was on `/` (sdc2, one 5400 rpm IronWolf) together
 with `/nix/store` (c4130's CUDA builds, harmonia), containerd, journald and
-podman. `hosts/r440/etcd-disk.nix` mounts an ext4 labelled `R440-ETCD` (sdd,
-Hitachi HDS721010KLA330, 7200 rpm, ~15 years old, whole disk, no partition
-table) on `/var/lib/etcd`, switches rotational disks to BFQ, gives etcd
-`IOWeight=CPUWeight=1000` and nix-daemon `IOWeight=10`, and adds a
-localhost-only metrics listener on `127.0.0.1:2381`. A small SSD is the
-better long-term fix; sdd is a stop-gap.
+podman. `hosts/r440/etcd-disk.nix` mounts an ext4 labelled `R440-ETCD` (sda2,
+the 5.5T partition of a Seagate IronWolf ST6000VN0033 that nothing else
+uses; sda1, a 488M vfat, stays as it is) on `/var/lib/etcd`, switches
+rotational disks to BFQ, gives etcd `IOWeight=CPUWeight=1000` and
+nix-daemon `IOWeight=10`, and adds a localhost-only metrics listener on
+`127.0.0.1:2381`. A small SSD is the
+better long-term fix; a dedicated HDD is a stop-gap.
+
+ZFS on sda2 was evaluated and rejected (reasons in the header of
+`hosts/r440/etcd-disk.nix`): on one HDD without a SLOG it gives no fsync
+gain over ext4, needs a reboot into the new kernel before the pool can be
+created, and enabling it flips containerd's snapshotter to `zfs`, adds an
+ARC to the ~10 GiB left beside nix-daemon, and needs a hostId.
 
 **The filesystem must exist and hold the data BEFORE r440 switches to this
 config.** etcd has `RequiresMountsFor=/var/lib/etcd`: without the disk it
@@ -537,7 +544,9 @@ r440's member ID and either panic against the leader or diverge, having
 silently lost its data). The mount is `nofail`, so a dead disk never stops
 r440 from booting; only etcd stays down.
 
-Do not use sda2 (5.5T ext4, unmounted, unknown content) or sdb (WD Green).
+Do not use sdd (old Hitachi) or sdb (WD Green). sda2 currently holds an old,
+unmounted ext4; the user approved wiping it. Step 0 shows its label/UUID so
+you can confirm it is that one before anything is written.
 
 As charlie on r440, `bash`. `sudo` prompts on the terminal; if you script it,
 feed the password on stdin (`read -rs PW; printf '%s\n' "$PW" | sudo -S -v;
@@ -547,7 +556,7 @@ r440 is `etcdPhase = "final"`, so `C=$D/etcd-server-r440`. No other member
 is touched; c4130 and m2mini carry quorum while r440's etcd is down, so
 check c4130's etcd especially (it has had quorum trouble before).
 
-**0. Snapshot, and identify the disk** (mkfs below is destructive).
+**0. Snapshot, and identify the partition** (mkfs below is destructive).
 
 ```sh
 D=/var/lib/kubernetes/secrets; C=$D/etcd-server-r440
@@ -560,29 +569,41 @@ $E1 snapshot save /var/tmp/etcd-snap-$(date +%F).db  # snapshot needs ONE endpoi
 sudo etcdutl snapshot status /var/tmp/etcd-snap-$(date +%F).db -w table   # hash, revision, keys
 
 # Address the disk by id, not by letter (sdX letters can change at boot):
-ls -l /dev/disk/by-id/ | grep -i HDS721010KLA330   # exactly ONE ata-... -> ../../sdd, no -part*
-DEV=/dev/disk/by-id/ata-Hitachi_HDS721010KLA330_<serial>   # from the line above
-lsblk -o NAME,SERIAL,MODEL,SIZE,ROTA,FSTYPE,MOUNTPOINTS "$DEV"   # 931.5G, no children, no FSTYPE
-sudo wipefs "$DEV"                                 # prints nothing = no signatures
-sudo blkid "$DEV"                                  # prints nothing
+ls -l /dev/disk/by-id/ | grep -i ST6000VN0033      # ata-..._<serial> -> ../../sda, -part1, -part2
+# (if another ST6000VN0033 shows up, e.g. sdc: pick the one whose -part2 is
+# the 5.5T unmounted ext4 below, NOT the one carrying / )
+DISK=/dev/disk/by-id/ata-ST6000VN0033-<model-suffix>_<serial>   # the whole-disk line above
+DEV=$DISK-part2
+lsblk -o NAME,SERIAL,MODEL,SIZE,ROTA,FSTYPE,LABEL,UUID,MOUNTPOINTS "$DISK"
+# sda 5.5T ROTA 1; sda1 488M vfat; sda2 ~5.5T ext4; NO mountpoints on either
+findmnt -S "$DEV"; findmnt -S "$DISK-part1"        # both print nothing
+sudo wipefs -n "$DEV"                              # exactly one ext4 signature (0x438, 53 ef)
+sudo blkid "$DEV"                                  # TYPE="ext4", note LABEL= / UUID=
+# Confirm that LABEL/UUID with the user: this is the filesystem being destroyed.
+# Optional look before wiping (read-only): sudo mount -o ro,noload "$DEV" /mnt && ls /mnt && sudo umount /mnt
+ls /dev/disk/by-label/R440-ETCD 2>&1              # "No such file": the label is not taken
 # Health: overall PASSED; Reallocated_Sector_Ct, Current_Pending_Sector,
-# Offline_Uncorrectable all 0; no head-parking storm (Load_Cycle_Count).
-nix shell nixpkgs#smartmontools -c sh -c 'sudo "$(command -v smartctl)" -a "$0"' "$DEV"
-nix shell nixpkgs#smartmontools -c sh -c 'sudo "$(command -v smartctl)" -t short "$0"' "$DEV"
+# Offline_Uncorrectable all 0; Load_Cycle_Count not climbing fast.
+nix shell nixpkgs#smartmontools -c sh -c 'sudo "$(command -v smartctl)" -a "$0"' "$DISK"
+nix shell nixpkgs#smartmontools -c sh -c 'sudo "$(command -v smartctl)" -t short "$0"' "$DISK"
 # ~2 min later: "Completed without error"
-nix shell nixpkgs#smartmontools -c sh -c 'sudo "$(command -v smartctl)" -l selftest "$0"' "$DEV"
+nix shell nixpkgs#smartmontools -c sh -c 'sudo "$(command -v smartctl)" -l selftest "$0"' "$DISK"
 ```
 
 Any pending/reallocated sectors or a failed self-test: don't use the disk.
 
-**1. Filesystem** (whole disk, no partition table, so the label sits on
-`/dev/sdd` itself and `/dev/disk/by-label/R440-ETCD` points at it). The
-`-E` options do the inode-table/journal init now instead of in the
-background (ext4lazyinit) while etcd is writing:
+**1. Filesystem** on sda2 only (the partition table and sda1 are not
+touched). `-T largefile` (one inode per MiB) keeps the inode tables of a
+5.5T fs small (default ratio: ~90 GB of them, minutes to initialise; etcd
+needs a few hundred files), `-m 1` reserves 1% instead of 5%. The `-E`
+options do the inode-table/journal init now instead of in the background
+(ext4lazyinit) while etcd is writing:
 
 ```sh
-sudo mkfs.ext4 -L R440-ETCD -E lazy_itable_init=0,lazy_journal_init=0 "$DEV"
-ls -l /dev/disk/by-label/R440-ETCD                 # -> ../../sdd
+sudo wipefs -a "$DEV"                              # removes the old ext4 signature
+sudo mkfs.ext4 -L R440-ETCD -T largefile -m 1 -E lazy_itable_init=0,lazy_journal_init=0 "$DEV"
+ls -l /dev/disk/by-label/R440-ETCD                 # -> ../../sda2
+sudo blkid "$DISK-part1"                           # sda1 still vfat, unchanged
 ```
 
 **2. Copy the data** (etcd is down from here until step 3 finishes; no
@@ -621,7 +642,7 @@ failed: `systemctl --failed`.
 **4. Verify**
 
 ```sh
-findmnt /var/lib/etcd                              # /dev/sdd ext4 rw,noatime
+findmnt /var/lib/etcd                              # /dev/sda2 ext4 rw,noatime
 systemctl is-active etcd; systemctl show etcd -p RequiresMountsFor -p IOWeight -p CPUWeight
 systemctl show nix-daemon -p IOWeight -p IOSchedulingClass   # 10, idle (=3)
 $E endpoint health --cluster -w table              # 3 x true
@@ -635,7 +656,7 @@ cat /sys/fs/cgroup/system.slice/etcd.service/io.bfq.weight         # default 100
 cat /sys/fs/cgroup/system.slice/nix-daemon.service/io.bfq.weight   # default 10
 curl -s http://127.0.0.1:2381/metrics \
   | grep -E '^etcd_disk_(wal_fsync|backend_commit)_duration_seconds_(sum|count)'
-# mean = sum/count; a 7200 rpm disk alone should give ~5-15 ms for WAL fsync
+# mean = sum/count; a 5400 rpm-class disk used alone should give ~8-20 ms for WAL fsync
 curl -s http://127.0.0.1:2381/health                # {"health":"true",...}
 ```
 
@@ -650,17 +671,17 @@ sudo umount /var/lib/etcd                          # old data on sdc2 visible ag
 sudo nixos-rebuild switch --rollback               # no mount, no RequiresMountsFor; starts etcd
 ```
 
-etcd then runs on the old copy, stale by however long it ran on sdd. That
+etcd then runs on the old copy, stale by however long it ran on sda2. That
 is fine for a raft member that is still in the member list with the same
 ID: the leader sends it the missing entries, or a full snapshot if those
-were compacted, automatically. The same path is the quick recovery if sdd
+were compacted, automatically. The same path is the quick recovery if sda
 dies later (nofail keeps r440 up; etcd shows a dependency failure). Only if
 the old copy is unusable, or the member was removed meanwhile: with the
 other two healthy, `$E member remove <r440 id>`, `$E member add r440
 --peer-urls=https://r440:2380`, set `initialClusterState = "existing"` for
 r440 (see TODO), and start with an empty data dir.
 
-Later, once r440 has run fine on sdd for a while, reclaim the hidden copy on
+Later, once r440 has run fine on sda2 for a while, reclaim the hidden copy on
 sdc2: `sudo mount --bind / /mnt/root && sudo rm -rf /mnt/root/var/lib/etcd/member
 && sudo umount /mnt/root` (this removes the rollback copy for good).
 
