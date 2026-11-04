@@ -10,6 +10,18 @@ rollback stays possible.**
 r440 and c4130 is active only after their reboot. m2mini builds on itself
 (r440 has no aarch64).
 
+**c4130 intentionally lags main (2026-11-04).** It runs `9bc080e`'s
+toplevel (`chl9lk9m…`, vllm-fork e66530b). From `2790d30` on, main locks
+vllm-fork at c3c4109 or later, which changes the vLLM env (LMCache
+MAX_JOBS fix). Switching c4130 from main therefore rebuilds both
+1cat-vllm-flint trees and LMCache (~2 h on r440) and re-converts the
+~23 GB checkpoint, and c4130 is at 92% disk. Switch it only with the next
+real vLLM change, after a GC of old generations and checkpoints. Until
+then mdmonitor keeps failing there (no MAILADDR/PROGRAM). Branch
+`claude/c4130-mdadm-only` (main + vllm-fork held at e66530b) carries just
+that fix and /etc/nix/machines maxJobs 2 with no rebuild. Note that
+update.yml re-locks vllm-fork to `latest` daily.
+
 - Flux syncs `main` (first sync at `59ae3f2`): GitRepository and
   Kustomization Ready. podinfo runs 3/3 (r440 ×2, m2mini arm64); the NVIDIA
   device plugin runs on c4130 (2 GPUs allocatable, node tainted
