@@ -13,12 +13,12 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
 
 ## Deploying
 - Every change, including a model entry or a fork re-lock, goes through this repo: branch → CI → merge. Then on c4130: `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#c4130`. Never run `nix flake update` or edit files inside `/etc/nixos` on the host.
-- **c4130 intentionally lags main** until the next real vLLM change, and a GC of old generations and checkpoints runs before any c4130 switch (the root disk is ~91% full). Details in `docs/cluster-handoff.md`.
+- **c4130 runs main** (`8a54e1f`, fork `cf9492a`) since 2026-11-04 16:06 EST (system-42). Its root disk is ~41% full (207 GB free on 2026-11-05). GC old generations before any c4130 switch (Charlie's rule); with the disk at 41% it's quick, and after a switch that replaces the checkpoint, GC the old 23 GB path.
 - Builds happen on r440 only (see "Remote builder and cache"): c4130 has `max-jobs = 0`; r440 builds 2 jobs × 8 cores, with nix-daemon capped at 36G and zram swap.
 
 ## Hardware
 - 2× Tesla V100-PCIe-32GB, both sm_70, on the same PCIe switch with no NVLink. Driver 580, the last driver branch for Volta.
-- 48 threads, 125 GB RAM, and SATA SSD RAID1 (root ~91% full as of 2026-11-04).
+- 48 threads, 125 GB RAM, and SATA SSD RAID1 (root 41% full, 207 GB free, on 2026-11-05).
 - **CUDA 13 can't target sm_70.** Anything that compiles or ships GPU kernels must use CUDA 12.x (the stack uses 12.8). No bf16 support, so run everything as `--dtype half`.
 
 ## Stack (fork repo `nix/`, consumed as flake input `vllm-fork`)
@@ -40,8 +40,8 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
   - A `models` option (built-ins: `flint`, `qwen3.6-35b-a3b`, `qwen3.8-27b`; hosts add entries or override single fields), with `services.vllm-sm70.activeModel` selecting which model runs. Only one fits on the GPUs at a time.
   - Systemd units: `vllm-model-fetch` and `vllm`. `nix/lmcache.nix` adds `vllm-lmcache` (L1 = 64 GB pinned RAM, allocated in full at startup; L2 = `/var/lib/lmcache/l2` capped at 32 GB by the `vllm-lmcache-l2-prune` timer) and `vllm-lmcache-ui`.
   - Port 8000 (`port`) is open on `services.vllm-sm70.firewallInterfaces` (it opens only that port), here `eno1` (LAN `10.0.0.95`) and `tailscale0`, with no API key (the user relies on network policy instead).
-- Weights live in `/var/lib/vllm/models`, owned by `vllm`.
-- Check scripts are in `~/archive/scripts` on c4130: `verify_vllm.py` (models / tool calls / recall), `bench_vllm.py` (TTFT and decode tok/s; set `MODEL=`), and `kvtier_test.py` (cold vs L1 vs L2); also `build-lmcache.sh`, `dflash36-test.sh`, `mtp-test.sh`. The last kvtier results are `~/archive/results/kvtier_results.json`.
+- Weights: Flint's are a Nix store path (see "Flint"). HF-downloaded weights (the Qwen entries) live in `/var/lib/vllm/models`, owned by `vllm`. That directory has been empty since 2026-11-04 (the Qwen3.6/3.8 FP8 weights and both DFlash2 drafts were deleted), so switching to a Qwen model re-downloads them first: ~70 GB, during `vllm-model-fetch`. The pinned repos and revisions are in the fork's `nix/module.nix`.
+- Check scripts are in `~/archive/scripts` on c4130: `verify_vllm.py` (models / tool calls / recall), `bench_vllm.py` (TTFT and decode tok/s; set `MODEL=`; **broken for Flint**: it counts only `content` tokens, and Flint always reasons first), and `kvtier_test.py` (cold vs L1 vs L2); also `build-lmcache.sh`, `dflash36-test.sh`, `mtp-test.sh`. The last kvtier results are `~/archive/results/kvtier_results.json`.
 
 ## LMCache details
 - **Connector.** vLLM loads LMCache's own connector, not the one bundled in 1Cat, which targets an older LMCache API (`lmcache.v1.multiprocess.mq`/`protocol` no longer exist). In `--kv-transfer-config`:
@@ -83,12 +83,12 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
 - **Weights are a build step.**
   - The GGUF (`RecursiveSI/flint-nvfp4-gguf`, pinned rev, full sha256) and the HF metadata files (`RecursiveSI/flint`, pinned rev) are fixed-output fetches.
   - A derivation converts them with the fork's `vllm.models.flint.convert_gguf` on CPU (~3.5 min, ~25 GB peak RAM). The output is byte-identical to the former hand-converted checkpoint (`~/flint/models/flint-nvfp4-modelopt`, deleted with `~/flint`).
-  - The store holds both the GGUF and the checkpoint (~23 GB each). GC roots: the current system generation, plus `~/archive/notes/flint-nix/gguf`, which may still pin the GGUF (the old `result` links were deleted).
+  - The store holds both the GGUF and the checkpoint (~23 GB each). Only the current system generation roots the checkpoint. **Nothing roots the GGUF** (`/nix/store/jf1kpv19…-flint-nvfp4.gguf`): `~/archive/notes/flint-nix/gguf` is a plain symlink, not a registered GC root, so the next GC deletes the GGUF. That is fine. The GGUF is needed only to re-convert, and the checkpoint is fixed-output, so a missing checkpoint is fetched from r440's cache before anything converts.
 - **Bumping the fork.**
-  - Push to the fork (the flake follows its `latest` ref). In this repo, on a branch: `nix flake update vllm-fork` (or let the daily `update.yml` re-lock), wait for CI, merge. Then on c4130: `cd /etc/nixos && git pull`, `nixos-rebuild build --flake /etc/nixos#c4130`, start the RAM guard, `sudo nixos-rebuild switch --flake /etc/nixos#c4130`. There is no rev or hash to edit. Mind that c4130 lags main on purpose (see "Deploying").
+  - Push to the fork (the flake follows its `latest` ref). In this repo, on a branch: `nix flake update vllm-fork` (or let the daily `update.yml` re-lock), wait for CI, merge. Then on c4130: `cd /etc/nixos && git pull`, `nixos-rebuild build --flake /etc/nixos#c4130`, start the RAM guard, `sudo nixos-rebuild switch --flake /etc/nixos#c4130`. There is no rev or hash to edit.
   - The deployed fork commit is the `vllm-fork` node in this repo's `flake.lock` at the commit c4130 last switched to (`git -C /etc/nixos log -1`); `main` may be ahead.
   - Only the serving tree (`vllmFlint`) rebuilds, which takes ~35 min at MAX_JOBS 16. A commit touching only `nix/` or `flake.*` doesn't change the tree's source, so it doesn't rebuild it.
-  - The converter has its own pin, `converterFork` (`f66728d`) in the fork's `nix/flint.nix`. `nix/package.nix` wraps that tree as `flintConverter`, which only `flintCheckpoint` uses, so a fork bump keeps the checkpoint at `/nix/store/v3798n9…-flint-nvfp4-modelopt`. Bump `converterFork` only when the converter or the checkpoint format changes. That re-runs the conversion (~4 min) and adds a new 23 GB store path, so GC the old one.
+  - The converter has its own pin, `converterFork` (`f66728d`) in the fork's `nix/flint.nix`. `nix/package.nix` wraps that tree as `flintConverter`, which only `flintCheckpoint` uses. Since fork `647bceb` the checkpoint is fixed-output (`checkpointHash = sha256-HyBUnISsTQXSKmmOft+/fNzrhFLwBJ6imMCa7YRAwoQ=`), so its path depends only on its name and that hash: `/nix/store/0qxvf6z208m6bff62acgwfg6ajhbinpp-flint-nvfp4-modelopt` (live since 2026-11-04). No fork, env, LMCache or nixpkgs change moves it. Before 647bceb it was input-addressed and moved with the env (`v3798n9…`, `9rw8az0d…`, all with the same content). Bump `converterFork`, and with it `checkpointHash`, only when the converter or the checkpoint format changes. That re-runs the conversion (~4 min) and adds a new 23 GB store path, so GC the old one.
   - Check that the `sm70_flash_attn_*` patch list in `nix/flint.nix` still matches the fork's `vllm_flash_attn.cmake`. CMake skips those patches when `VLLM_FLASH_ATTN_SRC_DIR` is set, so Nix applies them.
   - **Builds run on r440**, not here. Only with the local fallback (`--option max-jobs 4`, when r440 is down) does c4130 build itself; then stop LMCache first: with a Qwen model and LMCache running, only ~16–18 GB of RAM is free, while the conversion peaks at ~25 GB and the CUDA build runs 16 nvcc jobs.
 - **Serving profile.** It mirrors the fork's `scripts/serve_flint_nvfp4_v100_pcie.sh`:
@@ -140,8 +140,17 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
 - **Speculative decoding.** DFlash2 drafts (`incoai/*-DFlash2`) gave +70% decode on the 3.6-35B (111 vs 66 tok/s at 4K). They cost KV space.
 - **Stopping the service.** `Restart=on-failure` brings `vllm` back after a crash or kill. Use `systemctl kill --signal=SIGKILL vllm` followed by `systemctl stop vllm`.
 - **pgrep.** Over SSH, `pgrep -f <pattern>` matches its own `bash -c` command line; use `ps -ef | grep '[x]yz'` instead.
-- **Thinking default.** 1Cat defaults `enable_thinking` to false. The user currently keeps that default, so requests must send `chat_template_kwargs.enable_thinking=true` to get reasoning.
+- **Thinking.** Flint always reasons: its chat template ends at `<|assistant|>` and has no `enable_thinking` switch, so `chat_template_kwargs.enable_thinking` does nothing. With the glm47 reasoning parser, the reasoning comes back in `reasoning_content`. The Qwen entries follow 1Cat's default (`enable_thinking` false); send `chat_template_kwargs.enable_thinking=true` there to get reasoning.
+- **LMCache stops after 1 h if a vllm start sees no long prompt.** In LMCache 0.5.6 each vLLM worker starts pinging the cache server only on its first store (a prompt of at least one 256-token chunk). If none arrives within 1 h of a vllm start, the server reaps both GPU instances (`Reaped GPU instance …: silent for 3600.1s (pinged=False)` in `journalctl -u vllm-lmcache`). After that every store is rejected (`Rejecting STORE for unregistered GPU instance`) and nothing is reused until vllm restarts. A busy server is unaffected. Check with `curl -s 127.0.0.1:8080/status`: `registered_gpu_ids` should list 2 ids. Workaround: restart only `vllm` and send one ≥256-token prompt within the hour. The fix (start the heartbeat at registration) is in the new flake, charlie-horse/vllm-sm70 PR #10; it is not in the fork.
 - **CacheBlend** doesn't apply to hybrid GDN models; LMCache only does prefix reuse there.
+
+## State as of 2026-11-04
+- **c4130 runs flake `8a54e1f` / fork `cf9492a`**, system-42 (`/nix/store/shjjhcm4biv99i3zswbmv1j3jmbv11rw-nixos-system-c4130-26.05.20261102.7dcdd87`), switched 2026-11-04 16:06:40 EST. The outage was 3 min 26 s (vllm stopped at 16:06:28, ready at 16:09:54).
+  - Flint checkpoint: the fixed-output `0qxvf6z2…`, fetched from r440's cache, so nothing re-converted. The old `9rw8az0d…` is garbage.
+  - LMCache L2 is now 32 GB live (`max_capacity_gb 32`; it was 100 until this switch).
+  - Bench (Bea, single stream): 4K 176.6 / 176.6 tok/s default / greedy (ITL 5.58 ms, TTFT 0.72 s); 32K 163.9 / 162.7 (ITL 6.21 ms, TTFT 10.5 s). Math 10/10, code 5/5, needle 32K 3/3. That is the same as e66530b (176.8 / 178.2 and 162.8 / 162.7).
+  - LMCache was registered and storing after the switch (4948 objects, ~31.8 GB L1 at 16:14). Mind the 1-h reaper caveat under "Gotchas".
+- The successor flake is charlie-horse/vllm-sm70: upstream vLLM v0.33 + an sm_70 patch series, with the same `services.vllm-sm70` / `services.lmcache-sm70` options. It is not deployed.
 
 ## State as of 2026-10-29
 - 2026-10-31: Nix code moved into the fork as a flake (input `vllm-fork`).
