@@ -18,6 +18,23 @@
     # fast paths (VLLM_SM70_MODELOPT_NVFP4_GEMV, ..._MOE_QPN_DECODE) give way
     # to the batched kernels: more total throughput, less tok/s per request.
     models.flint.maxNumSeqs = 20;
+    # Serve Flint with vllm-sm70's sm_70 model class. Without the override
+    # vLLM loads upstream's FlintForCausalLM, which needs FlashInfer and bf16
+    # (not available on V100). `args` replaces the built-in list, so this is
+    # the module's Flint list plus --hf-overrides; `--dtype half` is already
+    # in the module's common args for every model.
+    # TODO(cutover): needs FlintSm70ForCausalLM registered by the sm70 plugin
+    # (vllm-sm70 #36). Move the override into vllm-sm70's built-in Flint entry
+    # once that lands, then drop this block.
+    models.flint.args = [
+      "--kv-cache-dtype" "auto"
+      "--enable-prompt-tokens-details"
+      "--tool-call-parser" "glm47"
+      "--reasoning-parser" "glm47"
+      "--exclude-tools-when-tool-choice-none"
+      "--override-generation-config" ''{"temperature":1.0,"top_p":0.95,"top_k":20}''
+      "--hf-overrides" ''{"architectures":["FlintSm70ForCausalLM"]}''
+    ];
   };
 
   # Enabled by the active model's `lmcache` field.
