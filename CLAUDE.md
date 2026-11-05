@@ -24,6 +24,7 @@ c4130 is one of the three NixOS 26.05 servers (c4130, r440, m2mini) that run the
 
 ## Stack summary (details in `hosts/c4130/vllm/CLAUDE.md`)
 - The Nix code (Python env, wrappers, `vllm`/LMCache modules, Flint build) is in the fork repo (github.com/charlie-horse/vLLM, `nix/`). `hosts/c4130/vllm/default.nix` only sets host values under `services.vllm-sm70` and `services.lmcache-sm70`.
+- After cutover: input `vllm-fork` points at github.com/charlie-horse/vllm-sm70 (main; same name and options, Flint checkpoint path unchanged). `FLASH_ATTN_V100` and `--kernel-config.sm70_skinny_moe` are dropped there for now (TODO(sm70-attn)/TODO(sm70-moe)), so vLLM uses TRITON_ATTN. Kill switches: `hosts/c4130/vllm/CLAUDE.md`, "After cutover".
 - One model runs at a time, chosen by `services.vllm-sm70.activeModel`. vLLM listens on port 8000 (`eno1` and `tailscale0`, no API key; the user relies on network policy).
 - LMCache: L1 64 GB of pinned RAM, allocated in full at startup. L2 in `/var/lib/lmcache/l2`, capped at 32 GB (`services.lmcache-sm70.l2SizeGb`, set in `hosts/c4130/vllm/default.nix`); the pruner trims it to 80% once it passes 90%.
 - Flint's weights are a Nix store path: the fixed-output checkpoint `/nix/store/0qxvf6z208m6bff62acgwfg6ajhbinpp-flint-nvfp4-modelopt`. HF-downloaded weights (the Qwen entries) live in `/var/lib/vllm/models`, owned by `vllm`. That directory has been empty since 2026-11-04 (the Qwen weights and DFlash2 drafts were deleted), so switching to a Qwen model re-downloads ~70 GB first.
