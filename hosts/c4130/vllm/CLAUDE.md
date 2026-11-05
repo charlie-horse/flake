@@ -24,7 +24,7 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
 ## Stack (fork repo `nix/`, consumed as flake input `vllm-fork`)
 - **Where things live.**
   - Fork repo (github.com/charlie-horse/vLLM): `flake.nix` exports only `packages.x86_64-linux.vllm` (= `default`, the wrapped sm_70 build) and `nixosModules.vllm` (= `default`, imports `lmcache`) + `nixosModules.lmcache`. Weights, the wheel env and the LMCache UI are internal to the modules. `nix/module.nix` (vllm service and built-in models), `nix/lmcache.nix` (LMCache server, dashboard, L2 pruner), `nix/packages-module.nix` (builds the package set once with the host's `pkgs` for both modules), `nix/package.nix` (env + wrappers), `nix/flint.nix` (sm_70 tree, converter, checkpoint), `nix/source.nix` (the serving tree's source: the repo minus `nix/`, `flake.nix`, `flake.lock`), `nix/pyenv/`, `nix/README.md`.
-  - Host (this repo): root `flake.nix` (input `vllm-fork.url = "github:charlie-horse/vLLM/latest"`, `vllm-fork.inputs.nixpkgs.follows = "nixpkgs"`; `update.yml` re-locks it daily), `hosts/c4130/vllm/default.nix` (imports `inputs.vllm-fork.nixosModules.vllm` and `./open-webui.nix`; sets only host values under `services.vllm-sm70` and `services.lmcache-sm70`), `hosts/c4130/vllm/open-webui.nix`, and this CLAUDE.md.
+  - Host (this repo): root `flake.nix` (input `vllm-fork.url = "github:charlie-horse/vLLM/latest"`; after cutover `github:charlie-horse/vllm-sm70/latest`, see "After cutover", `vllm-fork.inputs.nixpkgs.follows = "nixpkgs"`; `update.yml` re-locks it daily), `hosts/c4130/vllm/default.nix` (imports `inputs.vllm-fork.nixosModules.vllm` and `./open-webui.nix`; sets only host values under `services.vllm-sm70` and `services.lmcache-sm70`), `hosts/c4130/vllm/open-webui.nix`, and this CLAUDE.md.
   - vllm options: `services.vllm-sm70.{enable,activeModel,models,port,firewallInterfaces}`. LMCache options: `services.lmcache-sm70.{enable,package,uiPackage,user,homeStateDirectory,environment,chunkSize,port,httpPort,l1SizeGb,l2SizeGb,ui.enable,ui.port,ui.firewallInterfaces}`. The vllm module sets `enable` from the active model's `lmcache` field, `chunkSize` from `lmcacheChunkSize`, and runs it as user `vllm`. The old `c4130.vllm.activeModel` / `c4130.vllm.kvTiers.*` names still work as renamed aliases (with a warning).
   - nixpkgs is shared with the host via `follows`. pyproject-nix, uv2nix and build-system-pkgs are pinned by the fork's own `flake.lock`; bump them in the fork with `nix flake update` there.
 - `nix/pyenv/pyproject.toml` + `uv.lock`: the Python environment, built by Nix through uv2nix.
@@ -150,7 +150,27 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
   - LMCache L2 is now 32 GB live (`max_capacity_gb 32`; it was 100 until this switch).
   - Bench (Bea, single stream): 4K 176.6 / 176.6 tok/s default / greedy (ITL 5.58 ms, TTFT 0.72 s); 32K 163.9 / 162.7 (ITL 6.21 ms, TTFT 10.5 s). Math 10/10, code 5/5, needle 32K 3/3. That is the same as e66530b (176.8 / 178.2 and 162.8 / 162.7).
   - LMCache was registered and storing after the switch (4948 objects, ~31.8 GB L1 at 16:14). Mind the 1-h reaper caveat under "Gotchas".
-- The successor flake is charlie-horse/vllm-sm70: upstream vLLM v0.33 + an sm_70 patch series, with the same `services.vllm-sm70` / `services.lmcache-sm70` options. It is not deployed.
+- The successor flake is charlie-horse/vllm-sm70: upstream vLLM v0.33 + an sm_70 patch series, with the same `services.vllm-sm70` / `services.lmcache-sm70` options. It is not deployed (see "After cutover").
+
+## After cutover (charlie-horse/vllm-sm70)
+Applies once c4130 has switched to a flake commit whose `vllm-fork` input is `github:charlie-horse/vllm-sm70/latest`. Until then the sections above describe what runs.
+- **Input.** Same name, `vllm-fork`, so `hosts/c4130/vllm/default.nix` is unchanged; it follows vllm-sm70's release branch `latest`, which is fast-forwarded only after main CI, the c4130 check, the GPU gate and release sign-off on the same commit (Nix code under `nix/`, docs in its `nix/README.md`). Its input `vllm-legacy` (the old fork at `cf9492a`, with its own locked nixpkgs) is used only for the Flint checkpoint recipe; the checkpoint stays the fixed-output `/nix/store/0qxvf6z208m6bff62acgwfg6ajhbinpp-flint-nvfp4-modelopt`, so nothing re-converts.
+- **Second nixpkgs in the lock.** `vllm-legacy` brings its own nixpkgs (`c3eea5b`) and a second pyproject-build-systems (plus pyproject-nix/uv2nix) into `flake.lock`. They are only evaluated: nothing is built from them while the checkpoint path is in the store (rooted by the current generation, or substitutable from r440). Their sources are eval-time inputs, not part of any system closure, so a GC may delete them and the next eval re-fetches them.
+- **Dropped fork-only flags** (`TODO(sm70-attn)` / `TODO(sm70-moe)` in vllm-sm70's `nix/module.nix`): `--kernel-config.sm70_skinny_moe false` (Flint) and `--attention-backend FLASH_ATTN_V100` (Qwen 3.8-27B and the DFlash draft). Upstream v0.33 rejects them until the patch series adds them, so vLLM falls back to TRITON_ATTN.
+- **Kill switches.** Only `VLLM_SM70_<THING>=0` does anything (turns that sm_70 feature off); env vars can't turn features on, and other `VLLM_SM70_*` variables from the fork are ignored. Set one per model with `models.<name>.env`. Defaults/tuning go through `--additional-config '{"sm70":{...}}'`. `VLLM_PLUGINS` set to a list without `sm70` (e.g. `VLLM_PLUGINS=`) disables the sm70 plugin and runs stock vLLM.
+
+  | Variable (Flint, kept from the fork) |
+  |---|
+  | `VLLM_SM70_MODELOPT_NVFP4_GEMV` |
+  | `VLLM_SM70_FLINT_MOE_QPN_DECODE` |
+  | `VLLM_SM70_FLINT_QK_ROPE_KV` |
+  | `VLLM_SM70_FLINT_FUSED_ROUTER` |
+  | `VLLM_SM70_FLINT_SAMPLER` |
+  | `VLLM_SM70_FLINT_ATTN_FUSED_DECODE` |
+  | `VLLM_SM70_FLINT_AR_RMSNORM` |
+
+  New on this stack: `VLLM_SM70_FP8_MOE_DECODE`, `_FP8_QPN8` (new meaning, not the fork's TP4 one), `_QUANT`, `_FP8_TURBOMIND`, `_DFLASH2_EMULATION`, `_DFLASH2_VERIFIER`, `_SHARED_MOE_OVERLAP`.
+- **LMCache heartbeat.** vllm-sm70 carries the heartbeat-from-registration patch (`nix/patches/lmcache/`), which removes the 1-h reaper gotcha once its LMCache build is in place. Re-check `registered_gpu_ids` after the first switch anyway.
 
 ## State as of 2026-10-29
 - 2026-10-31: Nix code moved into the fork as a flake (input `vllm-fork`).

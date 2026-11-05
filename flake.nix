@@ -32,9 +32,14 @@
         # ---- Servers (mkServer: c4130, r440, m2mini) -------------------------
         # All on `nixpkgs` (nixos-26.05).
 
-        # c4130 vLLM (packages + nixosModules.vllm/lmcache). Tracks branch
-        # `latest` of the fork; `nix flake update vllm-fork` to move it.
-        vllm-fork.url = "github:charlie-horse/vLLM/latest";
+        # c4130 vLLM (packages + nixosModules.vllm/lmcache). After cutover:
+        # charlie-horse/vllm-sm70 (upstream vLLM + sm_70 patch series), a
+        # drop-in for the old fork (github:charlie-horse/vLLM), same options.
+        # The input keeps the name `vllm-fork` so hosts/c4130 is unchanged.
+        # Tracks the release branch `latest`, fast-forwarded only after main
+        # CI, the c4130 check, the GPU gate and release sign-off (same commit).
+        # `nix flake update vllm-fork` to move it.
+        vllm-fork.url = "github:charlie-horse/vllm-sm70/latest";
         vllm-fork.inputs.nixpkgs.follows = "nixpkgs";
 
         # m2mini's Asahi support (pinned rev; bump deliberately).
