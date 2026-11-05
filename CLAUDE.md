@@ -14,7 +14,7 @@ c4130 is one of the three NixOS 26.05 servers (c4130, r440, m2mini) that run the
 ## Deploying
 - Change or re-lock in this repo on a branch → CI → merge. Then on the host: `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#<host>` (m2mini adds `--override-input m2mini-vendorfw path:/boot/vendorfw`).
 - Never run `nix flake update` or edit files inside `/etc/nixos` on a host.
-- **c4130 intentionally lags main** until the next real vLLM change, and a GC of old generations and checkpoints must run before any c4130 switch (its root disk is ~91% full). Details in `docs/cluster-handoff.md`.
+- **c4130 runs main** (`8a54e1f`, fork `cf9492a`) since 2026-11-04 16:06 EST, as system-42. Its root disk is ~41% full (207 GB free on 2026-11-05) after the 2026-11-04 GC, so a switch needs no GC first. Still GC the old generation and checkpoint after a switch that replaces the checkpoint (23 GB each).
 - Builds happen on r440 only: c4130 has `max-jobs = 0`; r440 builds 2 jobs × 8 cores, with nix-daemon capped at 36G and zram swap.
 
 ## Hardware
@@ -26,7 +26,8 @@ c4130 is one of the three NixOS 26.05 servers (c4130, r440, m2mini) that run the
 - The Nix code (Python env, wrappers, `vllm`/LMCache modules, Flint build) is in the fork repo (github.com/charlie-horse/vLLM, `nix/`). `hosts/c4130/vllm/default.nix` only sets host values under `services.vllm-sm70` and `services.lmcache-sm70`.
 - One model runs at a time, chosen by `services.vllm-sm70.activeModel`. vLLM listens on port 8000 (`eno1` and `tailscale0`, no API key; the user relies on network policy).
 - LMCache: L1 64 GB of pinned RAM, allocated in full at startup. L2 in `/var/lib/lmcache/l2`, capped at 32 GB (`services.lmcache-sm70.l2SizeGb`, set in `hosts/c4130/vllm/default.nix`); the pruner trims it to 80% once it passes 90%.
-- Weights live in `/var/lib/vllm/models`, owned by `vllm`. Check scripts are in `~/archive/scripts` on c4130 (`verify_vllm.py`, `bench_vllm.py`, `kvtier_test.py`, …).
+- Flint's weights are a Nix store path: the fixed-output checkpoint `/nix/store/0qxvf6z208m6bff62acgwfg6ajhbinpp-flint-nvfp4-modelopt`. HF-downloaded weights (the Qwen entries) live in `/var/lib/vllm/models`, owned by `vllm`. That directory has been empty since 2026-11-04 (the Qwen weights and DFlash2 drafts were deleted), so switching to a Qwen model re-downloads ~70 GB first.
+- Check scripts are in `~/archive/scripts` on c4130 (`verify_vllm.py`, `bench_vllm.py`, `kvtier_test.py`, …). `bench_vllm.py` is broken for Flint: it counts only `content` tokens, and Flint always reasons first.
 - Old `/etc/nixos` backups are in `~/archive/nixos-backups/` on each host.
 
 ## Gotchas learned the hard way
@@ -35,5 +36,6 @@ c4130 is one of the three NixOS 26.05 servers (c4130, r440, m2mini) that run the
 - **Speculative decoding.** DFlash2 drafts (`incoai/*-DFlash2`) gave +70% decode on the 3.6-35B (111 vs 66 tok/s at 4K). They cost KV space.
 - **Stopping the service.** `Restart=on-failure` brings `vllm` back after a crash or kill. Use `systemctl kill --signal=SIGKILL vllm` followed by `systemctl stop vllm`.
 - **pgrep.** Over SSH, `pgrep -f <pattern>` matches its own `bash -c` command line; use `ps -ef | grep '[x]yz'` instead.
-- **Thinking default.** 1Cat defaults `enable_thinking` to false. The user currently keeps that default, so requests must send `chat_template_kwargs.enable_thinking=true` to get reasoning.
+- **Thinking.** Flint always reasons: its chat template ends at `<|assistant|>` and has no `enable_thinking` switch, so `chat_template_kwargs.enable_thinking` does nothing. With the glm47 reasoning parser, the reasoning comes back in `reasoning_content`. The Qwen entries follow 1Cat's default (`enable_thinking` false); send `chat_template_kwargs.enable_thinking=true` there to get reasoning.
+- **LMCache stops after 1 h if a vllm start sees no long prompt.** In LMCache 0.5.6 each vLLM worker starts pinging the cache server only on its first store (a prompt of at least one 256-token chunk). If none arrives within 1 h of a vllm start, the server reaps both GPU instances (`Reaped GPU instance …: silent for 3600.1s (pinged=False)` in `journalctl -u vllm-lmcache`). After that every store is rejected (`Rejecting STORE for unregistered GPU instance`) and nothing is reused until vllm restarts. A busy server is unaffected. Check with `curl -s 127.0.0.1:8080/status`: `registered_gpu_ids` should list 2 ids. Workaround: restart only `vllm` and send one ≥256-token prompt within the hour. The fix (start the heartbeat at registration) is in the new flake, charlie-horse/vllm-sm70 PR #10; it is not in the fork.
 - **CacheBlend** doesn't apply to hybrid GDN models; LMCache only does prefix reuse there.
