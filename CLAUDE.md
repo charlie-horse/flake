@@ -20,7 +20,7 @@ c4130 is one of the three NixOS 26.05 servers (c4130, r440, m2mini) that run the
 ## Hardware
 - 2× Tesla V100-PCIe-32GB, both sm_70, on the same PCIe switch with no NVLink. Driver 580, the last driver branch for Volta.
 - 48 threads, 125 GB RAM, and SATA SSD RAID1.
-- **CUDA 13 can't target sm_70.** Anything that compiles or ships GPU kernels must use CUDA 12.x (the stack uses 12.8). No bf16 support, so run everything as `--dtype half`.
+- **CUDA 13 can't target sm_70.** Anything that compiles or ships GPU kernels must use CUDA 12.x (the fork stack uses 12.8; after cutover vllm-sm70 uses 12.6, torch 2.14.0+cu126). No bf16 support, so run everything as `--dtype half`.
 
 ## Stack summary (details in `hosts/c4130/vllm/CLAUDE.md`)
 - The Nix code (Python env, wrappers, `vllm`/LMCache modules, Flint build) is in the fork repo (github.com/charlie-horse/vLLM, `nix/`). `hosts/c4130/vllm/default.nix` only sets host values under `services.vllm-sm70` and `services.lmcache-sm70`.
