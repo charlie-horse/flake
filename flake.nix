@@ -36,10 +36,10 @@
         # charlie-horse/vllm-sm70 (upstream vLLM + sm_70 patch series), a
         # drop-in for the old fork (github:charlie-horse/vLLM), same options.
         # The input keeps the name `vllm-fork` so hosts/c4130 is unchanged.
-        # Tracks `main` for now; becomes `github:charlie-horse/vllm-sm70/latest`
-        # (release branch, fast-forwarded after CI + the c4130 check) once that
-        # branch exists. `nix flake update vllm-fork` to move it.
-        vllm-fork.url = "github:charlie-horse/vllm-sm70";
+        # Tracks the release branch `latest`, fast-forwarded only after main
+        # CI, the c4130 check, the GPU gate and release sign-off (same commit).
+        # `nix flake update vllm-fork` to move it.
+        vllm-fork.url = "github:charlie-horse/vllm-sm70/latest";
         vllm-fork.inputs.nixpkgs.follows = "nixpkgs";
 
         # m2mini's Asahi support (pinned rev; bump deliberately).
