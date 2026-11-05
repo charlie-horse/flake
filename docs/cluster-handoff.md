@@ -20,17 +20,16 @@ by the user, who doesn't expect a significant gain. sda2 stays untouched.
 Not applied either: a localhost etcd metrics listener and BFQ/IO weights.
 The analysis and read-only runbook are in that branch's history.
 
-**c4130 intentionally lags main (2026-11-04).** It runs `9bc080e`'s
-toplevel (`chl9lk9m…`, vllm-fork e66530b). From `2790d30` on, main locks
-vllm-fork at c3c4109 or later, which changes the vLLM env (LMCache
-MAX_JOBS fix). Switching c4130 from main therefore rebuilds both
-1cat-vllm-flint trees and LMCache (~2 h on r440) and re-converts the
-~23 GB checkpoint, and c4130 is at 92% disk. Switch it only with the next
-real vLLM change, after a GC of old generations and checkpoints. Until
-then mdmonitor keeps failing there (no MAILADDR/PROGRAM). Branch
-`claude/c4130-mdadm-only` (main + vllm-fork held at e66530b) carries just
-that fix and /etc/nix/machines maxJobs 2 with no rebuild. Note that
-update.yml re-locks vllm-fork to `latest` daily.
+**c4130 runs main (since 2026-11-04 16:06 EST).** It was switched to
+`8a54e1f` (vllm-fork cf9492a) as system-42 (`shjjhcm4…`). From fork 647bceb
+on, the Flint checkpoint is fixed-output
+(`0qxvf6z208m6bff62acgwfg6ajhbinpp-flint-nvfp4-modelopt`). The switch
+fetched it from r440's cache and nothing re-converted. It had lagged on
+`9bc080e` (fork e66530b) because c3c4109's input-addressed checkpoint would
+have re-converted; main was re-locked to cf9492a (PR #2) to avoid that. The
+same switch brought the mdmonitor fix (mdmonitor is no longer failed) and
+/etc/nix/machines maxJobs 2. The root disk is at 41% (207 GB free). Note
+that update.yml re-locks vllm-fork to `latest` daily.
 
 - Flux syncs `main` (first sync at `59ae3f2`): GitRepository and
   Kustomization Ready. podinfo runs 3/3 (r440 ×2, m2mini arm64); the NVIDIA
