@@ -13,7 +13,7 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
 
 ## Deploying
 - Every change, including a model entry or a fork re-lock, goes through this repo: branch → CI → merge. Then on c4130: `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#c4130`. Never run `nix flake update` or edit files inside `/etc/nixos` on the host.
-- **c4130 runs main** (`8a54e1f`, fork `cf9492a`) since 2026-11-04 16:06 EST (system-42). Its root disk is ~41% full (207 GB free on 2026-11-05), so a switch needs no GC first. Still GC the old generation and checkpoint after a switch that replaces the checkpoint (23 GB each).
+- **c4130 runs main** (`8a54e1f`, fork `cf9492a`) since 2026-11-04 16:06 EST (system-42). Its root disk is ~41% full (207 GB free on 2026-11-05). GC old generations before any c4130 switch (Charlie's rule); with the disk at 41% it's quick, and after a switch that replaces the checkpoint, GC the old 23 GB path.
 - Builds happen on r440 only (see "Remote builder and cache"): c4130 has `max-jobs = 0`; r440 builds 2 jobs × 8 cores, with nix-daemon capped at 36G and zram swap.
 
 ## Hardware
