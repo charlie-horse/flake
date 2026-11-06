@@ -345,3 +345,81 @@ jobs:
           done
           echo "::error::could not push k8s/rendered"
           exit 1
+
+  # ------------------------------------------------------------------------
+  # Gitless GitOps: the same render, pushed to ghcr.io as a signed OCI
+  # artifact (what an OCIRepository reads). Tags: sha-<commit> (immutable,
+  # for pinning/rollback) and main (moved only after the signature exists).
+  # Runs on every push to main; skips when the artifact under `main`
+  # already has identical contents.
+  publish-oci:
+    name: Push manifests to ghcr (OCI)
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_dispatch'
+          && github.ref == 'refs/heads/main')
+    needs: [secrets-guard, flake-check, eval-hosts, k8s-manifests]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io/<owner>/flake-manifests
+      id-token: write # cosign keyless (GitHub OIDC -> Fulcio)
+    env:
+      ARTIFACT: ghcr.io/${{ github.repository_owner }}/flake-manifests
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: k8s-rendered
+          path: rendered
+
+      # flux + cosign from the flake's own nixpkgs (pinned by flake.lock).
+      - name: Install flux and cosign
+        run: |
+          set -euo pipefail
+          nix build --no-link --print-out-paths --inputs-from . \
+            nixpkgs#fluxcd nixpkgs#cosign \
+            | sed 's|$|/bin|' >> "$GITHUB_PATH"
+
+      - name: Log in to ghcr.io
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+
+      - name: Push, sign, tag main
+        env:
+          SHA: ${{ github.sha }}
+          SOURCE: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+          flux version --client
+          # Unchanged contents: nothing to publish (exit 0 = identical).
+          if flux diff artifact "oci://$ARTIFACT:main" --path=rendered \
+            >/dev/null 2>&1; then
+            echo "oci://$ARTIFACT:main already matches; skipping" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          digest=$(flux push artifact "oci://$ARTIFACT:sha-$SHA" \
+            --path=rendered \
+            --source="$SOURCE" \
+            --revision="main@sha1:$SHA" \
+            --annotations="org.opencontainers.image.description=k8s/ render (catenix)" \
+            --output=json | jq -r .digest)
+          # Sign the digest before `main` points at it, so the cluster never
+          # sees an unsigned main.
+          cosign sign --yes "$ARTIFACT@$digest"
+          flux tag artifact "oci://$ARTIFACT:sha-$SHA" --tag main
+          {
+            echo "### OCI artifact"
+            echo
+            echo "\`$ARTIFACT@$digest\` (tags \`sha-$SHA\`, \`main\`), signed"
+          } >> "$GITHUB_STEP_SUMMARY"
