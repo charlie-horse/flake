@@ -1,9 +1,10 @@
 # What Flux reconciles: the signed OCI artifact CI pushes on every merge
-# to main (.github/workflows/k8s.yml, job publish-oci):
-# oci://ghcr.io/charlie-horse/flake-manifests, tag `main`. It holds the
-# tree this directory renders, Flux itself (40-flux-system) and these two
-# objects included, so Flux keeps itself up to date and prunes what is
-# removed. Public package: no secretRef. Cosign keyless signatures are
+# to main (.github/workflows/k8s.yml, job publish-oci) to the in-cluster
+# Zot (35-zot): oci://zot.zot.svc.cluster.local:5000/flake-manifests, tag
+# `main`. It holds the tree this directory renders, Flux itself
+# (40-flux-system) and these two objects included, so Flux keeps itself up
+# to date and prunes what is removed. Anonymous read: no secretRef. Plain
+# HTTP inside the cluster (`insecure`). Cosign keyless signatures are
 # verified against the k8s.yml workflow on refs/heads/main.
 #
 # Rollback/pin: set `ref.tag = "sha-<commit>"` (or `ref.digest`).
@@ -45,7 +46,8 @@ in
   resources."source.toolkit.fluxcd.io".v1.OCIRepository.${name} = {
     metadata = { inherit namespace; };
     spec = {
-      url = "oci://ghcr.io/charlie-horse/flake-manifests";
+      url = "oci://zot.zot.svc.cluster.local:5000/flake-manifests";
+      insecure = true;
       ref.tag = "main";
       interval = "5m";
       verify = {

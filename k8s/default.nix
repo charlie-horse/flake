@@ -71,6 +71,7 @@ let
     "10-flannel" = ./components/flannel.nix;
     "20-coredns" = ./components/coredns.nix;
     "30-nvidia-device-plugin" = ./components/nvidia-device-plugin.nix;
+    "35-zot" = ./components/zot.nix;
     "40-flux-system" = ./components/flux-system.nix;
     "50-flux-sync" = ./components/flux-sync.nix;
     "90-podinfo" = ./components/podinfo.nix;
