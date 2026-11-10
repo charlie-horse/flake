@@ -44,4 +44,12 @@ in
     version = "2026.8.5";
     hash = "sha256-AOWfrkxAKCFu1gxbWOTpUa5EJ+WzfSimHkRTyOjAqM8=";
   };
+
+  # Headlamp 0.46.0 (Kubernetes web UI; OIDC via authentik, no Ingress).
+  headlamp = fetch {
+    repo = "https://kubernetes-sigs.github.io/headlamp/";
+    name = "headlamp";
+    version = "0.46.0";
+    hash = "sha256-Jw7KWHrHKnRnMXub2CGeEIYty9yZdwf+WbjDOZurtUM=";
+  };
 }
