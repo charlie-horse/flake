@@ -186,11 +186,33 @@ nix shell nixpkgs#kubectl nixpkgs#openssl -c bash -ec '
 
 ### Reaching it
 
-There is no ingress yet: Service `authentik-server` is ClusterIP:80.
+Public: **https://auth.neuros.is** (`cluster.authentik.host`), through a
+**dedicated** Cloudflare tunnel, `solaris-auth`
+(`cac462c4-7420-4ff3-9a40-c090a4e18737`). It runs on r440
+(`hosts/r440/cloudflared.nix`), separate from c4130's chat tunnel. Through
+a local nginx (below) it forwards to Service `authentik-server` at its
+fixed ClusterIP (`cluster.authentik.serviceIP`, 10.96.0.20, in the static
+band of the service CIDR), via r440's kube-proxy. authentik's pods also run on
+r440, so SSO does not depend on c4130. The credential is
+`r440:/var/lib/secrets/cloudflared/<tunnel>.json` (root, 0400). The DNS record
+is a proxied CNAME to that tunnel:
+`cloudflared tunnel route dns --overwrite-dns <tunnel> auth.neuros.is`
+(charlie's `~/.cloudflared/cert.pem` on c4130).
+
+Between cloudflared and the Service sits an nginx on `127.0.0.1:9180`
+(r440). It *replaces* `X-Forwarded-For` and `X-Real-IP` with
+Cloudflare's `Cf-Connecting-Ip`, which the edge always sets and a client
+cannot forge. Cloudflare itself appends to a client-sent `X-Forwarded-For`,
+and authentik reads the leftmost entry, so without nginx a client could pick
+the IP authentik logs. authentik trusts `X-Forwarded-*` only from r440's
+addresses (`AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS`). The tunnel is locally
+managed (NixOS), so none of this is configured in the Cloudflare dashboard.
+
+The admin UI is public too: give `akadmin` a strong password plus MFA, and
+add real users rather than sharing it. Without the tunnel:
 
 ```sh
 kubectl -n authentik port-forward svc/authentik-server 9000:80
-# http://localhost:9000/  (akadmin + the bootstrap password)
 ```
 
 ### Cluster login (kube-apiserver OIDC)
@@ -205,29 +227,27 @@ creates:
 - the application `kubernetes`, which only `cluster-admins` may use.
 
 On the apiserver, usernames and groups get the `oidc:` prefix, and
-`05-rbac` binds `oidc:cluster-admins` to `cluster-admin`. To turn it on:
+`05-rbac` binds `oidc:cluster-admins` to `cluster-admin`. It is on: the
+`oidc` entry in `cluster/definition.nix` sets the issuer
+`https://auth.neuros.is/application/o/kubernetes/` and the audience
+`kubernetes` on every control plane (`clusterNode.oidc`). To turn it off,
+remove that entry and switch r440 and c4130. The apiservers fetch the
+discovery document and JWKS through the public URL (Cloudflare → r440 tunnel).
+If authentik or the tunnel is down, OIDC logins fail and everything else
+keeps working. The apiserver starts anyway, and its JWT authenticator retries
+in the background.
 
-1. Give authentik an HTTPS URL that the apiservers (r440, c4130) and your
-   laptop can both reach, with a certificate they trust. The issuer is
-   `https://<host>/application/o/kubernetes/`, trailing slash included.
-2. Set it on the control planes (e.g. in `modules/cluster/control-plane.nix`
-   or per host):
-   `clusterNode.oidc = { enable = true; issuerUrl = "https://<host>/application/o/kubernetes/"; };`
-   (`certificateAuthority` if the cert is not publicly trusted).
-3. Branch → CI → merge, then switch r440, then c4130 (GC first), one at a
-   time, with the etcd health check after each (docs/cluster-handoff.md).
-   The apiserver starts even if the issuer is unreachable: the JWT
-   authenticator retries in the background.
-4. Add yourself to `cluster-admins` in authentik, and on your machine:
+To log in, add yourself to `cluster-admins` in authentik, then on your
+machine:
 
-   ```sh
-   kubectl krew install oidc-login   # or nixpkgs#kubelogin-oidc
-   kubectl config set-credentials solaris-oidc \
-     --exec-api-version=client.authentication.k8s.io/v1 \
-     --exec-command=kubectl --exec-arg=oidc-login --exec-arg=get-token \
-     --exec-arg=--oidc-issuer-url=https://<host>/application/o/kubernetes/ \
-     --exec-arg=--oidc-client-id=kubernetes \
-     --exec-arg=--oidc-extra-scope=profile --exec-arg=--oidc-extra-scope=email \
-     --exec-arg=--oidc-extra-scope=offline_access
-   kubectl --user=solaris-oidc auth whoami   # oidc:<username>, groups oidc:cluster-admins
-   ```
+```sh
+kubectl krew install oidc-login   # or nixpkgs#kubelogin-oidc
+kubectl config set-credentials solaris-oidc \
+  --exec-api-version=client.authentication.k8s.io/v1 \
+  --exec-command=kubectl --exec-arg=oidc-login --exec-arg=get-token \
+  --exec-arg=--oidc-issuer-url=https://auth.neuros.is/application/o/kubernetes/ \
+  --exec-arg=--oidc-client-id=kubernetes \
+  --exec-arg=--oidc-extra-scope=profile --exec-arg=--oidc-extra-scope=email \
+  --exec-arg=--oidc-extra-scope=offline_access
+kubectl --user=solaris-oidc auth whoami   # oidc:<username>, groups oidc:cluster-admins
+```

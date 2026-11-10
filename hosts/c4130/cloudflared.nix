@@ -1,4 +1,5 @@
 # Cloudflare tunnel: https://chat.neuros.is -> Open WebUI (localhost:8082).
+# (auth.neuros.is has its own tunnel, on r440: hosts/r440/cloudflared.nix.)
 #
 # The tunnel credential (the JSON `cloudflared tunnel create` writes) is a
 # runtime secret: it is referenced by a STRING path, so it never enters the
