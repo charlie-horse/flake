@@ -35,6 +35,8 @@
         # c4130 vLLM (packages + nixosModules.vllm/lmcache). After cutover:
         # charlie-horse/vllm-sm70 (upstream vLLM + sm_70 patch series), a
         # drop-in for the old fork (github:charlie-horse/vLLM), same options.
+        # No nixpkgs.follows: vllm-sm70 builds with its own pinned nixpkgs, so a
+        # host nixpkgs bump (update.yml) cannot change the gated build.
         # The input keeps the name `vllm-fork` so hosts/c4130 is unchanged.
         # Pinned to cef0f9e (C1 passed, build aczb9zwk) until `latest` is
         # fast-forwarded to a gated commit; then point this at .../latest again.
@@ -42,7 +44,6 @@
         # CI, the c4130 check, the GPU gate and release sign-off, same commit.)
         # `nix flake update vllm-fork` to move it.
         vllm-fork.url = "github:charlie-horse/vllm-sm70/cef0f9ef9c94ec21ba18d68b280c4d1dde856166";
-        vllm-fork.inputs.nixpkgs.follows = "nixpkgs";
 
         # m2mini's Asahi support (pinned rev; bump deliberately).
         apple-silicon-m2mini.url =
