@@ -36,7 +36,7 @@ spec:
       - args:
         - -in-cluster
         - -in-cluster-context-name=main
-        - -plugins-dir=/headlamp/plugins
+        - -plugins-dir=/build/plugins
         - -session-ttl=86400
         - -oidc-client-id=$(OIDC_CLIENT_ID)
         - -oidc-client-secret=$(OIDC_CLIENT_SECRET)
@@ -101,7 +101,26 @@ spec:
           runAsUser: 100
           seccompProfile:
             type: RuntimeDefault
+        volumeMounts:
+        - mountPath: /build/plugins
+          name: headlamp-plugins
       hostUsers: true
+      initContainers:
+      - command:
+        - /bin/sh -c mkdir -p /build/plugins &&
+        - cp -r /plugins/* /build/plugins &&
+        - chown -R 100:101 /build
+        image: ghcr.io/headlamp-k8s/headlamp-plugin-flux:latest
+        imagePullPolicy: Always
+        name: headlamp-plugin-flux
+        securityContext:
+          privileged: false
+          runAsGroup: 0
+          runAsNonRoot: false
+          runAsUser: 0
+        volumeMounts:
+        - mountPath: /build/plugins
+          name: headlamp-plugins
       nodeSelector:
         kubernetes.io/arch: amd64
       securityContext:
@@ -109,6 +128,28 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: headlamp
+      volumes:
+      - name: headlamp-plugins
+        persistentVolumeClaim:
+          claimName: headlamp
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/version: 0.46.0
+    helm.sh/chart: headlamp-0.46.0
+  name: headlamp
+  namespace: headlamp
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
 ---
 apiVersion: v1
 kind: Service
