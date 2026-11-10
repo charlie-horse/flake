@@ -25,5 +25,6 @@
     ./vllm
     ./builder.nix
     ./cloudflared.nix
+    ./gpu-window.nix
   ];
 }

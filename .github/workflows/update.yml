@@ -3,7 +3,7 @@ permissions:
   contents: write
 on:
   schedule:
-    - cron: 0 4 * * * # 00:00 EST
+    - cron: 0 4 * * Mon,Fri # 00:00 EST
   workflow_dispatch:
 
 jobs:

@@ -68,11 +68,13 @@ let
   components = {
     "00-runtime-classes" = ./components/runtime-classes.nix;
     "05-rbac" = ./components/rbac.nix;
+    "07-local-storage" = ./components/local-storage.nix;
     "10-flannel" = ./components/flannel.nix;
     "20-coredns" = ./components/coredns.nix;
     "30-nvidia-device-plugin" = ./components/nvidia-device-plugin.nix;
     "40-flux-system" = ./components/flux-system.nix;
     "50-flux-sync" = ./components/flux-sync.nix;
+    "60-authentik" = ./components/authentik.nix;
     "90-podinfo" = ./components/podinfo.nix;
   };
 

@@ -33,9 +33,13 @@ let
     kubeconfig "kube-controller-manager" "controller-manager";
   schedulerKubeconfig = kubeconfig "kube-scheduler" "scheduler";
 
-  # OIDC (DISABLED, not wired until clusterNode.oidc.enable = true). Kept
-  # from r440's old k8s.nix so it can be switched on later; the issuer still
-  # names the old tailnet and needs updating first.
+  # OIDC (off until clusterNode.oidc.enable = true): authentik's provider
+  # `kubernetes` (blueprint in k8s/components/authentik.nix). Usernames and
+  # groups are prefixed `oidc:`, so a token can never claim a built-in
+  # identity (system:masters, system:nodes, ...); RBAC binds
+  # oidc:cluster-admins (k8s/components/rbac.nix). x509 client certs and
+  # service-account tokens never depend on the issuer: if authentik is down
+  # only OIDC logins fail, and the admin cert is the break-glass.
   oidc = cfg.oidc;
   authenticationConfig = (pkgs.formats.yaml { }).generate
     "authentication-config.yaml" {
@@ -46,6 +50,8 @@ let
           issuer = {
             url = oidc.issuerUrl;
             audiences = oidc.audiences;
+          } // lib.optionalAttrs (oidc.certificateAuthority != null) {
+            inherit (oidc) certificateAuthority;
           };
           claimMappings = {
             uid.claim = "sub";
@@ -58,15 +64,15 @@ let
               prefix = "oidc:";
             };
           };
+          # (The signature algorithm is a JOSE header, not a claim: CEL
+          # cannot see it. The apiserver accepts the asymmetric algorithms
+          # of the issuer's JWKS; authentik signs RS256 with its
+          # self-signed key pair.)
           claimValidationRules = [
             {
               message = "token is expired";
               expression =
                 "claims.exp > (has(claims.nbf) ? claims.nbf : claims.iat)";
-            }
-            {
-              message = "invalid token signature algorithm";
-              expression = "claims.alg in [\"EdDSA\"]";
             }
           ];
         }
@@ -80,23 +86,43 @@ in
       default = false;
       description = ''
         Pass an AuthenticationConfiguration (JWT/OIDC) to kube-apiserver.
-        Off: OIDC is not wired yet.
+        Needs issuerUrl.
       '';
     };
     issuerUrl = mkOption {
-      type = types.str;
-      # From r440's old k8s.nix (old tailnet name): update before enabling.
-      default = "https://oidc.gaur-dorian.ts.net";
-      description = "OIDC issuer URL.";
+      type = types.nullOr types.str;
+      default = null;
+      example = "https://auth.example.org/application/o/kubernetes/";
+      description = ''
+        OIDC issuer URL, byte for byte the `iss` of the tokens. authentik's
+        per-provider issuer is https://<host>/application/o/<slug>/ (with
+        the trailing slash). The apiserver fetches its discovery document
+        and JWKS over HTTPS.
+      '';
     };
     audiences = mkOption {
       type = types.listOf types.str;
-      default = [ "dcf0a4eb-4c5d-4f7b-a1a0-50aa566eb727" ];
+      default = [ "kubernetes" ];
       description = "Accepted token audiences (OIDC client ids).";
+    };
+    certificateAuthority = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = ''
+        PEM CA bundle for the issuer's TLS certificate. null: the system
+        roots (enough for a publicly trusted certificate).
+      '';
     };
   };
 
   config = lib.mkIf (cfg.enable && lib.elem "controlPlane" cfg.activeRoles) {
+    assertions = [
+      {
+        assertion = oidc.enable -> oidc.issuerUrl != null;
+        message = "clusterNode.oidc.enable needs clusterNode.oidc.issuerUrl.";
+      }
+    ];
+
     services.kubernetes.apiserver = {
       enable = true;
       advertiseAddress = node.lanIP;

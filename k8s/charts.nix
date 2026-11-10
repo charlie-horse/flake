@@ -35,4 +35,13 @@ in
     version = "0.20.1";
     hash = "sha256-zahn8zSCHlPguERweETGkcrZ43q39zPGZEiJzYtHyVw=";
   };
+
+  # authentik 2026.8.5 (server + worker; the bundled postgresql subchart is
+  # disabled, components/authentik.nix runs its own). No Redis since 2025.10.
+  authentik = fetch {
+    repo = "https://charts.goauthentik.io";
+    name = "authentik";
+    version = "2026.8.5";
+    hash = "sha256-AOWfrkxAKCFu1gxbWOTpUa5EJ+WzfSimHkRTyOjAqM8=";
+  };
 }
