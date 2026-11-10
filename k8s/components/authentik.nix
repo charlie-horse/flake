@@ -485,6 +485,15 @@ let
   # runs as `authentik` (uid 1000), so both meet `restricted`.
   common = {
     replicas = lib.length (lib.attrNames cluster.nodes);
+    # One per node (hard anti-affinity) leaves no node for a surge pod, and
+    # the old pod would never go: replace one at a time instead.
+    deploymentStrategy = {
+      type = "RollingUpdate";
+      rollingUpdate = {
+        maxSurge = 0;
+        maxUnavailable = 1;
+      };
+    };
     # Every node's taints (c4130: nvidia.com/gpu=vllm), so one lands on each.
     tolerations = lib.unique (
       lib.concatMap (
