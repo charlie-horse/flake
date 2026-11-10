@@ -77,7 +77,6 @@ let
     "55-cloudflared" = ./components/cloudflared.nix;
     "60-authentik" = ./components/authentik.nix;
     "65-headlamp" = ./components/headlamp.nix;
-    "90-podinfo" = ./components/podinfo.nix;
   };
 
   evalComponent =
