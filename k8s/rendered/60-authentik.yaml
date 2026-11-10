@@ -60,7 +60,7 @@ spec:
         - name: AUTHENTIK_ERROR_REPORTING__ENABLED
           value: "false"
         - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
-          value: 10.0.0.239/32,10.244.0.1/32,127.0.0.1/32,::1/128
+          value: 10.244.0.0/31,10.244.1.0/31,10.244.2.0/31,127.0.0.1/32,::1/128,10.0.0.95/32,10.0.0.147/32,10.0.0.239/32
         - name: AUTHENTIK_LOG_LEVEL
           value: info
         - name: AUTHENTIK_POSTGRESQL__HOST
@@ -184,7 +184,7 @@ spec:
         - name: AUTHENTIK_ERROR_REPORTING__ENABLED
           value: "false"
         - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
-          value: 10.0.0.239/32,10.244.0.1/32,127.0.0.1/32,::1/128
+          value: 10.244.0.0/31,10.244.1.0/31,10.244.2.0/31,127.0.0.1/32,::1/128,10.0.0.95/32,10.0.0.147/32,10.0.0.239/32
         - name: AUTHENTIK_LOG_LEVEL
           value: info
         - name: AUTHENTIK_POSTGRESQL__HOST
