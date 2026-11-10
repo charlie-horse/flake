@@ -576,17 +576,17 @@
         "vllm-legacy": "vllm-legacy"
       },
       "locked": {
-        "lastModified": 1793880642,
-        "narHash": "sha256-7S9ARXaBsQNSiv/D7VFCvnw6vNUSl4FjQTTBeMQbXfo=",
+        "lastModified": 1794217415,
+        "narHash": "sha256-OXqXTQlhBFh63Pc2aCGxnci49BFYQW5QCUX/0MMOjVw=",
         "owner": "charlie-horse",
         "repo": "vllm-sm70",
-        "rev": "3869cd6f04dce6454f728d45ae58411672a0ec4b",
+        "rev": "cef0f9ef9c94ec21ba18d68b280c4d1dde856166",
         "type": "github"
       },
       "original": {
         "owner": "charlie-horse",
-        "ref": "latest",
         "repo": "vllm-sm70",
+        "rev": "cef0f9ef9c94ec21ba18d68b280c4d1dde856166",
         "type": "github"
       }
     },
