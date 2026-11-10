@@ -411,6 +411,18 @@ in
           AUTHENTIK_POSTGRESQL__USER = db.user;
           AUTHENTIK_LOG_LEVEL = "info";
           AUTHENTIK_ERROR_REPORTING__ENABLED = "false";
+          # Honour X-Forwarded-For/-Proto only from the tunnel (cloudflared on
+          # c4130 -> kube-proxy): c4130's LAN IP and its flannel address
+          # (10.244.1.0, first IP of its podCIDR), plus loopback for the
+          # healthchecks. authentik's default trusts all of 10/8, so any pod
+          # or LAN host could forge client IPs. -Proto must stay trusted from
+          # the tunnel, or the issuer would be http://.
+          AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS = lib.concatStringsSep "," [
+            "${cluster.nodes.c4130.lanIP}/32"
+            "10.244.1.0/32"
+            "127.0.0.1/32"
+            "::1/128"
+          ];
         };
         # Only secrets live there; everything else is global.env above.
         authentik.existingSecret.secretName = secretName;
