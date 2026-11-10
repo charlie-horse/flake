@@ -101,7 +101,7 @@ in
 
         volumes = [{
           name = "headlamp-plugins";
-          emptyDir = "{}";
+          emptyDir = {};
         }];
 
         volumeMounts = [{
