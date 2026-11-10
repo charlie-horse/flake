@@ -33,7 +33,7 @@ let
     kubeconfig "kube-controller-manager" "controller-manager";
   schedulerKubeconfig = kubeconfig "kube-scheduler" "scheduler";
 
-  # OIDC (off until clusterNode.oidc.enable = true): authentik's provider
+  # OIDC (on when cluster/definition.nix has `oidc`): authentik's provider
   # `kubernetes` (blueprint in k8s/components/authentik.nix). Usernames and
   # groups are prefixed `oidc:`, so a token can never claim a built-in
   # identity (system:masters, system:nodes, ...); RBAC binds
@@ -83,7 +83,8 @@ in
   options.clusterNode.oidc = {
     enable = mkOption {
       type = types.bool;
-      default = false;
+      default = cluster ? oidc;
+      defaultText = "whether cluster/definition.nix has `oidc`";
       description = ''
         Pass an AuthenticationConfiguration (JWT/OIDC) to kube-apiserver.
         Needs issuerUrl.
@@ -91,7 +92,8 @@ in
     };
     issuerUrl = mkOption {
       type = types.nullOr types.str;
-      default = null;
+      default = cluster.oidc.issuerUrl or null;
+      defaultText = "cluster.oidc.issuerUrl or null";
       example = "https://auth.example.org/application/o/kubernetes/";
       description = ''
         OIDC issuer URL, byte for byte the `iss` of the tokens. authentik's
@@ -102,7 +104,8 @@ in
     };
     audiences = mkOption {
       type = types.listOf types.str;
-      default = [ "kubernetes" ];
+      default = cluster.oidc.audiences or [ "kubernetes" ];
+      defaultText = "cluster.oidc.audiences or [ \"kubernetes\" ]";
       description = "Accepted token audiences (OIDC client ids).";
     };
     certificateAuthority = mkOption {

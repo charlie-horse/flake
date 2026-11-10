@@ -26,14 +26,19 @@
 # Pod security: the namespace enforces `baseline` (postgres starts as
 # root) and warns on `restricted`; server and worker meet `restricted`.
 #
-# Not exposed outside the cluster yet: Service authentik-server
-# (ClusterIP, port 80). To reach the UI:
+# Public at https://auth.neuros.is (cluster.authentik.host): the
+# Cloudflare tunnel on c4130 (hosts/c4130/cloudflared.nix) forwards to
+# Service authentik-server at the fixed ClusterIP cluster.authentik.serviceIP
+# (port 80), through c4130's kube-proxy. ClusterIP is immutable, so that
+# Service carries Flux's force annotation (recreated, not patched, if the
+# IP ever changes). From inside the tailnet/LAN without the tunnel:
 #   kubectl -n authentik port-forward svc/authentik-server 9000:80
 {
   lib,
   pkgs,
   catenix,
   charts,
+  cluster,
   kubeVersion,
   ...
 }:
@@ -390,6 +395,15 @@ in
         name = "authentik";
         inherit namespace;
       };
+      patch =
+        manifest:
+        if manifest.kind == "Service" && manifest.metadata.name == "authentik-server" then
+          lib.recursiveUpdate manifest {
+            metadata.annotations."kustomize.toolkit.fluxcd.io/force" = "enabled";
+            spec.clusterIP = cluster.authentik.serviceIP;
+          }
+        else
+          manifest;
       values = {
         global.env = lib.mapAttrsToList (name: value: { inherit name value; }) {
           AUTHENTIK_POSTGRESQL__HOST = db.name;
