@@ -1,4 +1,11 @@
-# Cloudflare tunnel: https://chat.neuros.is -> Open WebUI (localhost:8082).
+# Cloudflare tunnel:
+#   https://chat.neuros.is -> Open WebUI (localhost:8082)
+#   https://auth.neuros.is -> authentik (k8s Service authentik/authentik-server
+#                             at its fixed ClusterIP, reached through this
+#                             node's kube-proxy; cluster/definition.nix)
+# DNS: each hostname is a proxied CNAME to <tunnel>.cfargotunnel.com, made
+# once with `cloudflared tunnel route dns <tunnel> <hostname>` (charlie's
+# ~/.cloudflared/cert.pem).
 #
 # The tunnel credential (the JSON `cloudflared tunnel create` writes) is a
 # runtime secret: it is referenced by a STRING path, so it never enters the
@@ -9,7 +16,7 @@
 #     /var/lib/secrets/cloudflared/536d3af9-2b33-4ce7-b5d6-b5848f835fe6.json
 # The account cert for managing tunnels (`cloudflared tunnel login`) is not
 # needed by the service; it stays in charlie's ~/.cloudflared/cert.pem.
-{ ... }:
+{ cluster, ... }:
 let
   tunnel = "536d3af9-2b33-4ce7-b5d6-b5848f835fe6";
 in
@@ -20,6 +27,8 @@ in
       credentialsFile = "/var/lib/secrets/cloudflared/${tunnel}.json";
       default = "http_status:404";
       ingress."chat.neuros.is" = "http://localhost:8082";
+      ingress.${cluster.authentik.host} =
+        "http://${cluster.authentik.serviceIP}:80";
     };
   };
 }

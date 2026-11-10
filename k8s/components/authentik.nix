@@ -26,14 +26,19 @@
 # Pod security: the namespace enforces `baseline` (postgres starts as
 # root) and warns on `restricted`; server and worker meet `restricted`.
 #
-# Not exposed outside the cluster yet: Service authentik-server
-# (ClusterIP, port 80). To reach the UI:
+# Public at https://auth.neuros.is (cluster.authentik.host): the
+# Cloudflare tunnel on c4130 (hosts/c4130/cloudflared.nix) forwards to
+# Service authentik-server at the fixed ClusterIP cluster.authentik.serviceIP
+# (port 80), through c4130's kube-proxy. ClusterIP is immutable, so that
+# Service carries Flux's force annotation (recreated, not patched, if the
+# IP ever changes). From inside the tailnet/LAN without the tunnel:
 #   kubectl -n authentik port-forward svc/authentik-server 9000:80
 {
   lib,
   pkgs,
   catenix,
   charts,
+  cluster,
   kubeVersion,
   ...
 }:
@@ -390,6 +395,15 @@ in
         name = "authentik";
         inherit namespace;
       };
+      patch =
+        manifest:
+        if manifest.kind == "Service" && manifest.metadata.name == "authentik-server" then
+          lib.recursiveUpdate manifest {
+            metadata.annotations."kustomize.toolkit.fluxcd.io/force" = "enabled";
+            spec.clusterIP = cluster.authentik.serviceIP;
+          }
+        else
+          manifest;
       values = {
         global.env = lib.mapAttrsToList (name: value: { inherit name value; }) {
           AUTHENTIK_POSTGRESQL__HOST = db.name;
@@ -397,6 +411,18 @@ in
           AUTHENTIK_POSTGRESQL__USER = db.user;
           AUTHENTIK_LOG_LEVEL = "info";
           AUTHENTIK_ERROR_REPORTING__ENABLED = "false";
+          # Honour X-Forwarded-For/-Proto only from the tunnel (cloudflared on
+          # c4130 -> kube-proxy): c4130's LAN IP and its flannel address
+          # (10.244.1.0, first IP of its podCIDR), plus loopback for the
+          # healthchecks. authentik's default trusts all of 10/8, so any pod
+          # or LAN host could forge client IPs. -Proto must stay trusted from
+          # the tunnel, or the issuer would be http://.
+          AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS = lib.concatStringsSep "," [
+            "${cluster.nodes.c4130.lanIP}/32"
+            "10.244.1.0/32"
+            "127.0.0.1/32"
+            "::1/128"
+          ];
         };
         # Only secrets live there; everything else is global.env above.
         authentik.existingSecret.secretName = secretName;

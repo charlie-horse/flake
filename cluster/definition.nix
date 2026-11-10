@@ -61,6 +61,14 @@
 #                  "final"  new etcd-server/-peer/-client-apiserver leaves,
 #                           peerClientCertAuth on (end state)
 #   apiserverExtraSANs   list of string  extra SANs on every apiserver leaf
+#   oidc                 optional { issuerUrl; audiences; }  kube-apiserver
+#                        OIDC (JWT) login; absent = off. Read by
+#                        modules/cluster/control-plane.nix (clusterNode.oidc)
+#   authentik            { host; serviceIP; }  public hostname (Cloudflare
+#                        tunnel on c4130, hosts/c4130/cloudflared.nix) and
+#                        the fixed ClusterIP of Service authentik/
+#                        authentik-server (in the static band of
+#                        serviceCidr) the tunnel forwards to
 {
   name = "solaris";
   domain = "leaffish-monster.ts.net";
@@ -83,6 +91,20 @@
   # in docs/cluster-handoff.md (step 3d) recreates it at 10.96.0.1. Drop
   # this after that step and re-issue the apiserver leaves.
   apiserverExtraSANs = [ ];
+
+  # authentik (k8s/components/authentik.nix): public via the Cloudflare
+  # tunnel on c4130 -> http://<serviceIP>:80 (kube-proxy on the host).
+  authentik = {
+    host = "auth.neuros.is";
+    serviceIP = "10.96.0.20";
+  };
+
+  # kube-apiserver accepts tokens from authentik's provider `kubernetes`
+  # (issuer = per-provider URL, trailing slash included).
+  oidc = {
+    issuerUrl = "https://auth.neuros.is/application/o/kubernetes/";
+    audiences = [ "kubernetes" ];
+  };
 
   secretsDir = "/var/lib/kubernetes/secrets";
 
