@@ -68,15 +68,19 @@
 #                        per provider, so every client is its own issuer).
 #                        Read by modules/cluster/control-plane.nix
 #                        (clusterNode.oidc)
-#   authentik            { host; serviceIP; }  public hostname (dedicated
-#                        Cloudflare tunnel on r440, hosts/r440/cloudflared.nix) and
-#                        the fixed ClusterIP of Service authentik/
-#                        authentik-server (in the static band of
-#                        serviceCidr) the tunnel forwards to
+#   tunnel               { name; id; }  the one Cloudflare tunnel; run in
+#                        the cluster by k8s/components/cloudflared.nix (one
+#                        replica per node). Every public hostname below goes
+#                        through it.
+#   authentik            { host; serviceIP; }  public hostname (on the
+#                        tunnel) and the fixed ClusterIP of Service
+#                        authentik/authentik-server (in the static band of
+#                        serviceCidr) the tunnel's proxy forwards to
 #   headlamp             { host; serviceIP; }  same for Headlamp
-#                        (k8s/components/headlamp.nix): public hostname on
-#                        the solaris-auth tunnel and the fixed ClusterIP of
-#                        Service headlamp/headlamp
+#                        (k8s/components/headlamp.nix), Service
+#                        headlamp/headlamp
+#   openWebui            { host; serviceIP; }  same for Open WebUI
+#                        (serviceIP reserved: it still runs on c4130)
 {
   name = "solaris";
   domain = "leaffish-monster.ts.net";
@@ -100,17 +104,33 @@
   # this after that step and re-issue the apiserver leaves.
   apiserverExtraSANs = [ ];
 
-  # authentik (k8s/components/authentik.nix): public via its own Cloudflare
-  # tunnel on r440 -> http://<serviceIP>:80 (kube-proxy on the host).
+  # The single Cloudflare tunnel (locally managed: the ingress rules live in
+  # k8s/components/cloudflared.nix). Its credential is the Secret
+  # cloudflared/tunnel-credentials, made by hand, never in git.
+  tunnel = {
+    name = "cluster";
+    id = "59a275ca-be31-4f8d-99ce-c536eaf490f8";
+  };
+
+  # Public services: cloudflared -> its nginx sidecar -> http://<serviceIP>:80.
+  # authentik (k8s/components/authentik.nix).
   authentik = {
     host = "auth.neuros.is";
     serviceIP = "10.96.0.20";
   };
 
-  # Headlamp (k8s/components/headlamp.nix): same tunnel, its own hostname.
+  # Headlamp (k8s/components/headlamp.nix).
   headlamp = {
     host = "k8s.neuros.is";
     serviceIP = "10.96.0.21";
+  };
+
+  # Open WebUI, chat front-end for c4130's vLLM. Still a NixOS service on
+  # c4130 (the tunnel reaches it on :8082 over the tailnet); serviceIP is
+  # reserved for its move into the cluster.
+  openWebui = {
+    host = "chat.neuros.is";
+    serviceIP = "10.96.0.22";
   };
 
   # kube-apiserver accepts tokens from authentik's provider `kubernetes`
