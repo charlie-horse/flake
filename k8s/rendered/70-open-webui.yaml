@@ -16,7 +16,7 @@ metadata:
   name: open-webui
   namespace: open-webui
 spec:
-  replicas: 0
+  replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: open-webui

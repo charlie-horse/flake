@@ -28,7 +28,7 @@ spec:
   template:
     metadata:
       annotations:
-        solaris/config-hash: 13362046ae0501500f91e03f94dff327694384e993f5153541e238a8543577ba
+        solaris/config-hash: a66c0bd0c7980ea78dd1a98e41897265f83bbeae7dd95d0efc1436b89d024350
       labels:
         app.kubernetes.io/name: cloudflared
     spec:
@@ -176,7 +176,7 @@ data:
         hostnames;
         default "";
         auth.neuros.is 10.96.0.20:80;
-        chat.neuros.is 100.74.71.16:8082;
+        chat.neuros.is 10.96.0.22:80;
         k8s.neuros.is 10.96.0.21:80;
       }
 
