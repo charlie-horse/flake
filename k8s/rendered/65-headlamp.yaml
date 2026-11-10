@@ -114,10 +114,16 @@ spec:
         imagePullPolicy: Always
         name: headlamp-plugin-flux
         securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
           privileged: false
-          runAsGroup: 0
-          runAsNonRoot: false
-          runAsUser: 0
+          runAsGroup: 101
+          runAsNonRoot: true
+          runAsUser: 100
+          seccompProfile:
+            type: RuntimeDefault
         volumeMounts:
         - mountPath: /build/plugins
           name: headlamp-plugins
