@@ -33,9 +33,9 @@
 # privilege escalation).
 #
 # No Ingress. Public at https://k8s.neuros.is (cluster.headlamp.host): the
-# Cloudflare tunnel on r440 (hosts/r440/cloudflared.nix) forwards to
-# Service headlamp at the fixed ClusterIP cluster.headlamp.serviceIP
-# (port 80), through r440's kube-proxy. ClusterIP is immutable, so that
+# cluster's Cloudflare tunnel (components/cloudflared.nix, one replica per
+# node, nginx sidecar keeps the Host header) forwards to Service headlamp at
+# the fixed ClusterIP cluster.headlamp.serviceIP (port 80). ClusterIP is immutable, so that
 # Service carries Flux's force annotation (recreated, not patched, if the IP
 # ever changes). From inside the tailnet/LAN without the tunnel:
 #   kubectl -n headlamp port-forward svc/headlamp 4466:80
