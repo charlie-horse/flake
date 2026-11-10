@@ -20,12 +20,14 @@ modules read.
 | Rendered file | What | Source |
 | --- | --- | --- |
 | `00-runtime-classes.yaml` | RuntimeClass `runc` (default handler) and `nvidia` (handler `nvidia`, nodeSelector `nvidia.com/gpu.present=true`); `crun` documented, off | hand-written |
-| `05-rbac.yaml` | ClusterRoleBinding `system:kube-apiserver:kubelet-api-admin` (User `system:kube-apiserver`, the apiserver's kubelet client cert → ClusterRole `system:kubelet-api-admin`; without it `kubectl logs/exec/port-forward` get 403 from the kubelets) | hand-written (what NixOS's disabled addon manager would create) |
+| `05-rbac.yaml` | ClusterRoleBinding `system:kube-apiserver:kubelet-api-admin` (User `system:kube-apiserver`, the apiserver's kubelet client cert → ClusterRole `system:kubelet-api-admin`; without it `kubectl logs/exec/port-forward` get 403 from the kubelets); ClusterRoleBinding `oidc:cluster-admins` → `cluster-admin` (authentik group, inert until apiserver OIDC is on) | hand-written (what NixOS's disabled addon manager would create) |
+| `07-local-storage.yaml` | StorageClass `local` (no provisioner, WaitForFirstConsumer): static hostPath PVs pinned to a node | hand-written |
 | `10-flannel.yaml` | flannel VXLAN DaemonSet, `Network` = `podCidr`, kube-subnet-mgr, `--public-ip=$(status.hostIP)` (the node's LAN IP); no CNI install init containers (the host ships the plugin + conflist) | flannel chart v0.28.10 |
 | `20-coredns.yaml` | CoreDNS, Service `kube-system/kube-dns` at `dnsServiceIP` (10.96.0.10), zone `clusterDomain` (cluster.local), 2 replicas | coredns chart 1.48.2 (CoreDNS 1.14.7) |
 | `30-nvidia-device-plugin.yaml` | NVIDIA device plugin on `nvidia.com/gpu.present=true` nodes, `runtimeClassName: nvidia`, `DEVICE_ID_STRATEGY=index` (matches the host's index-named CDI spec) | nvidia-device-plugin chart 0.20.1 |
 | `40-flux-system.yaml` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers | fluxcd-community flux2 chart 2.19.1 |
 | `50-flux-sync.yaml` | GitRepository `https://github.com/charlie-horse/flake` (public HTTPS, no secretRef), branch `main`; Kustomization `./k8s/rendered`, prune | hand-written, typed by the flux2 CRDs |
+| `60-authentik.yaml` | authentik (SSO/OIDC): server + worker on amd64 (r440), PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprint for the `kubernetes` OIDC client. Secrets come from a hand-made Secret ([below](#authentik)) | authentik chart 2026.8.5 + hand-written |
 | `90-podinfo.yaml` | podinfo smoke app (namespace `podinfo`), 3 replicas spread one per node (incl. the arm64 m2mini) | hand-written |
 
 Every image is a multi-arch manifest list (linux/amd64 + linux/arm64);
@@ -130,3 +132,102 @@ and `kubectl -n podinfo run curl --rm -it --restart=Never
 - udp/8472 open between the nodes' LAN IPs (VXLAN). To run VXLAN over
   Tailscale instead, set `transport = "tailscale"` in
   `components/flannel.nix`.
+
+## authentik
+
+SSO for the cluster and its apps (`components/authentik.nix`). It runs
+**in** the cluster but the cluster never depends on it: kubelets, the
+control plane and the admin kubeconfig authenticate with x509 certs, Flux
+and pods with service-account tokens. OIDC is only an extra way for people
+to log in. If authentik is down, only those logins fail; the admin cert
+(`r440:~/.local/share/cluster-pki/solaris/admin.kubeconfig`) is the
+break-glass.
+
+| Piece | Where | Data |
+| --- | --- | --- |
+| `authentik-server`, `authentik-worker` | amd64 nodes (r440; c4130 is tainted) | none |
+| `authentik-postgresql` (StatefulSet, postgres 17.11) | m2mini (PV node affinity) | `m2mini:/var/lib/authentik/postgres` |
+| `authentik-backup` (CronJob 03:17 America/New_York) | r440 (PV node affinity) | `r440:/var/lib/authentik/backup/authentik-*.dump` (`pg_dump -Fc`, newest 14) |
+
+The PVs are hostPath (`DirectoryOrCreate`, reclaim `Retain`): deleting the
+claim or the component never deletes data. Postgres sits on m2mini's NVMe
+rather than r440, whose root is the 5400 rpm HDD that already slows its etcd
+WAL.
+
+### The Secret (once, by hand, never in git)
+
+The pods read `authentik/authentik-secrets`. Flux doesn't create or prune it.
+Until it exists, the pods sit in `CreateContainerConfigError` (they start
+by themselves once it does) and nothing else is affected. Create it on r440
+with the operator kubeconfig. The values are generated in place and never
+appear on a command line:
+
+```sh
+export KUBECONFIG=~/.local/share/cluster-pki/solaris/admin.kubeconfig
+nix shell nixpkgs#kubectl nixpkgs#openssl -c bash -ec '
+  umask 077
+  {
+    echo "AUTHENTIK_SECRET_KEY=$(openssl rand -base64 60 | tr -d "\n")"
+    echo "AUTHENTIK_POSTGRESQL__PASSWORD=$(openssl rand -hex 32)"
+    echo "AUTHENTIK_BOOTSTRAP_PASSWORD=$(openssl rand -base64 24 | tr -d "\n/+=")"
+  } | kubectl -n authentik create secret generic authentik-secrets \
+        --from-env-file=/dev/stdin'
+```
+
+- `AUTHENTIK_SECRET_KEY` signs sessions and encrypts stored secrets. Never
+  change it once authentik has started.
+- `AUTHENTIK_POSTGRESQL__PASSWORD` is also the database's
+  `POSTGRES_PASSWORD`. That variable only takes effect on the first start
+  with an empty data dir. Afterwards, change it with `ALTER ROLE` first.
+- `AUTHENTIK_BOOTSTRAP_PASSWORD` is `akadmin`'s password, set on the first
+  start only. Read it with
+  `kubectl -n authentik get secret authentik-secrets -o jsonpath='{.data.AUTHENTIK_BOOTSTRAP_PASSWORD}' | base64 -d`,
+  then change it in the UI.
+
+### Reaching it
+
+There is no ingress yet: Service `authentik-server` is ClusterIP:80.
+
+```sh
+kubectl -n authentik port-forward svc/authentik-server 9000:80
+# http://localhost:9000/  (akadmin + the bootstrap password)
+```
+
+### Cluster login (kube-apiserver OIDC)
+
+The blueprint (ConfigMap `authentik-blueprints`, applied by the worker)
+creates:
+
+- the group `cluster-admins`;
+- the public OAuth2/OIDC provider `kubernetes` (client id `kubernetes`,
+  PKCE, RS256 with authentik's self-signed key, redirect
+  `http://localhost:8000` and `:18000` for kubelogin);
+- the application `kubernetes`, which only `cluster-admins` may use.
+
+On the apiserver, usernames and groups get the `oidc:` prefix, and
+`05-rbac` binds `oidc:cluster-admins` to `cluster-admin`. To turn it on:
+
+1. Give authentik an HTTPS URL that the apiservers (r440, c4130) and your
+   laptop can both reach, with a certificate they trust. The issuer is
+   `https://<host>/application/o/kubernetes/`, trailing slash included.
+2. Set it on the control planes (e.g. in `modules/cluster/control-plane.nix`
+   or per host):
+   `clusterNode.oidc = { enable = true; issuerUrl = "https://<host>/application/o/kubernetes/"; };`
+   (`certificateAuthority` if the cert is not publicly trusted).
+3. Branch → CI → merge, then switch r440, then c4130 (GC first), one at a
+   time, with the etcd health check after each (docs/cluster-handoff.md).
+   The apiserver starts even if the issuer is unreachable: the JWT
+   authenticator retries in the background.
+4. Add yourself to `cluster-admins` in authentik, and on your machine:
+
+   ```sh
+   kubectl krew install oidc-login   # or nixpkgs#kubelogin-oidc
+   kubectl config set-credentials solaris-oidc \
+     --exec-api-version=client.authentication.k8s.io/v1 \
+     --exec-command=kubectl --exec-arg=oidc-login --exec-arg=get-token \
+     --exec-arg=--oidc-issuer-url=https://<host>/application/o/kubernetes/ \
+     --exec-arg=--oidc-client-id=kubernetes \
+     --exec-arg=--oidc-extra-scope=profile --exec-arg=--oidc-extra-scope=email \
+     --exec-arg=--oidc-extra-scope=offline_access
+   kubectl --user=solaris-oidc auth whoami   # oidc:<username>, groups oidc:cluster-admins
+   ```
