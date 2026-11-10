@@ -1,4 +1,4 @@
-# Cloudflare tunnel `solaris-auth`, dedicated to authentik:
+# Cloudflare tunnel `solaris-auth`, dedicated to authentik (and Headlamp):
 #
 #   https://auth.neuros.is
 #     -> cloudflared (this tunnel)
@@ -6,9 +6,16 @@
 #     -> Service authentik/authentik-server at its fixed ClusterIP
 #        (cluster/definition.nix: authentik.serviceIP), via kube-proxy
 #
-# authentik's pods run on r440 (amd64; c4130 is tainted), so SSO does not
-# depend on c4130. Separate from c4130's chat tunnel on purpose: its own
-# credential, its own DNS route, nothing else routed through it.
+#   https://k8s.neuros.is
+#     -> cloudflared (this tunnel)
+#     -> Service headlamp/headlamp at its fixed ClusterIP
+#        (cluster/definition.nix: headlamp.serviceIP), via kube-proxy
+#   (no nginx: Headlamp does not act on client IPs; cloudflared passes its
+#   websockets through as is)
+#
+# authentik's and Headlamp's pods run on r440 (amd64; c4130 is tainted), so
+# SSO does not depend on c4130. Separate from c4130's chat tunnel on purpose:
+# its own credential, its own DNS routes, nothing else routed through it.
 #
 # Why nginx: Cloudflare *appends* the visitor's IP to any X-Forwarded-For
 # the visitor sent, and authentik reads the leftmost entry, so a client
@@ -30,6 +37,7 @@
 # DNS (once, with an account cert from `cloudflared tunnel login`; charlie's
 # is in c4130:~/.cloudflared/cert.pem):
 #   cloudflared tunnel route dns --overwrite-dns <tunnel> auth.neuros.is
+#   cloudflared tunnel route dns --overwrite-dns <tunnel> k8s.neuros.is
 { cluster, ... }:
 let
   tunnel = "cac462c4-7420-4ff3-9a40-c090a4e18737";
@@ -41,7 +49,10 @@ in
     tunnels.${tunnel} = {
       credentialsFile = "/var/lib/secrets/cloudflared/${tunnel}.json";
       default = "http_status:404";
-      ingress.${cluster.authentik.host} = "http://127.0.0.1:${toString proxyPort}";
+      ingress = {
+        ${cluster.authentik.host} = "http://127.0.0.1:${toString proxyPort}";
+        ${cluster.headlamp.host} = "http://${cluster.headlamp.serviceIP}:80";
+      };
     };
   };
 

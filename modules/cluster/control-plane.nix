@@ -40,43 +40,50 @@ let
   # oidc:cluster-admins (k8s/components/rbac.nix). x509 client certs and
   # service-account tokens never depend on the issuer: if authentik is down
   # only OIDC logins fail, and the admin cert is the break-glass.
+  #
+  # One JWT authenticator per issuer: the main one (issuerUrl/audiences) plus
+  # extraIssuers. authentik's issuer is per provider, so every OIDC client
+  # (kubernetes for kubectl, headlamp for Headlamp) is its own issuer. The
+  # claim mappings are the same for all of them.
   oidc = cfg.oidc;
+  jwtAuthenticator = { issuerUrl, audiences }:
+    {
+      issuer = {
+        url = issuerUrl;
+        inherit audiences;
+      } // lib.optionalAttrs (oidc.certificateAuthority != null) {
+        inherit (oidc) certificateAuthority;
+      };
+      claimMappings = {
+        uid.claim = "sub";
+        username = {
+          claim = "preferred_username";
+          prefix = "oidc:";
+        };
+        groups = {
+          claim = "groups";
+          prefix = "oidc:";
+        };
+      };
+      # (The signature algorithm is a JOSE header, not a claim: CEL
+      # cannot see it. The apiserver accepts the asymmetric algorithms
+      # of the issuer's JWKS; authentik signs RS256 with its
+      # self-signed key pair.)
+      claimValidationRules = [
+        {
+          message = "token is expired";
+          expression =
+            "claims.exp > (has(claims.nbf) ? claims.nbf : claims.iat)";
+        }
+      ];
+    };
   authenticationConfig = (pkgs.formats.yaml { }).generate
     "authentication-config.yaml" {
       apiVersion = "apiserver.config.k8s.io/v1";
       kind = "AuthenticationConfiguration";
-      jwt = [
-        {
-          issuer = {
-            url = oidc.issuerUrl;
-            audiences = oidc.audiences;
-          } // lib.optionalAttrs (oidc.certificateAuthority != null) {
-            inherit (oidc) certificateAuthority;
-          };
-          claimMappings = {
-            uid.claim = "sub";
-            username = {
-              claim = "preferred_username";
-              prefix = "oidc:";
-            };
-            groups = {
-              claim = "groups";
-              prefix = "oidc:";
-            };
-          };
-          # (The signature algorithm is a JOSE header, not a claim: CEL
-          # cannot see it. The apiserver accepts the asymmetric algorithms
-          # of the issuer's JWKS; authentik signs RS256 with its
-          # self-signed key pair.)
-          claimValidationRules = [
-            {
-              message = "token is expired";
-              expression =
-                "claims.exp > (has(claims.nbf) ? claims.nbf : claims.iat)";
-            }
-          ];
-        }
-      ];
+      jwt = map jwtAuthenticator ([
+        { inherit (oidc) issuerUrl audiences; }
+      ] ++ oidc.extraIssuers);
     };
 in
 {
@@ -107,6 +114,27 @@ in
       default = cluster.oidc.audiences or [ "kubernetes" ];
       defaultText = "cluster.oidc.audiences or [ \"kubernetes\" ]";
       description = "Accepted token audiences (OIDC client ids).";
+    };
+    extraIssuers = mkOption {
+      type = types.listOf (types.submodule {
+        options = {
+          issuerUrl = mkOption {
+            type = types.str;
+            description = "Issuer URL, byte for byte the tokens' `iss`.";
+          };
+          audiences = mkOption {
+            type = types.listOf types.str;
+            description = "Accepted audiences (client ids) for this issuer.";
+          };
+        };
+      });
+      default = cluster.oidc.extraIssuers or [ ];
+      defaultText = "cluster.oidc.extraIssuers or [ ]";
+      description = ''
+        More JWT authenticators with the same claim mappings (`oidc:`
+        prefixes), one per issuer, e.g. authentik's provider `headlamp`.
+        Issuer URLs must all differ from each other and from issuerUrl.
+      '';
     };
     certificateAuthority = mkOption {
       type = types.nullOr types.str;

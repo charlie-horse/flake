@@ -28,6 +28,7 @@ modules read.
 | `40-flux-system.yaml` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers | fluxcd-community flux2 chart 2.19.1 |
 | `50-flux-sync.yaml` | GitRepository `https://github.com/charlie-horse/flake` (public HTTPS, no secretRef), branch `main`; Kustomization `./k8s/rendered`, prune | hand-written, typed by the flux2 CRDs |
 | `60-authentik.yaml` | authentik (SSO/OIDC): server + worker on amd64 (r440), PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprint for the `kubernetes` OIDC client. Secrets come from a hand-made Secret ([below](#authentik)) | authentik chart 2026.8.5 + hand-written |
+| `65-headlamp.yaml` | Headlamp web UI (namespace `headlamp`, enforce `restricted`): 1 replica on amd64 (r440), Service `headlamp` at fixed ClusterIP 10.96.0.21, OIDC login via authentik's confidential client `headlamp`; its ServiceAccount has no RBAC (users act with their own token). Client secret from a hand-made Secret ([below](#headlamp)) | headlamp chart 0.46.0 |
 | `90-podinfo.yaml` | podinfo smoke app (namespace `podinfo`), 3 replicas spread one per node (incl. the arm64 m2mini) | hand-written |
 
 Every image is a multi-arch manifest list (linux/amd64 + linux/arm64);
@@ -224,7 +225,10 @@ creates:
 - the public OAuth2/OIDC provider `kubernetes` (client id `kubernetes`,
   PKCE, RS256 with authentik's self-signed key, redirect
   `http://localhost:8000` and `:18000` for kubelogin);
-- the application `kubernetes`, which only `cluster-admins` may use.
+- the application `kubernetes`, which only `cluster-admins` may use;
+- the confidential provider and application `headlamp` (client id
+  `headlamp`, redirect `https://k8s.neuros.is/oidc-callback`), also
+  `cluster-admins` only. See [Headlamp](#headlamp).
 
 On the apiserver, usernames and groups get the `oidc:` prefix, and
 `05-rbac` binds `oidc:cluster-admins` to `cluster-admin`. It is on: the
@@ -259,3 +263,37 @@ auth.neuros.is. When kubectl runs over SSH, forward the port first:
 `ssh -L 8000:localhost:8000 <host>`. Older kubectl without
 `--exec-interactive-mode`: add `interactiveMode: IfAvailable` under the
 user's `exec:` in the kubeconfig by hand.
+
+## Headlamp
+
+Kubernetes web UI (`components/headlamp.nix`), public at
+**https://k8s.neuros.is** (`cluster.headlamp.host`) through the same
+`solaris-auth` tunnel as authentik (`hosts/r440/cloudflared.nix`), which
+forwards to Service `headlamp/headlamp` at its fixed ClusterIP
+(`cluster.headlamp.serviceIP`, 10.96.0.21). DNS, once:
+`cloudflared tunnel route dns --overwrite-dns <tunnel> k8s.neuros.is`.
+
+Login is OIDC with authentik's confidential client `headlamp`. Headlamp
+forwards the user's ID token to the apiserver. authentik's issuer is per
+provider (`https://auth.neuros.is/application/o/headlamp/`), so that is a
+second JWT authenticator on the apiserver (`oidc.extraIssuers` in
+`cluster/definition.nix`, audience `headlamp`, same `oidc:` prefixes), not
+just another audience. Changing it means switching r440 and c4130. The pod's
+own ServiceAccount has no RBAC; what a user sees is what
+`oidc:cluster-admins` (or their other groups) allow.
+
+### The Secret (once, by hand, never in git)
+
+Copy the client secret from authentik (Applications → Providers →
+`headlamp`), then on r440 with the operator kubeconfig paste it on stdin:
+
+```sh
+export KUBECONFIG=~/.local/share/cluster-pki/solaris/admin.kubeconfig
+nix shell nixpkgs#kubectl -c kubectl -n headlamp create secret generic \
+  headlamp-oidc --from-env-file=/dev/stdin
+# type: OIDC_CLIENT_SECRET=<secret>   then Enter, Ctrl-D
+```
+
+Until it exists the pod sits in `CreateContainerConfigError`. Without the
+tunnel: `kubectl -n headlamp port-forward svc/headlamp 4466:80` (the OIDC
+callback still points at k8s.neuros.is, so log in there).
