@@ -59,6 +59,8 @@ spec:
         env:
         - name: AUTHENTIK_ERROR_REPORTING__ENABLED
           value: "false"
+        - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
+          value: 10.0.0.95/32,10.244.1.0/32,127.0.0.1/32,::1/128
         - name: AUTHENTIK_LOG_LEVEL
           value: info
         - name: AUTHENTIK_POSTGRESQL__HOST
@@ -181,6 +183,8 @@ spec:
         env:
         - name: AUTHENTIK_ERROR_REPORTING__ENABLED
           value: "false"
+        - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
+          value: 10.0.0.95/32,10.244.1.0/32,127.0.0.1/32,::1/128
         - name: AUTHENTIK_LOG_LEVEL
           value: info
         - name: AUTHENTIK_POSTGRESQL__HOST
@@ -570,6 +574,8 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
   labels:
     app.kubernetes.io/component: server
     app.kubernetes.io/instance: authentik
@@ -581,6 +587,7 @@ metadata:
   name: authentik-server
   namespace: authentik
 spec:
+  clusterIP: 10.96.0.20
   ports:
   - name: http
     port: 80
