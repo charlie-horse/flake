@@ -30,6 +30,7 @@ modules read.
 | `55-cloudflared.yaml` | the single Cloudflare tunnel `cluster`: cloudflared, one replica per node (hostNetwork), nginx sidecar that sets `X-Forwarded-For` from `Cf-Connecting-Ip`; routes auth/k8s/chat | hand-written |
 | `60-authentik.yaml` | authentik (SSO/OIDC): server + worker on amd64 (r440), PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprint for the `kubernetes` OIDC client. Secrets come from a hand-made Secret ([below](#authentik)) | authentik chart 2026.8.5 + hand-written |
 | `65-headlamp.yaml` | Headlamp web UI (namespace `headlamp`, enforce `restricted`): 1 replica on amd64 (r440), Service `headlamp` at fixed ClusterIP 10.96.0.21, OIDC login via authentik's confidential client `headlamp`; its ServiceAccount has no RBAC (users act with their own token). Client secret from a hand-made Secret ([below](#headlamp)) | headlamp chart 0.46.0 |
+| `70-open-webui.yaml` | Open WebUI 0.12.2 (chat for c4130's vLLM at `10.0.0.95:8000`), one replica, data on r440 (hostPath PV), OIDC login via authentik for group `local-ai`; secrets from the hand-made Secret `open-webui/open-webui-secrets` ([below](#open-webui)) | hand-written |
 | `90-podinfo.yaml` | podinfo smoke app (namespace `podinfo`), 3 replicas spread one per node (incl. the arm64 m2mini) | hand-written |
 
 Every image is a multi-arch manifest list (linux/amd64 + linux/arm64);
@@ -293,7 +294,7 @@ cluster by `components/cloudflared.nix`:
 | --- | --- |
 | `auth.neuros.is` | authentik, ClusterIP 10.96.0.20 |
 | `k8s.neuros.is` | Headlamp, ClusterIP 10.96.0.21 |
-| `chat.neuros.is` | Open WebUI on c4130's host, `100.74.71.16:8082` over the tailnet (until it moves into the cluster) |
+| `chat.neuros.is` | Open WebUI, ClusterIP 10.96.0.22 |
 
 - **Replicas.** One per node (required anti-affinity; c4130's GPU taint is
   tolerated), so every node is a connector and the tunnel survives any one
@@ -321,4 +322,25 @@ cluster by `components/cloudflared.nix`:
   `cloudflared tunnel route dns --overwrite-dns 59a275ca-be31-4f8d-99ce-c536eaf490f8 <hostname>`.
 - **New hostname.** Add it to `routes` in `components/cloudflared.nix` (the
   pods roll on config change), then add its DNS route.
+
+## Open WebUI
+
+Chat front-end for c4130's vLLM (`components/open-webui.nix`), public at
+**https://chat.neuros.is** through the cluster's tunnel. It moved here from
+a NixOS service on c4130 on 2026-11-10, at the same version (0.12.2), with
+its data (`webui.db`, uploads) copied to `r440:/var/lib/open-webui/data` (a
+hostPath PV, Retain).
+
+- **Login.** The local login form works as before, plus **Continue with
+  authentik**: OIDC against authentik's confidential client `open-webui`,
+  which only members of the authentik group **`local-ai`** may use. New SSO
+  users are created with the instance's default role (pending unless an
+  admin changed it). An existing account with the same e-mail is linked
+  to its SSO login. Roles are never taken from authentik.
+- **Models.** vLLM's OpenAI API on c4130's LAN address (`10.0.0.95:8000`),
+  so the model follows `services.vllm-sm70.activeModel` as before.
+- **Secrets.** Never in git. The Secret `open-webui/open-webui-secrets` has
+  `WEBUI_SECRET_KEY` (signs sessions; carried over from c4130's
+  `.webui_secret_key`) and `OAUTH_CLIENT_SECRET` (authentik's generated
+  secret for `open-webui`, readable in the admin UI under Providers).
 
