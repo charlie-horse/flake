@@ -74,7 +74,45 @@ in
         fullnameOverride = "headlamp";
         replicaCount = 1;
 
+        initContainers = [{
+          command = [
+            "/bin/sh -c mkdir -p /build/plugins &&"
+            "cp -r /plugins/* /build/plugins &&"
+            "chown -R 100:101 /build"
+          ];
+          image = "ghcr.io/headlamp-k8s/headlamp-plugin-flux:latest";
+          imagePullPolicy = "Always";
+          name = "headlamp-plugin-flux";
+          securityContext = {
+            runAsNonRoot = false;
+            privileged = false;
+            runAsUser = 0;
+            runAsGroup = 0;
+          };
+          volumeMounts = [{
+            mountPath = "/build/plugins";
+            name = "headlamp-plugins";
+          }];
+        }];
+
+        persistentVolumeClaim = {
+          accessModes = [ "ReadWriteOnce" ];
+          enabled = true;
+          size = "1Gi";
+        };
+
+        volumes = [{
+          name = "headlamp-plugins";
+          persistentVolumeClaim.claimName = "headlamp";
+        }];
+
+        volumeMounts = [{
+          mountPath = "/build/plugins";
+          name = "headlamp-plugins";
+        }];
+
         config = {
+          pluginsDir: "/build/plugins";
           inCluster = true;
           unsafeUseServiceAccountToken = false;
           oidc = {
