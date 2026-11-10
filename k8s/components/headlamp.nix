@@ -84,11 +84,15 @@ in
           imagePullPolicy = "Always";
           name = "headlamp-plugin-flux";
           securityContext = {
-            runAsNonRoot = false;
+            runAsNonRoot = true;
             privileged = false;
-            runAsUser = 0;
-            runAsGroup = 0;
+            runAsUser = 100;
+            runAsGroup = 101;
+            allowPrivilegeEscalation = false;
+            capabilities.drop = [ "ALL" ];
+            seccompProfile.type = "RuntimeDefault";
           };
+
           volumeMounts = [{
             mountPath = "/build/plugins";
             name = "headlamp-plugins";
