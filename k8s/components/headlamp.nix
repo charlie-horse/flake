@@ -112,7 +112,7 @@ in
         }];
 
         config = {
-          pluginsDir: "/build/plugins";
+          pluginsDir = "/build/plugins";
           inCluster = true;
           unsafeUseServiceAccountToken = false;
           oidc = {
