@@ -80,7 +80,8 @@
 #                        (k8s/components/headlamp.nix), Service
 #                        headlamp/headlamp
 #   openWebui            { host; serviceIP; }  same for Open WebUI
-#                        (serviceIP reserved: it still runs on c4130)
+#                        (k8s/components/open-webui.nix), Service
+#                        open-webui/open-webui
 {
   name = "solaris";
   domain = "leaffish-monster.ts.net";
@@ -125,9 +126,8 @@
     serviceIP = "10.96.0.21";
   };
 
-  # Open WebUI, chat front-end for c4130's vLLM. Still a NixOS service on
-  # c4130 (the tunnel reaches it on :8082 over the tailnet); serviceIP is
-  # reserved for its move into the cluster.
+  # Open WebUI (k8s/components/open-webui.nix), chat front-end for c4130's
+  # vLLM; logins through authentik (group local-ai).
   openWebui = {
     host = "chat.neuros.is";
     serviceIP = "10.96.0.22";

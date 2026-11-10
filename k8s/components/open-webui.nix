@@ -37,8 +37,8 @@ let
   labels."app.kubernetes.io/name" = "open-webui";
   secretName = "open-webui-secrets";
 
-  # 0 until the data from c4130 is migrated onto the PV; then 1.
-  replicas = 0;
+  # Single instance (SQLite). Data migrated from c4130 on 2026-11-10.
+  replicas = 1;
 
   port = 8080;
   vllmUrl = "http://${cluster.nodes.c4130.lanIP}:8000/v1";

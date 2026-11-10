@@ -24,7 +24,7 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
 ## Stack (fork repo `nix/`, consumed as flake input `vllm-fork`)
 - **Where things live.**
   - Fork repo (github.com/charlie-horse/vLLM): `flake.nix` exports only `packages.x86_64-linux.vllm` (= `default`, the wrapped sm_70 build) and `nixosModules.vllm` (= `default`, imports `lmcache`) + `nixosModules.lmcache`. Weights, the wheel env and the LMCache UI are internal to the modules. `nix/module.nix` (vllm service and built-in models), `nix/lmcache.nix` (LMCache server, dashboard, L2 pruner), `nix/packages-module.nix` (builds the package set once with the host's `pkgs` for both modules), `nix/package.nix` (env + wrappers), `nix/flint.nix` (sm_70 tree, converter, checkpoint), `nix/source.nix` (the serving tree's source: the repo minus `nix/`, `flake.nix`, `flake.lock`), `nix/pyenv/`, `nix/README.md`.
-  - Host (this repo): root `flake.nix` (input `vllm-fork.url = "github:charlie-horse/vLLM/latest"`, `vllm-fork.inputs.nixpkgs.follows = "nixpkgs"`; `update.yml` re-locks it daily), `hosts/c4130/vllm/default.nix` (imports `inputs.vllm-fork.nixosModules.vllm` and `./open-webui.nix`; sets only host values under `services.vllm-sm70` and `services.lmcache-sm70`), `hosts/c4130/vllm/open-webui.nix`, and this CLAUDE.md.
+  - Host (this repo): root `flake.nix` (input `vllm-fork.url = "github:charlie-horse/vLLM/latest"`, `vllm-fork.inputs.nixpkgs.follows = "nixpkgs"`; `update.yml` re-locks it daily), `hosts/c4130/vllm/default.nix` (imports `inputs.vllm-fork.nixosModules.vllm`; sets only host values under `services.vllm-sm70` and `services.lmcache-sm70`), and this CLAUDE.md.
   - vllm options: `services.vllm-sm70.{enable,activeModel,models,port,firewallInterfaces}`. LMCache options: `services.lmcache-sm70.{enable,package,uiPackage,user,homeStateDirectory,environment,chunkSize,port,httpPort,l1SizeGb,l2SizeGb,ui.enable,ui.port,ui.firewallInterfaces}`. The vllm module sets `enable` from the active model's `lmcache` field, `chunkSize` from `lmcacheChunkSize`, and runs it as user `vllm`. The old `c4130.vllm.activeModel` / `c4130.vllm.kvTiers.*` names still work as renamed aliases (with a warning).
   - nixpkgs is shared with the host via `follows`. pyproject-nix, uv2nix and build-system-pkgs are pinned by the fork's own `flake.lock`; bump them in the fork with `nix flake update` there.
 - `nix/pyenv/pyproject.toml` + `uv.lock`: the Python environment, built by Nix through uv2nix.
@@ -105,14 +105,8 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
 - **`vllm.service` owns the GPUs.** The old `~/flint/gpu.lock` convention is retired, and `~/flint` itself is gone (its saved work is in `~/archive/flint-gpuopt-saved/`). The service never took that lock, so the lock can't protect it. Before any GPU job outside the service, including the hand harness in `~/vllm-hand`, kernel tests or benchmarks, check `systemctl is-active vllm` and stop the service first (with sudo, see "Stopping the service"). Then start it again when done. Both want both GPUs.
 
 ## Open WebUI
-- **What it is.** Host file `hosts/c4130/vllm/open-webui.nix`, nixpkgs `services.open-webui` (0.11.3): a chat front-end for whatever `vllm.service` serves.
-- **Access.** http://c4130:8082 over the tailnet (8080/8081 are LMCache's). Binds `0.0.0.0`; the port is opened only on `tailscale0`.
-- **Backend.** `http://127.0.0.1:<services.vllm-sm70.port>/v1`; the model list comes from vLLM, so it follows `activeModel`. Ollama is off.
-- **Auth.** `WEBUI_AUTH` on: the first signup becomes admin, later signups wait for the admin's approval.
-- **Offline.** Telemetry and the update check are off. `OFFLINE_MODE` + `BYPASS_EMBEDDING_AND_RETRIEVAL` + `RAG_EMBEDDING_ENGINE=openai`, so no embedding, reranker or whisper model is downloaded or loaded. Attached documents go to the model whole, with no retrieval.
-- **State.** `/var/lib/open-webui` (DynamicUser, so actually `/var/lib/private/open-webui`).
-- **License.** nixpkgs marks it unfree (custom BSD-3 + branding), so it isn't in cache.nixos.org and builds from source; the host has `allowUnfree`.
-- **Closure size.** open-webui 0.11.3 closure is 5.6 GiB (CPU torch 2.11, ffmpeg, opencv, pandoc, ...); it grew the system closure from 41.1 to 46.0 GiB. Its frontend (and nodejs 24) built from source on c4130 in ~25 min.
+- **Moved into the cluster on 2026-11-10** (`k8s/components/open-webui.nix`, see `k8s/README.md` › Open WebUI). It's no longer a NixOS service on c4130, and port 8082 is closed. It runs at https://chat.neuros.is with authentik SSO (group `local-ai`) and reaches vLLM at `10.0.0.95:<services.vllm-sm70.port>/v1`, so it still follows `activeModel`.
+- The old host state in `/var/lib/private/open-webui` on c4130 was left in place as a backup of the pre-move data.
 
 ## Running a custom model
 1. **Pick a checkpoint 1Cat can run on sm_70.**

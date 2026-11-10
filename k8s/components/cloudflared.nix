@@ -7,7 +7,7 @@
 #
 #   auth.neuros.is  authentik   (components/authentik.nix)
 #   k8s.neuros.is   Headlamp    (components/headlamp.nix)
-#   chat.neuros.is  Open WebUI  (c4130 host, :8082 over the tailnet)
+#   chat.neuros.is  Open WebUI  (components/open-webui.nix)
 #
 # One replica per node (required pod anti-affinity, the GPU taint
 # tolerated), so the tunnel has a connector on every node and keeps serving
@@ -42,14 +42,14 @@ let
   proxyPort = 9190;
   metricsPort = 20250;
 
-  # Public hostname -> upstream. authentik and Headlamp: fixed ClusterIPs.
-  # Open WebUI still runs on c4130's host (port 8082, open on tailscale0
-  # only), reached over the tailnet until it moves into the cluster.
-  routes = {
-    ${cluster.authentik.host} = "${cluster.authentik.serviceIP}:80";
-    ${cluster.headlamp.host} = "${cluster.headlamp.serviceIP}:80";
-    ${cluster.openWebui.host} = "${cluster.nodes.c4130.tailnetIP}:8082";
-  };
+  # Public hostname -> upstream (fixed ClusterIPs).
+  routes = lib.listToAttrs (
+    map (s: lib.nameValuePair cluster.${s}.host "${cluster.${s}.serviceIP}:80") [
+      "authentik"
+      "headlamp"
+      "openWebui"
+    ]
+  );
 
   # Locally managed tunnel: these are its ingress rules. JSON is YAML.
   cloudflaredConfig = builtins.toJSON {
