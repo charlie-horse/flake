@@ -330,6 +330,11 @@ let
           name: kubernetes
           client_type: public
           client_id: kubernetes
+          # authentik >= 2026.x allows only the listed grants (empty = none):
+          # the browser login (code + PKCE) and kubelogin's silent renewals.
+          grant_types:
+            - authorization_code
+            - refresh_token
           authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
           invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
           signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
@@ -380,6 +385,10 @@ let
           name: headlamp
           client_type: confidential
           client_id: headlamp
+          # Same as `kubernetes`: only listed grants are allowed (empty = none).
+          grant_types:
+            - authorization_code
+            - refresh_token
           authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
           invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
           signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]

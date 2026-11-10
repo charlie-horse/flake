@@ -248,6 +248,7 @@ machine:
 kubectl krew install oidc-login   # or nixpkgs#kubelogin-oidc
 kubectl config set-credentials solaris-oidc \
   --exec-api-version=client.authentication.k8s.io/v1 \
+  --exec-interactive-mode=IfAvailable \
   --exec-command=kubectl --exec-arg=oidc-login --exec-arg=get-token \
   --exec-arg=--oidc-issuer-url=https://auth.neuros.is/application/o/kubernetes/ \
   --exec-arg=--oidc-client-id=kubernetes \
@@ -255,6 +256,13 @@ kubectl config set-credentials solaris-oidc \
   --exec-arg=--oidc-extra-scope=offline_access
 kubectl --user=solaris-oidc auth whoami   # oidc:<username>, groups oidc:cluster-admins
 ```
+
+kubelogin serves its login page on `http://localhost:8000` (or `:18000` if
+8000 is taken) on the machine running kubectl, which redirects to
+auth.neuros.is. When kubectl runs over SSH, forward the port first:
+`ssh -L 8000:localhost:8000 <host>`. Older kubectl without
+`--exec-interactive-mode`: add `interactiveMode: IfAvailable` under the
+user's `exec:` in the kubeconfig by hand.
 
 ## Headlamp
 
