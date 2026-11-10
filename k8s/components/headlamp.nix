@@ -76,8 +76,8 @@ in
 
         initContainers = [{
           command = [
-            "/bin/sh -c mkdir -p /build/plugins &&"
-            "cp -r /plugins/* /build/plugins &&"
+            "mkdir -p /build/plugins"
+            "cp -r /plugins/* /build/plugins"
             "chown -R 100:101 /build"
           ];
           image = "ghcr.io/headlamp-k8s/headlamp-plugin-flux:v0.7.0";
