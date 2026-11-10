@@ -9,6 +9,17 @@
 # missed run (host down at 22:00 or 05:55) is not replayed at boot. A failing
 # oneshot ends up `failed` in systemd (`systemctl --failed`). vllm.service is
 # targeted by name only; nothing here touches the Kubernetes services.
+#
+# Notes:
+# - Only the vllm.service is stopped. vllm-lmcache.service stays up overnight
+#   (about 328 MiB per GPU and 64 GB of pinned RAM stay allocated).
+# - The timers do not know the window state: a `nixos-rebuild switch` or a
+#   reboot between 22:00 and 06:00 starts vllm.service again (it is enabled),
+#   and the GPUs are then taken. Stop it again by hand, or switch outside the
+#   window.
+# - "charlie's" GPU processes means PIDs in user-<uid>.slice (a login session,
+#   tmux, a user service). A GPU pod run by kubelet as the same uid is in a
+#   kubepods cgroup, is not matched, and is only logged as skipped.
 { config, lib, pkgs, ... }:
 let
   gpuUser = "charlie";
@@ -28,10 +39,20 @@ let
       pids=""
     fi
 
+    # Kill only PIDs in ${gpuUser}'s user slice (user-<uid>.slice). The owner
+    # alone is not enough: a GPU pod from kubelet's device plugin can run as
+    # the same uid. Every other GPU PID is logged and left alone.
+    uid=$(${pkgs.coreutils}/bin/id -u ${gpuUser}) || { echo "no user ${gpuUser}" >&2; uid=""; rc=1; }
     mine=""
     for pid in $pids; do
       owner=$(${pkgs.coreutils}/bin/stat -c %U "/proc/$pid" 2>/dev/null) || continue
-      [ "$owner" = "${gpuUser}" ] && mine="$mine $pid"
+      cg=$(${pkgs.coreutils}/bin/cat "/proc/$pid/cgroup" 2>/dev/null) || continue
+      if [ -n "$uid" ] && [ "$owner" = "${gpuUser}" ] && \
+         printf '%s\n' "$cg" | ${pkgs.gnugrep}/bin/grep -q "/user.slice/user-$uid.slice/"; then
+        mine="$mine $pid"
+      else
+        echo "skipping GPU pid $pid (owner $owner, cgroup $(printf '%s' "$cg" | ${pkgs.coreutils}/bin/head -n1))"
+      fi
     done
 
     if [ -n "$mine" ]; then
