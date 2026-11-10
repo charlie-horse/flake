@@ -29,6 +29,11 @@ spec:
       app.kubernetes.io/component: server
       app.kubernetes.io/instance: authentik
       app.kubernetes.io/name: authentik
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
   template:
     metadata:
       annotations:
@@ -163,6 +168,11 @@ spec:
       app.kubernetes.io/component: worker
       app.kubernetes.io/instance: authentik
       app.kubernetes.io/name: authentik
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
   template:
     metadata:
       annotations:
