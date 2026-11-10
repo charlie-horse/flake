@@ -2,8 +2,13 @@
 
 Date: 2026-11-10. Scope: web research plus reading this repo (HEAD `38ff56f`).
 Nothing was run on any host. Upstream versions are as of today: **Cilium
-1.20.4** (current stable, 2026-10-23), Gateway API v1.6.3, Envoy Gateway
-v1.10.0, NGINX Gateway Fabric v2.8.1, Traefik v3.7.18.
+1.20.4** (current stable, 2026-10-23), Gateway API v1.6.3, NGINX Gateway
+Fabric v2.8.1, Envoy Gateway v1.10.0, kgateway v2.4.7/v2.5.1, Istio 1.32.0,
+Traefik v3.7.18, HAProxy Unified Gateway v1.0.10, Contour v1.33.8, Kong
+3.9.4.
+
+Revised 2026-11-10: section 6 compares eight providers and Plan A now uses
+**NGINX Gateway Fabric** (first draft: Envoy Gateway, now the runner-up).
 
 Tags used throughout:
 - **[V]**: verified in upstream docs, upstream source at a release tag, an
@@ -35,9 +40,11 @@ Concretely:
 
 **Do this instead (Plan A):**
 1. Keep flannel and kube-proxy.
-2. Add **Envoy Gateway** (Helm chart pinned in `k8s/charts.nix`, a catenix
-   component) with its Envoy pinned to the amd64 nodes, behind a fixed
-   ClusterIP.
+2. Add **NGINX Gateway Fabric** (NGF; Helm chart pinned in
+   `k8s/charts.nix`, a catenix component) behind a fixed ClusterIP. One
+   Gateway-wide `SnippetsPolicy` sets `X-Forwarded-For` from
+   `Cf-Connecting-Ip`. nginx has no tcmalloc, so it can run on any node,
+   m2mini included.
 3. Point the existing **host cloudflared on r440** at it for new apps.
 4. Leave **authentik on its current path** (host cloudflared → loopback nginx
    → ClusterIP 10.96.0.20) because the apiserver's OIDC depends on it.
@@ -257,7 +264,7 @@ nginx in front:
 | Gateway | How it overwrites X-Forwarded-For from `Cf-Connecting-Ip` |
 |---|---|
 | Envoy Gateway | `ClientTrafficPolicy.clientIPDetection.customHeader {name: Cf-Connecting-Ip, failClosed: true}` for detection, plus `headers.earlyRequestHeaders` `Set X-Forwarded-For: "%REQ(Cf-Connecting-Ip)%"`. These are documented fields; runtime behaviour is [I] |
-| NGINX Gateway Fabric | Per-route `set X-Forwarded-For: $http_cf_connecting_ip`. The validator accepts it [V], runtime is [I]. A route that misses it falls back to appending |
+| NGINX Gateway Fabric | Gateway-wide: a `SnippetsPolicy` (`http.server.location` context) with `proxy_set_header X-Forwarded-For $http_cf_connecting_ip;` plus `NginxProxy` `disableBaseHeaders: [X-Forwarded-For]` [V, v2.8.1 source; runtime I]. Per route: `RequestHeaderModifier set X-Forwarded-For: $http_cf_connecting_ip` (the validator accepts exactly one variable) [V] |
 | Cloudflare | A Request Header Transform Rule at the edge [I] |
 
 All of these are only safe if **nothing but cloudflared can reach the
@@ -288,49 +295,90 @@ from repo facts V]:
   hand-created Secret or SOPS, never in git. Keep `auth.` on a host tunnel
   regardless.
 
-## 6. Alternatives on top of flannel (comparison only)
+## 6. Gateway providers on top of flannel (no CNI swap)
 
-| Option | Version | Gateway API | Client IP from `Cf-Connecting-Ip` | Exposure without LB | arm64 / 16K | Notes |
+The hard requirement is to derive the client IP from `Cf-Connecting-Ip` and
+**overwrite** `X-Forwarded-For` (XFF), because authentik reads the leftmost
+entry. Every Envoy-based data plane (Envoy Gateway, kgateway, Istio,
+Contour, Cilium) links tcmalloc, so the m2mini 47-bit-VA risk in section 3
+applies to all of them. They must be pinned to amd64 [V mechanism / I
+m2mini].
+
+| Provider | Version, Gateway API | Cf-Connecting-Ip → overwrite XFF | Exposure without LB | Runs on m2mini (arm64/16K) | Health | Verdict |
 |---|---|---|---|---|---|---|
-| **Envoy Gateway** | v1.10.0 (Envoy 1.40) [V] | v1.6.1, Conformant [V] | Built-in detection (`customHeader`, `failClosed`) plus an early `Set` of X-Forwarded-For [V fields / I runtime] | `envoyService.type` ClusterIP/NodePort; DaemonSet; `patch` for hostNetwork/clusterIP [V] | Same tcmalloc risk as cilium-envoy, so pin to amd64 [V/I] | Chart `oci://docker.io/envoyproxy/gateway-helm` [V] |
-| NGINX Gateway Fabric | v2.8.1 [V] | v1.6.3, Conformant [V] | No custom-header mode (`rewriteClientIP` is ProxyProtocol/XFF only). Per-route `set` works [V/I] | NginxProxy ClusterIP/NodePort, DaemonSet [V] | No allocator risk [I] | Every route must carry the set |
-| Traefik | v3.7.18 [V] | v1.6.3, Conformant [V] | Needs a third-party plugin (cloudflarewarp) [V] | NodePort/hostNetwork [I] | Go, fine [I] | Plugin supply chain |
-| ingress-nginx | **retired** | — | — | — | — | Best-effort maintenance ended March 2026; no further releases or security fixes [V] [ingnx] |
-| Cilium Gateway | 1.20.4 | v1.6.1+, Conformant [V] | Append only; `%REQ()%` quirk [V/I] | hostNetwork/LB-IPAM [V] | Same tcmalloc risk [I] | Requires CNI swap plus KPR |
+| **NGINX Gateway Fabric** | 2.8.1; v1.6.3, Conformant [V] | **Gateway-wide snippet:** `SnippetsPolicy` → `proxy_set_header X-Forwarded-For $http_cf_connecting_ip;` plus `disableBaseHeaders: [X-Forwarded-For]`. Native per-route `set` also works [V source / I runtime] | NginxProxy service ClusterIP/NodePort, DaemonSet option; `service.patches` can set `clusterIP` [V / I] | Yes, no allocator risk [I] | F5-backed, monthly releases, Apache-2.0 [V] | **Pick** |
+| Envoy Gateway | 1.10.0; v1.6.1, Conformant [V] | **Built-in:** ClientTrafficPolicy `customHeader` (+ `failClosed`) plus `earlyRequestHeaders` Set `%REQ(Cf-Connecting-Ip)%` [V fields / I runtime] | `envoyService.type` ClusterIP/NodePort, DaemonSet, `patch` [V] | No: pin to amd64 [I] | Very active [V] | Runner-up: richest policy set (ext-auth, rate limit) |
+| kgateway | 2.4.7 (v1.6.1, Conformant); 2.5.x needs Gateway API v1.7 [V] | `ListenerPolicy` XFF hops/CIDRs; no custom-header detection. `earlyRequestHeaderModifier` with `%REQ()%` unconfirmed [V / I] | GatewayParameters ClusterIP/NodePort [I] | No: pin to amd64 | Very active [V] | No advantage over Envoy Gateway |
+| Istio (gateway-only) | 1.32.0; 1.31 Conformant v1.6.0 [V] | `numTrustedProxies` only; needs an **EnvoyFilter** (unsupported break-glass API) [V / I] | `parametersRef` patches service/deployment [V] | No: pin to amd64 | Very healthy [V] | Too heavy (istiod ~2 GiB default request) [I] |
+| Traefik | 3.7.18; v1.6.3, Conformant [V] | No native option (`forwardedHeaders` only trusts or skips appending); needs a third-party Yaegi plugin [V] | NodePort/hostNetwork [I] | Yes [I] | Active [V] | Plugin in the request path |
+| HAProxy Unified Gateway | 1.0.10; built on Gateway API v1.5.0, no v1.6 report [V] | Via its own `Defaults`/`Backend` CRDs: `set-header X-Forwarded-For %[req.hdr(cf-connecting-ip)]` [V schema / I effect] | [I] | Yes [I] | Young (small project) [V] | Watch, not yet |
+| Contour | 1.33.8; stuck on Gateway API 1.3.0, no conformance report since [V] | `num-trusted-hops` only; HTTPProxy `%REQ()%` set, not proven on HTTPRoute [V / I] | DaemonSet, ClusterIP/NodePort [I] | No: pin to amd64 | Patch releases only [V] | Reject |
+| Kong (OSS) | KIC 3.5.14 / Gateway 3.9.4 [V] | `real_ip_header` rewrites only `$remote_addr`; upstream XFF still appends (`handler.lua`) [V] | [I] | LuaJIT on 16K unverified [I] | No OSS releases after 3.9 [V tags / I policy] | Reject |
+| ingress-nginx | **retired** | — | — | — | Best-effort maintenance ended March 2026; no further releases or security fixes [V] [ingnx] | Reject |
+| Cilium Gateway | 1.20.4; v1.6.1+, Conformant [V] | Append only; `%REQ()%` quirk [V / I] | hostNetwork / LB-IPAM [V] | Same tcmalloc risk [I] | Healthy [V] | Requires CNI swap plus KPR |
+
+### Why NGINX Gateway Fabric over Envoy Gateway
+
+- **One object covers every route.** NGF's XFF overwrite is a single
+  Gateway-targeted `SnippetsPolicy`. Its effect follows from documented
+  nginx semantics plus NGF's generator source [V/I]. Envoy Gateway's
+  `%REQ()%` value in `earlyRequestHeaders` is documented but untested here
+  [I].
+- **It runs on every node, m2mini included.** There is no tcmalloc VA risk,
+  so no arch pinning is needed.
+- **It is small.** One control-plane pod plus one nginx + agent pod per
+  Gateway, roughly 50–100 MiB each [I].
+- **Costs:**
+  - Snippets must be enabled in Helm (`nginxGateway.snippets.enable=true`).
+    Anyone who can create a `SnippetsPolicy` can then inject raw nginx
+    config. That is acceptable with a single admin and Flux as the only
+    writer [I].
+  - The header name must be exactly `X-Forwarded-For`. NGF's base-header
+    dedup is case-sensitive, so other casing emits two XFF lines [V code /
+    I effect].
+  - When `Cf-Connecting-Ip` is missing, the value is empty and nginx drops
+    XFF. authentik then uses the TCP peer [I].
+- **Switch to Envoy Gateway** if you later need built-in ext-auth, rate
+  limiting, or `failClosed` rejection of requests without the header. Pin it
+  to amd64.
 
 ## 7. Recommendation and staged plan
 
-### Plan A (recommended): Envoy Gateway on flannel
+### Plan A (recommended): NGINX Gateway Fabric on flannel
 
 Each step is one PR (branch → CI → merge → Flux), unless it says otherwise.
 None of these steps touches c4130's host config or etcd.
 
 **A1. Gateway API CRDs v1.6.3, standard channel.**
-- Change: a catenix component, vendored and hash-pinned.
+- Change: a catenix component, vendored and hash-pinned. NGF 2.8.1 is built
+  against v1.6.3 [V].
 - Verify: `kubectl get crd gateways.gateway.networking.k8s.io`.
 - Rollback: Flux revert. Nothing uses the CRDs yet.
 
-**A2. Envoy Gateway controller.**
-- Change: pin `envoy-gateway` in `k8s/charts.nix` and add
-  `k8s/components/envoy-gateway.nix`.
-- Pin the controller and the Envoy pods with `nodeSelector:
-  kubernetes.io/arch: amd64`. This avoids the m2mini tcmalloc risk. In
-  practice they land on r440, since c4130 is tainted and Envoy shouldn't
-  tolerate it.
-- Verify: the controller is Ready and the `GatewayClass` is Accepted.
+**A2. NGF controller.**
+- Change: pin `nginx-gateway-fabric` 2.8.1 in `k8s/charts.nix` (OCI chart
+  `oci://ghcr.io/nginx/charts/nginx-gateway-fabric` [I: confirm the path when
+  pinning]) and add `k8s/components/nginx-gateway-fabric.nix`.
+- Values: `nginxGateway.snippets.enable=true`; no NGINX Plus.
+- Placement: no arch pinning needed. Don't tolerate c4130's
+  `nvidia.com/gpu` taint.
+- Verify: the controller is Ready and the `GatewayClass` `nginx` is
+  Accepted.
 - Rollback: Flux revert.
 
-**A3. Gateway plus EnvoyProxy.**
-- `envoyService.type: ClusterIP`, with a fixed ClusterIP in the static band.
-  Set it via the EnvoyProxy service patch, like `authentik.serviceIP`
-  [I: confirm the patch path].
-- A ClientTrafficPolicy with `customHeader: Cf-Connecting-Ip`,
-  `failClosed: true`, plus the early `Set` of X-Forwarded-For.
+**A3. Gateway, NginxProxy and SnippetsPolicy.**
+- `NginxProxy`: service `type: ClusterIP`, with a fixed `clusterIP` in the
+  static band via `service.patches`, like `authentik.serviceIP` [I: confirm
+  the patch applies at create]. Set `disableBaseHeaders: [X-Forwarded-For]`.
+- `SnippetsPolicy` targeting the Gateway, in the `http.server.location`
+  context: `proxy_set_header X-Forwarded-For $http_cf_connecting_ip;`. Spell
+  the header exactly that way.
 - Deploy podinfo as the test route.
 - Verify, from r440:
   1. `curl -H 'Cf-Connecting-Ip: 203.0.113.9' -H 'X-Forwarded-For: 6.6.6.6' http://<gw-ip>/headers`
-     shows `X-Forwarded-For: 203.0.113.9` only.
-  2. A request without the header is rejected (failClosed).
+     shows exactly one `X-Forwarded-For: 203.0.113.9`.
+  2. Without `Cf-Connecting-Ip`, no `X-Forwarded-For` arrives.
+  3. `kubectl get snippetspolicy -o yaml` shows it Accepted.
 - Rollback: Flux revert.
 
 **A4. Host cloudflared routes to the Gateway.**
@@ -343,7 +391,8 @@ None of these steps touches c4130's host config or etcd.
 - authentik is **not** moved; it keeps its own tunnel and nginx.
 
 **A5 (optional). Lock down the Gateway Service.**
-- Only cloudflared (r440 host) should reach it.
+- Only cloudflared (r440 host) should reach it, because `Cf-Connecting-Ip`
+  is forgeable by any other client.
 - Flannel doesn't enforce NetworkPolicy, so use a host-side rule:
   `iptables` on r440, or keep the Gateway reachable only via ClusterIP from
   the host. Record this residual risk [I].
@@ -352,7 +401,7 @@ None of these steps touches c4130's host config or etcd.
 
 ### Plan B (only if Cilium is wanted for its own sake): gated CNI migration
 
-Do Plan A first; Envoy Gateway runs fine on Cilium later too. Each step is
+Do Plan A first; NGF runs fine on Cilium later too. Each step is
 one PR. Switch hosts one at a time in the order m2mini → r440 → c4130. Run
 the etcd health check after each switch. GC old generations on c4130 before
 its switch. Never touch vLLM: it is a host service, and the per-node switch
@@ -438,7 +487,7 @@ permission to SSH.
 - Rollback: re-enable proxy and set KPR false.
 
 **B8. Optional: Cilium Gateway** (host network mode on r440, port above 1023).
-- Only worth it if it replaces Envoy Gateway. It changes nothing for
+- Only worth it if it replaces NGF. It changes nothing for
   authentik, which stays behind nginx.
 
 **Time estimate:** about 1–2 weeks of calendar time with soaks; roughly
@@ -472,9 +521,26 @@ permission to SSH.
 - Envoy Gateway: https://gateway.envoyproxy.io/docs/tasks/traffic/client-traffic-policy/,
   https://gateway.envoyproxy.io/news/releases/v1.9/. Source at `v1.10.0`:
   `api/v1alpha1/{clienttrafficpolicy,shared,envoyproxy}_types.go`
-- NGINX Gateway Fabric: https://docs.nginx.com/nginx-gateway-fabric/reference/api/.
-  Source at `v2.8.1`: `apis/v1alpha2/nginxproxy_types.go`
-- Traefik: https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/
+- NGINX Gateway Fabric: https://docs.nginx.com/nginx-gateway-fabric/reference/api/,
+  https://github.com/nginx/nginx-gateway-fabric/releases. Source at `v2.8.1`:
+  `apis/v1alpha2/nginxproxy_types.go`,
+  `internal/controller/nginx/config/servers.go`
+  (`generateProxySetHeaders`, `createBaseProxySetHeaders`),
+  `internal/controller/nginx/config/validation/{http_filters,common,generic}.go`
+- kgateway: https://github.com/kgateway-dev/kgateway/releases and
+  https://kgateway.dev/docs/envoy/latest/reference/api.md
+- Istio: https://istio.io/latest/news/releases/1.32.x/announcing-1.32/,
+  https://istio.io/latest/docs/tasks/traffic-management/ingress/gateway-api/
+  and https://istio.io/latest/docs/ops/configuration/traffic-management/network-topologies/
+- Contour: https://github.com/projectcontour/contour/releases,
+  https://projectcontour.io/docs/main/configuration/ and
+  https://github.com/projectcontour/helm-charts
+- HAProxy Unified Gateway: v1.0.10 source (`go.mod`, the Defaults/Backend
+  CRD schemas)
+- Kong: `kong/runloop/handler.lua` @3.9.4,
+  https://github.com/Kong/kong/discussions/14405
+- Traefik: https://doc.traefik.io/traefik/v3.7/reference/install-configuration/entrypoints/,
+  https://doc.traefik.io/traefik/v3.7/extend/extend-traefik/
   and BetterCorp/cloudflarewarp
 - Conformance: https://gateway-api.sigs.k8s.io/implementations/
 - [ingnx] https://kubernetes.io/blog/2025/11/11/ingress-nginx-retirement/
