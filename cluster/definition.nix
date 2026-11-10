@@ -64,8 +64,8 @@
 #   oidc                 optional { issuerUrl; audiences; }  kube-apiserver
 #                        OIDC (JWT) login; absent = off. Read by
 #                        modules/cluster/control-plane.nix (clusterNode.oidc)
-#   authentik            { host; serviceIP; }  public hostname (Cloudflare
-#                        tunnel on c4130, hosts/c4130/cloudflared.nix) and
+#   authentik            { host; serviceIP; }  public hostname (dedicated
+#                        Cloudflare tunnel on r440, hosts/r440/cloudflared.nix) and
 #                        the fixed ClusterIP of Service authentik/
 #                        authentik-server (in the static band of
 #                        serviceCidr) the tunnel forwards to
@@ -92,8 +92,8 @@
   # this after that step and re-issue the apiserver leaves.
   apiserverExtraSANs = [ ];
 
-  # authentik (k8s/components/authentik.nix): public via the Cloudflare
-  # tunnel on c4130 -> http://<serviceIP>:80 (kube-proxy on the host).
+  # authentik (k8s/components/authentik.nix): public via its own Cloudflare
+  # tunnel on r440 -> http://<serviceIP>:80 (kube-proxy on the host).
   authentik = {
     host = "auth.neuros.is";
     serviceIP = "10.96.0.20";

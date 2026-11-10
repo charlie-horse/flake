@@ -186,13 +186,24 @@ nix shell nixpkgs#kubectl nixpkgs#openssl -c bash -ec '
 
 ### Reaching it
 
-Public: **https://auth.neuros.is** (`cluster.authentik.host`). The Cloudflare
-tunnel on c4130 (`hosts/c4130/cloudflared.nix`) forwards to Service
-`authentik-server` at its fixed ClusterIP (`cluster.authentik.serviceIP`,
-10.96.0.20, in the static band of the service CIDR) through c4130's
-kube-proxy. The DNS record is a proxied CNAME to the tunnel, made once with
-`cloudflared tunnel route dns <tunnel> auth.neuros.is` (charlie's
-`~/.cloudflared/cert.pem` on c4130).
+Public: **https://auth.neuros.is** (`cluster.authentik.host`), through a
+**dedicated** Cloudflare tunnel, `solaris-auth`
+(`cac462c4-7420-4ff3-9a40-c090a4e18737`). It runs on r440
+(`hosts/r440/cloudflared.nix`), separate from c4130's chat tunnel, and
+forwards to Service `authentik-server` at its fixed ClusterIP
+(`cluster.authentik.serviceIP`, 10.96.0.20, in the static band of the
+service CIDR) through r440's kube-proxy. authentik's pods also run on
+r440, so SSO does not depend on c4130. The credential is
+`r440:/var/lib/secrets/cloudflared/<tunnel>.json` (root, 0400). The DNS record
+is a proxied CNAME to that tunnel:
+`cloudflared tunnel route dns --overwrite-dns <tunnel> auth.neuros.is`
+(charlie's `~/.cloudflared/cert.pem` on c4130).
+
+authentik trusts `X-Forwarded-*` only from r440's addresses
+(`AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS`). Cloudflare appends to a
+client-sent `X-Forwarded-For`, so to make the client IP unforgeable, add a
+Cloudflare request-header transform rule for `auth.neuros.is` that sets
+`X-Forwarded-For` to `cf.connecting_ip`.
 
 The admin UI is public too: give `akadmin` a strong password plus MFA, and
 add real users rather than sharing it. Without the tunnel:
@@ -218,7 +229,7 @@ On the apiserver, usernames and groups get the `oidc:` prefix, and
 `https://auth.neuros.is/application/o/kubernetes/` and the audience
 `kubernetes` on every control plane (`clusterNode.oidc`). To turn it off,
 remove that entry and switch r440 and c4130. The apiservers fetch the
-discovery document and JWKS through the public URL (Cloudflare → tunnel).
+discovery document and JWKS through the public URL (Cloudflare → r440 tunnel).
 If authentik or the tunnel is down, OIDC logins fail and everything else
 keeps working. The apiserver starts anyway, and its JWT authenticator retries
 in the background.
