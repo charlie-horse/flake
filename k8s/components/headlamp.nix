@@ -80,7 +80,7 @@ in
             "cp -r /plugins/* /build/plugins &&"
             "chown -R 100:101 /build"
           ];
-          image = "ghcr.io/headlamp-k8s/headlamp-plugin-flux:latest";
+          image = "ghcr.io/headlamp-k8s/headlamp-plugin-flux:v0.7.0";
           imagePullPolicy = "Always";
           name = "headlamp-plugin-flux";
           securityContext = {
