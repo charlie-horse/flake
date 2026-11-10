@@ -99,15 +99,9 @@ in
           }];
         }];
 
-        persistentVolumeClaim = {
-          accessModes = [ "ReadWriteOnce" ];
-          enabled = true;
-          size = "1Gi";
-        };
-
         volumes = [{
           name = "headlamp-plugins";
-          persistentVolumeClaim.claimName = "headlamp";
+          emptyDir = "{}";
         }];
 
         volumeMounts = [{
