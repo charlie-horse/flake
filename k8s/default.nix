@@ -74,6 +74,7 @@ let
     "30-nvidia-device-plugin" = ./components/nvidia-device-plugin.nix;
     "40-flux-system" = ./components/flux-system.nix;
     "50-flux-sync" = ./components/flux-sync.nix;
+    "55-cloudflared" = ./components/cloudflared.nix;
     "60-authentik" = ./components/authentik.nix;
     "65-headlamp" = ./components/headlamp.nix;
     "90-podinfo" = ./components/podinfo.nix;

@@ -28,10 +28,10 @@
 # Pod security: the namespace enforces `baseline` (postgres starts as
 # root) and warns on `restricted`; server and worker meet `restricted`.
 #
-# Public at https://auth.neuros.is (cluster.authentik.host): the dedicated
-# Cloudflare tunnel `solaris-auth` on r440 (hosts/r440/cloudflared.nix)
+# Public at https://auth.neuros.is (cluster.authentik.host): the cluster's
+# Cloudflare tunnel (components/cloudflared.nix, one replica per node)
 # forwards to Service authentik-server at the fixed ClusterIP
-# cluster.authentik.serviceIP (port 80), through r440's kube-proxy. ClusterIP is immutable, so that
+# cluster.authentik.serviceIP (port 80). ClusterIP is immutable, so that
 # Service carries Flux's force annotation (recreated, not patched, if the
 # IP ever changes). From inside the tailnet/LAN without the tunnel:
 #   kubectl -n authentik port-forward svc/authentik-server 9000:80
@@ -470,19 +470,25 @@ in
           AUTHENTIK_POSTGRESQL__USER = db.user;
           AUTHENTIK_LOG_LEVEL = "info";
           AUTHENTIK_ERROR_REPORTING__ENABLED = "false";
-          # Honour X-Forwarded-For/-Proto only from the tunnel (cloudflared on
-          # r440 -> kube-proxy -> local pod): r440's LAN IP and its cni0
-          # address (10.244.0.1, first IP of its podCIDR, the source after
-          # kube-proxy's masquerade), plus loopback for the healthchecks.
-          # authentik's default trusts all of 10/8, so any pod or LAN host
-          # could forge client IPs. -Proto must stay trusted from the tunnel,
-          # or the issuer would be http://.
-          AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS = lib.concatStringsSep "," [
-            "${cluster.nodes.r440.lanIP}/32"
-            "10.244.0.1/32"
-            "127.0.0.1/32"
-            "::1/128"
-          ];
+          # Honour X-Forwarded-For/-Proto only from the tunnel's proxies: the
+          # in-cluster cloudflared + nginx (components/cloudflared.nix) run
+          # with hostNetwork on every node, so they reach the ClusterIP from
+          # that node's cni0 (10.244.N.1) or flannel.1 (10.244.N.0) address
+          # (node podCIDRs: r440 .0, c4130 .1, m2mini .2), plus the nodes' LAN
+          # IPs and loopback for the healthchecks. Ordinary pods get .2 and up,
+          # so they cannot forge client IPs (authentik's default trusts all of
+          # 10/8). -Proto must stay trusted from the proxies, or the issuer
+          # would be http://.
+          AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS = lib.concatStringsSep "," (
+            [
+              "10.244.0.0/31"
+              "10.244.1.0/31"
+              "10.244.2.0/31"
+              "127.0.0.1/32"
+              "::1/128"
+            ]
+            ++ map (n: "${n.lanIP}/32") (lib.attrValues cluster.nodes)
+          );
         };
         # Only secrets live there; everything else is global.env above.
         authentik.existingSecret.secretName = secretName;
