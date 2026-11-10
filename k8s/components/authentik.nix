@@ -10,9 +10,11 @@
 #                   is the 5400 rpm HDD that already slows its etcd WAL.
 #   backup          CronJob, daily `pg_dump -Fc` to r440
 #                   (/var/lib/authentik/backup, 14 kept).
-#   blueprint       ConfigMap `authentik-blueprints`: the OIDC provider and
-#                   application `kubernetes` plus the group `cluster-admins`
-#                   for kube-apiserver logins (see k8s/README.md, "authentik").
+#   blueprint       ConfigMap `authentik-blueprints`: the OIDC providers and
+#                   applications `kubernetes` (kubectl, public) and
+#                   `headlamp` (Headlamp, confidential) plus the group
+#                   `cluster-admins` for kube-apiserver logins (see
+#                   k8s/README.md, "authentik").
 #
 # Secrets are NOT in git. The pods read the Secret `authentik-secrets`
 # (created once by hand, never by Flux; Flux does not prune what it did not
@@ -360,6 +362,54 @@ let
       - model: authentik_policies.policybinding
         identifiers:
           target: !KeyOf application
+          group: !KeyOf cluster-admins
+        attrs:
+          order: 0
+
+      # Headlamp (k8s/components/headlamp.nix): confidential client. Headlamp
+      # forwards the ID token to the apiserver, which trusts this provider's
+      # issuer (.../application/o/headlamp/) with audience `headlamp`
+      # (cluster/definition.nix oidc.extraIssuers). authentik generates the
+      # client secret; it goes into the hand-made Secret headlamp/headlamp-oidc
+      # (k8s/README.md), never into git.
+      - model: authentik_providers_oauth2.oauth2provider
+        id: headlamp-provider
+        identifiers:
+          name: headlamp
+        attrs:
+          name: headlamp
+          client_type: confidential
+          client_id: headlamp
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+          issuer_mode: per_provider
+          sub_mode: hashed_user_id
+          include_claims_in_id_token: true
+          access_token_validity: minutes=15
+          refresh_token_validity: days=1
+          redirect_uris:
+            - matching_mode: strict
+              url: https://${cluster.headlamp.host}/oidc-callback
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+
+      - model: authentik_core.application
+        id: headlamp-application
+        identifiers:
+          slug: headlamp
+        attrs:
+          name: Headlamp (solaris)
+          provider: !KeyOf headlamp-provider
+          meta_launch_url: https://${cluster.headlamp.host}/
+          policy_engine_mode: any
+
+      - model: authentik_policies.policybinding
+        identifiers:
+          target: !KeyOf headlamp-application
           group: !KeyOf cluster-admins
         attrs:
           order: 0

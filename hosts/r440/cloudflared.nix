@@ -3,6 +3,8 @@
 #   ClusterIP (cluster/definition.nix: authentik.serviceIP), through this
 #   node's kube-proxy. authentik's pods run on r440 (amd64; c4130 is
 #   tainted), so SSO does not depend on c4130.
+#   https://k8s.neuros.is  -> Service headlamp/headlamp (cluster.headlamp),
+#   the same way; Headlamp also runs on r440 (amd64 nodeSelector).
 # Separate from c4130's chat tunnel on purpose: its own credential, its own
 # DNS route, nothing else routed through it.
 #
@@ -14,6 +16,7 @@
 # DNS (once, with an account cert from `cloudflared tunnel login`; charlie's
 # is in c4130:~/.cloudflared/cert.pem):
 #   cloudflared tunnel route dns --overwrite-dns <tunnel> auth.neuros.is
+#   cloudflared tunnel route dns --overwrite-dns <tunnel> k8s.neuros.is
 { cluster, ... }:
 let
   tunnel = "cac462c4-7420-4ff3-9a40-c090a4e18737";
@@ -24,7 +27,10 @@ in
     tunnels.${tunnel} = {
       credentialsFile = "/var/lib/secrets/cloudflared/${tunnel}.json";
       default = "http_status:404";
-      ingress.${cluster.authentik.host} = "http://${cluster.authentik.serviceIP}:80";
+      ingress = {
+        ${cluster.authentik.host} = "http://${cluster.authentik.serviceIP}:80";
+        ${cluster.headlamp.host} = "http://${cluster.headlamp.serviceIP}:80";
+      };
     };
   };
 }
