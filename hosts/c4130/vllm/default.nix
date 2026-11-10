@@ -21,7 +21,8 @@
     # Serve Flint with vllm-sm70's sm_70 model class. Without the override
     # vLLM loads upstream's FlintForCausalLM, which needs FlashInfer and bf16
     # (not available on V100). `args` replaces the built-in list, so this is
-    # the module's Flint list plus --hf-overrides; `--dtype half` is already
+    # the module's Flint list (parser flags: vllm_sm70.reasoning plugin +
+    # glm47_sm70, as in nix/module.nix) plus --hf-overrides; `--dtype half` is already
     # in the module's common args for every model.
     # TODO(cutover): needs FlintSm70ForCausalLM registered by the sm70 plugin
     # (vllm-sm70 #36). Move the override into vllm-sm70's built-in Flint entry
@@ -30,7 +31,8 @@
       "--kv-cache-dtype" "auto"
       "--enable-prompt-tokens-details"
       "--tool-call-parser" "glm47"
-      "--reasoning-parser" "glm47"
+      "--reasoning-parser-plugin" "vllm_sm70.reasoning"
+      "--reasoning-parser" "glm47_sm70"
       "--exclude-tools-when-tool-choice-none"
       "--override-generation-config" ''{"temperature":1.0,"top_p":0.95,"top_k":20}''
       "--hf-overrides" ''{"architectures":["FlintSm70ForCausalLM"]}''
