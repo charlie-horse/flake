@@ -61,14 +61,27 @@
 #                  "final"  new etcd-server/-peer/-client-apiserver leaves,
 #                           peerClientCertAuth on (end state)
 #   apiserverExtraSANs   list of string  extra SANs on every apiserver leaf
-#   oidc                 optional { issuerUrl; audiences; }  kube-apiserver
-#                        OIDC (JWT) login; absent = off. Read by
-#                        modules/cluster/control-plane.nix (clusterNode.oidc)
-#   authentik            { host; serviceIP; }  public hostname (dedicated
-#                        Cloudflare tunnel on r440, hosts/r440/cloudflared.nix) and
-#                        the fixed ClusterIP of Service authentik/
-#                        authentik-server (in the static band of
-#                        serviceCidr) the tunnel forwards to
+#   oidc                 optional { issuerUrl; audiences; extraIssuers?; }
+#                        kube-apiserver OIDC (JWT) login; absent = off.
+#                        extraIssuers: list of { issuerUrl; audiences; },
+#                        one more JWT authenticator each (authentik issues
+#                        per provider, so every client is its own issuer).
+#                        Read by modules/cluster/control-plane.nix
+#                        (clusterNode.oidc)
+#   tunnel               { name; id; }  the one Cloudflare tunnel; run in
+#                        the cluster by k8s/components/cloudflared.nix (one
+#                        replica per node). Every public hostname below goes
+#                        through it.
+#   authentik            { host; serviceIP; }  public hostname (on the
+#                        tunnel) and the fixed ClusterIP of Service
+#                        authentik/authentik-server (in the static band of
+#                        serviceCidr) the tunnel's proxy forwards to
+#   headlamp             { host; serviceIP; }  same for Headlamp
+#                        (k8s/components/headlamp.nix), Service
+#                        headlamp/headlamp
+#   openWebui            { host; serviceIP; }  same for Open WebUI
+#                        (k8s/components/open-webui.nix), Service
+#                        open-webui/open-webui
 {
   name = "solaris";
   domain = "leaffish-monster.ts.net";
@@ -92,18 +105,48 @@
   # this after that step and re-issue the apiserver leaves.
   apiserverExtraSANs = [ ];
 
-  # authentik (k8s/components/authentik.nix): public via its own Cloudflare
-  # tunnel on r440 -> http://<serviceIP>:80 (kube-proxy on the host).
+  # The single Cloudflare tunnel (locally managed: the ingress rules live in
+  # k8s/components/cloudflared.nix). Its credential is the Secret
+  # cloudflared/tunnel-credentials, made by hand, never in git.
+  tunnel = {
+    name = "cluster";
+    id = "59a275ca-be31-4f8d-99ce-c536eaf490f8";
+  };
+
+  # Public services: cloudflared -> its nginx sidecar -> http://<serviceIP>:80.
+  # authentik (k8s/components/authentik.nix).
   authentik = {
     host = "auth.neuros.is";
     serviceIP = "10.96.0.20";
   };
 
+  # Headlamp (k8s/components/headlamp.nix).
+  headlamp = {
+    host = "k8s.neuros.is";
+    serviceIP = "10.96.0.21";
+  };
+
+  # Open WebUI (k8s/components/open-webui.nix), chat front-end for c4130's
+  # vLLM; logins through authentik (group local-ai).
+  openWebui = {
+    host = "chat.neuros.is";
+    serviceIP = "10.96.0.22";
+  };
+
   # kube-apiserver accepts tokens from authentik's provider `kubernetes`
-  # (issuer = per-provider URL, trailing slash included).
+  # (issuer = per-provider URL, trailing slash included), and the ID tokens
+  # Headlamp forwards from the confidential provider `headlamp`. authentik's
+  # issuer is per provider, so `headlamp` is a second issuer (with audience
+  # `headlamp`), not just another audience of the first.
   oidc = {
     issuerUrl = "https://auth.neuros.is/application/o/kubernetes/";
     audiences = [ "kubernetes" ];
+    extraIssuers = [
+      {
+        issuerUrl = "https://auth.neuros.is/application/o/headlamp/";
+        audiences = [ "headlamp" ];
+      }
+    ];
   };
 
   secretsDir = "/var/lib/kubernetes/secrets";

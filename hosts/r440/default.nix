@@ -23,6 +23,5 @@
     ./firewall.nix
     ./containers.nix
     ./memory.nix
-    ./cloudflared.nix
   ];
 }

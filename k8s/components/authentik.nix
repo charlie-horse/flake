@@ -1,18 +1,22 @@
 # authentik (SSO / OIDC identity provider), namespace `authentik`.
 #
 #   server, worker  the authentik Helm chart (charts.authentik, image
-#                   ghcr.io/goauthentik/server). amd64 only (nodeSelector):
-#                   with c4130 tainted for vLLM that means r440. m2mini
-#                   (arm64, 16 KiB pages) is avoided on purpose.
+#                   ghcr.io/goauthentik/server). One of each per node
+#                   (replicas = node count, the chart's "hard" pod
+#                   anti-affinity, c4130's GPU taint tolerated), so login
+#                   survives any one node being down. PostgreSQL is still a
+#                   single instance (below).
 #   postgresql      a plain StatefulSet (official postgres image, not the
 #                   chart's bundled subchart), data on m2mini's NVMe
 #                   (hostPath PV, /var/lib/authentik/postgres). r440's root
 #                   is the 5400 rpm HDD that already slows its etcd WAL.
 #   backup          CronJob, daily `pg_dump -Fc` to r440
 #                   (/var/lib/authentik/backup, 14 kept).
-#   blueprint       ConfigMap `authentik-blueprints`: the OIDC provider and
-#                   application `kubernetes` plus the group `cluster-admins`
-#                   for kube-apiserver logins (see k8s/README.md, "authentik").
+#   blueprint       ConfigMap `authentik-blueprints`: the OIDC providers and
+#                   applications `kubernetes` (kubectl, public) and
+#                   `headlamp` (Headlamp, confidential) plus the group
+#                   `cluster-admins` for kube-apiserver logins (see
+#                   k8s/README.md, "authentik").
 #
 # Secrets are NOT in git. The pods read the Secret `authentik-secrets`
 # (created once by hand, never by Flux; Flux does not prune what it did not
@@ -26,10 +30,10 @@
 # Pod security: the namespace enforces `baseline` (postgres starts as
 # root) and warns on `restricted`; server and worker meet `restricted`.
 #
-# Public at https://auth.neuros.is (cluster.authentik.host): the dedicated
-# Cloudflare tunnel `solaris-auth` on r440 (hosts/r440/cloudflared.nix)
+# Public at https://auth.neuros.is (cluster.authentik.host): the cluster's
+# Cloudflare tunnel (components/cloudflared.nix, one replica per node)
 # forwards to Service authentik-server at the fixed ClusterIP
-# cluster.authentik.serviceIP (port 80), through r440's kube-proxy. ClusterIP is immutable, so that
+# cluster.authentik.serviceIP (port 80). ClusterIP is immutable, so that
 # Service carries Flux's force annotation (recreated, not patched, if the
 # IP ever changes). From inside the tailnet/LAN without the tunnel:
 #   kubectl -n authentik port-forward svc/authentik-server 9000:80
@@ -328,6 +332,11 @@ let
           name: kubernetes
           client_type: public
           client_id: kubernetes
+          # authentik >= 2026.x allows only the listed grants (empty = none):
+          # the browser login (code + PKCE) and kubelogin's silent renewals.
+          grant_types:
+            - authorization_code
+            - refresh_token
           authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
           invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
           signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
@@ -363,12 +372,138 @@ let
           group: !KeyOf cluster-admins
         attrs:
           order: 0
+
+      # Headlamp (k8s/components/headlamp.nix): confidential client. Headlamp
+      # forwards the ID token to the apiserver, which trusts this provider's
+      # issuer (.../application/o/headlamp/) with audience `headlamp`
+      # (cluster/definition.nix oidc.extraIssuers). authentik generates the
+      # client secret; it goes into the hand-made Secret headlamp/headlamp-oidc
+      # (k8s/README.md), never into git.
+      - model: authentik_providers_oauth2.oauth2provider
+        id: headlamp-provider
+        identifiers:
+          name: headlamp
+        attrs:
+          name: headlamp
+          client_type: confidential
+          client_id: headlamp
+          # Same as `kubernetes`: only listed grants are allowed (empty = none).
+          grant_types:
+            - authorization_code
+            - refresh_token
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+          issuer_mode: per_provider
+          sub_mode: hashed_user_id
+          include_claims_in_id_token: true
+          access_token_validity: minutes=15
+          refresh_token_validity: days=1
+          redirect_uris:
+            - matching_mode: strict
+              url: https://${cluster.headlamp.host}/oidc-callback
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+
+      - model: authentik_core.application
+        id: headlamp-application
+        identifiers:
+          slug: headlamp
+        attrs:
+          name: Headlamp (solaris)
+          provider: !KeyOf headlamp-provider
+          meta_launch_url: https://${cluster.headlamp.host}/
+          policy_engine_mode: any
+
+      - model: authentik_policies.policybinding
+        identifiers:
+          target: !KeyOf headlamp-application
+          group: !KeyOf cluster-admins
+        attrs:
+          order: 0
+
+      # Open WebUI (k8s/components/open-webui.nix): confidential client; its
+      # secret is generated by authentik on creation (never in git) and
+      # copied into the Secret open-webui/open-webui-secrets.
+      - model: authentik_core.group
+        id: local-ai
+        identifiers:
+          name: local-ai
+        attrs:
+          name: local-ai
+
+      - model: authentik_providers_oauth2.oauth2provider
+        id: open-webui-provider
+        identifiers:
+          name: open-webui
+        attrs:
+          name: open-webui
+          client_type: confidential
+          client_id: open-webui
+          grant_types:
+            - authorization_code
+            - refresh_token
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+          issuer_mode: per_provider
+          sub_mode: hashed_user_id
+          include_claims_in_id_token: true
+          access_token_validity: minutes=15
+          refresh_token_validity: days=30
+          redirect_uris:
+            - matching_mode: strict
+              url: https://${cluster.openWebui.host}/oauth/oidc/callback
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+
+      - model: authentik_core.application
+        id: open-webui-application
+        identifiers:
+          slug: open-webui
+        attrs:
+          name: Open WebUI
+          provider: !KeyOf open-webui-provider
+          meta_launch_url: https://${cluster.openWebui.host}/
+          policy_engine_mode: any
+
+      # Only members of local-ai may log in to Open WebUI.
+      - model: authentik_policies.policybinding
+        identifiers:
+          target: !KeyOf open-webui-application
+          group: !KeyOf local-ai
+        attrs:
+          order: 0
   '';
 
   # Scheduling, sizing and hardening shared by server and worker. The image
   # runs as `authentik` (uid 1000), so both meet `restricted`.
   common = {
-    nodeSelector."kubernetes.io/arch" = "amd64";
+    replicas = lib.length (lib.attrNames cluster.nodes);
+    # One per node (hard anti-affinity) leaves no node for a surge pod, and
+    # the old pod would never go: replace one at a time instead.
+    deploymentStrategy = {
+      type = "RollingUpdate";
+      rollingUpdate = {
+        maxSurge = 0;
+        maxUnavailable = 1;
+      };
+    };
+    # Every node's taints (c4130: nvidia.com/gpu=vllm), so one lands on each.
+    tolerations = lib.unique (
+      lib.concatMap (
+        n:
+        lib.mapAttrsToList (_: t: {
+          inherit (t) key value effect;
+          operator = "Equal";
+        }) (n.taints or { })
+      ) (lib.attrValues cluster.nodes)
+    );
     securityContext = {
       runAsNonRoot = true;
       seccompProfile.type = "RuntimeDefault";
@@ -411,24 +546,32 @@ in
           AUTHENTIK_POSTGRESQL__USER = db.user;
           AUTHENTIK_LOG_LEVEL = "info";
           AUTHENTIK_ERROR_REPORTING__ENABLED = "false";
-          # Honour X-Forwarded-For/-Proto only from the tunnel (cloudflared on
-          # r440 -> kube-proxy -> local pod): r440's LAN IP and its cni0
-          # address (10.244.0.1, first IP of its podCIDR, the source after
-          # kube-proxy's masquerade), plus loopback for the healthchecks.
-          # authentik's default trusts all of 10/8, so any pod or LAN host
-          # could forge client IPs. -Proto must stay trusted from the tunnel,
-          # or the issuer would be http://.
-          AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS = lib.concatStringsSep "," [
-            "${cluster.nodes.r440.lanIP}/32"
-            "10.244.0.1/32"
-            "127.0.0.1/32"
-            "::1/128"
-          ];
+          # Honour X-Forwarded-For/-Proto only from the tunnel's proxies: the
+          # in-cluster cloudflared + nginx (components/cloudflared.nix) run
+          # with hostNetwork on every node, so they reach the ClusterIP from
+          # that node's cni0 (10.244.N.1) or flannel.1 (10.244.N.0) address
+          # (node podCIDRs: r440 .0, c4130 .1, m2mini .2), plus the nodes' LAN
+          # IPs and loopback for the healthchecks. Ordinary pods get .2 and up,
+          # so they cannot forge client IPs (authentik's default trusts all of
+          # 10/8). -Proto must stay trusted from the proxies, or the issuer
+          # would be http://.
+          AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS = lib.concatStringsSep "," (
+            [
+              "10.244.0.0/31"
+              "10.244.1.0/31"
+              "10.244.2.0/31"
+              "127.0.0.1/32"
+              "::1/128"
+            ]
+            ++ map (n: "${n.lanIP}/32") (lib.attrValues cluster.nodes)
+          );
         };
         # Only secrets live there; everything else is global.env above.
         authentik.existingSecret.secretName = secretName;
         blueprints.configMaps = [ blueprintsConfigMap ];
         postgresql.enabled = false;
+        # Required anti-affinity on kubernetes.io/hostname: one per node.
+        global.affinity.podAntiAffinity = "hard";
         server = common;
         worker = common;
       };

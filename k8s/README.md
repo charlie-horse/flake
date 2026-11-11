@@ -27,7 +27,10 @@ modules read.
 | `30-nvidia-device-plugin.yaml` | NVIDIA device plugin on `nvidia.com/gpu.present=true` nodes, `runtimeClassName: nvidia`, `DEVICE_ID_STRATEGY=index` (matches the host's index-named CDI spec) | nvidia-device-plugin chart 0.20.1 |
 | `40-flux-system.yaml` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers | fluxcd-community flux2 chart 2.19.1 |
 | `50-flux-sync.yaml` | GitRepository `https://github.com/charlie-horse/flake` (public HTTPS, no secretRef), branch `main`; Kustomization `./k8s/rendered`, prune | hand-written, typed by the flux2 CRDs |
+| `55-cloudflared.yaml` | the single Cloudflare tunnel `cluster`: cloudflared, one replica per node (hostNetwork), nginx sidecar that sets `X-Forwarded-For` from `Cf-Connecting-Ip`; routes auth/k8s/chat | hand-written |
 | `60-authentik.yaml` | authentik (SSO/OIDC): server + worker on amd64 (r440), PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprint for the `kubernetes` OIDC client. Secrets come from a hand-made Secret ([below](#authentik)) | authentik chart 2026.8.5 + hand-written |
+| `65-headlamp.yaml` | Headlamp web UI (namespace `headlamp`, enforce `restricted`): 1 replica on amd64 (r440), Service `headlamp` at fixed ClusterIP 10.96.0.21, OIDC login via authentik's confidential client `headlamp`; its ServiceAccount has no RBAC (users act with their own token). Client secret from a hand-made Secret ([below](#headlamp)) | headlamp chart 0.46.0 |
+| `70-open-webui.yaml` | Open WebUI 0.12.2 (chat for c4130's vLLM at `10.0.0.95:8000`), one replica, data on r440 (hostPath PV), OIDC login via authentik for group `local-ai`; secrets from the hand-made Secret `open-webui/open-webui-secrets` ([below](#open-webui)) | hand-written |
 | `90-podinfo.yaml` | podinfo smoke app (namespace `podinfo`), 3 replicas spread one per node (incl. the arm64 m2mini) | hand-written |
 
 Every image is a multi-arch manifest list (linux/amd64 + linux/arm64);
@@ -186,27 +189,12 @@ nix shell nixpkgs#kubectl nixpkgs#openssl -c bash -ec '
 
 ### Reaching it
 
-Public: **https://auth.neuros.is** (`cluster.authentik.host`), through a
-**dedicated** Cloudflare tunnel, `solaris-auth`
-(`cac462c4-7420-4ff3-9a40-c090a4e18737`). It runs on r440
-(`hosts/r440/cloudflared.nix`), separate from c4130's chat tunnel. Through
-a local nginx (below) it forwards to Service `authentik-server` at its
-fixed ClusterIP (`cluster.authentik.serviceIP`, 10.96.0.20, in the static
-band of the service CIDR), via r440's kube-proxy. authentik's pods also run on
-r440, so SSO does not depend on c4130. The credential is
-`r440:/var/lib/secrets/cloudflared/<tunnel>.json` (root, 0400). The DNS record
-is a proxied CNAME to that tunnel:
-`cloudflared tunnel route dns --overwrite-dns <tunnel> auth.neuros.is`
-(charlie's `~/.cloudflared/cert.pem` on c4130).
-
-Between cloudflared and the Service sits an nginx on `127.0.0.1:9180`
-(r440). It *replaces* `X-Forwarded-For` and `X-Real-IP` with
-Cloudflare's `Cf-Connecting-Ip`, which the edge always sets and a client
-cannot forge. Cloudflare itself appends to a client-sent `X-Forwarded-For`,
-and authentik reads the leftmost entry, so without nginx a client could pick
-the IP authentik logs. authentik trusts `X-Forwarded-*` only from r440's
-addresses (`AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS`). The tunnel is locally
-managed (NixOS), so none of this is configured in the Cloudflare dashboard.
+Public: **https://auth.neuros.is** (`cluster.authentik.host`), through the
+cluster's single Cloudflare tunnel (see [Cloudflare tunnel](#cloudflare-tunnel)),
+to Service `authentik-server` at its fixed ClusterIP
+(`cluster.authentik.serviceIP`, 10.96.0.20, in the static band of the
+service CIDR). authentik trusts `X-Forwarded-*` only from the tunnel's
+proxies, i.e. the nodes' own addresses (`AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS`).
 
 The admin UI is public too: give `akadmin` a strong password plus MFA, and
 add real users rather than sharing it. Without the tunnel:
@@ -224,7 +212,10 @@ creates:
 - the public OAuth2/OIDC provider `kubernetes` (client id `kubernetes`,
   PKCE, RS256 with authentik's self-signed key, redirect
   `http://localhost:8000` and `:18000` for kubelogin);
-- the application `kubernetes`, which only `cluster-admins` may use.
+- the application `kubernetes`, which only `cluster-admins` may use;
+- the confidential provider and application `headlamp` (client id
+  `headlamp`, redirect `https://k8s.neuros.is/oidc-callback`), also
+  `cluster-admins` only. See [Headlamp](#headlamp).
 
 On the apiserver, usernames and groups get the `oidc:` prefix, and
 `05-rbac` binds `oidc:cluster-admins` to `cluster-admin`. It is on: the
@@ -244,6 +235,7 @@ machine:
 kubectl krew install oidc-login   # or nixpkgs#kubelogin-oidc
 kubectl config set-credentials solaris-oidc \
   --exec-api-version=client.authentication.k8s.io/v1 \
+  --exec-interactive-mode=IfAvailable \
   --exec-command=kubectl --exec-arg=oidc-login --exec-arg=get-token \
   --exec-arg=--oidc-issuer-url=https://auth.neuros.is/application/o/kubernetes/ \
   --exec-arg=--oidc-client-id=kubernetes \
@@ -251,3 +243,104 @@ kubectl config set-credentials solaris-oidc \
   --exec-arg=--oidc-extra-scope=offline_access
 kubectl --user=solaris-oidc auth whoami   # oidc:<username>, groups oidc:cluster-admins
 ```
+
+kubelogin serves its login page on `http://localhost:8000` (or `:18000` if
+8000 is taken) on the machine running kubectl, which redirects to
+auth.neuros.is. When kubectl runs over SSH, forward the port first:
+`ssh -L 8000:localhost:8000 <host>`. Older kubectl without
+`--exec-interactive-mode`: add `interactiveMode: IfAvailable` under the
+user's `exec:` in the kubeconfig by hand.
+
+## Headlamp
+
+Kubernetes web UI (`components/headlamp.nix`), public at
+**https://k8s.neuros.is** (`cluster.headlamp.host`) through the cluster's
+Cloudflare tunnel (see [Cloudflare tunnel](#cloudflare-tunnel)), to Service
+`headlamp/headlamp` at its fixed ClusterIP (`cluster.headlamp.serviceIP`,
+10.96.0.21).
+
+Login is OIDC with authentik's confidential client `headlamp`. Headlamp
+forwards the user's ID token to the apiserver. authentik's issuer is per
+provider (`https://auth.neuros.is/application/o/headlamp/`), so that is a
+second JWT authenticator on the apiserver (`oidc.extraIssuers` in
+`cluster/definition.nix`, audience `headlamp`, same `oidc:` prefixes), not
+just another audience. Changing it means switching r440 and c4130. The pod's
+own ServiceAccount has no RBAC; what a user sees is what
+`oidc:cluster-admins` (or their other groups) allow.
+
+### The Secret (once, by hand, never in git)
+
+Copy the client secret from authentik (Applications → Providers →
+`headlamp`), then on r440 with the operator kubeconfig paste it on stdin:
+
+```sh
+export KUBECONFIG=~/.local/share/cluster-pki/solaris/admin.kubeconfig
+nix shell nixpkgs#kubectl -c kubectl -n headlamp create secret generic \
+  headlamp-oidc --from-env-file=/dev/stdin
+# type: OIDC_CLIENT_SECRET=<secret>   then Enter, Ctrl-D
+```
+
+Until it exists the pod sits in `CreateContainerConfigError`. Without the
+tunnel: `kubectl -n headlamp port-forward svc/headlamp 4466:80` (the OIDC
+callback still points at k8s.neuros.is, so log in there).
+
+## Cloudflare tunnel
+
+All public hostnames go through **one** locally managed tunnel, `cluster`
+(`cluster.tunnel`, id `59a275ca-be31-4f8d-99ce-c536eaf490f8`), run in the
+cluster by `components/cloudflared.nix`:
+
+| Hostname | Upstream |
+| --- | --- |
+| `auth.neuros.is` | authentik, ClusterIP 10.96.0.20 |
+| `k8s.neuros.is` | Headlamp, ClusterIP 10.96.0.21 |
+| `chat.neuros.is` | Open WebUI, ClusterIP 10.96.0.22 |
+
+- **Replicas.** One per node (required anti-affinity; c4130's GPU taint is
+  tolerated), so every node is a connector and the tunnel survives any one
+  node being down.
+- **Proxy.** Each pod runs with `hostNetwork` (the namespace is
+  `privileged` for that reason only; the containers are unprivileged and
+  read-only). cloudflared sends every hostname to an nginx sidecar on
+  `127.0.0.1:9190`. nginx *replaces* `X-Forwarded-For` and `X-Real-IP` with
+  Cloudflare's `Cf-Connecting-Ip`, which the edge always sets. Cloudflare
+  itself appends to a client-sent `X-Forwarded-For`, and authentik reads the
+  leftmost entry. Because of hostNetwork, nginx reaches the ClusterIPs from
+  the node's cni0/flannel addresses (10.244.N.0/31), which is what authentik
+  trusts.
+- **Credential.** The Secret `cloudflared/tunnel-credentials` (key
+  `credentials.json`), made once by hand, never in git:
+
+  ```sh
+  # on a machine with the JSON from `cloudflared tunnel create cluster`:
+  kubectl -n cloudflared create secret generic tunnel-credentials \
+    --from-file=credentials.json=<path to the JSON>
+  ```
+
+- **DNS.** A proxied CNAME per hostname to the tunnel (account cert:
+  charlie's `~/.cloudflared/cert.pem` on c4130):
+  `cloudflared tunnel route dns --overwrite-dns 59a275ca-be31-4f8d-99ce-c536eaf490f8 <hostname>`.
+- **New hostname.** Add it to `routes` in `components/cloudflared.nix` (the
+  pods roll on config change), then add its DNS route.
+
+## Open WebUI
+
+Chat front-end for c4130's vLLM (`components/open-webui.nix`), public at
+**https://chat.neuros.is** through the cluster's tunnel. It moved here from
+a NixOS service on c4130 on 2026-11-10, at the same version (0.12.2), with
+its data (`webui.db`, uploads) copied to `r440:/var/lib/open-webui/data` (a
+hostPath PV, Retain).
+
+- **Login.** The local login form works as before, plus **Continue with
+  authentik**: OIDC against authentik's confidential client `open-webui`,
+  which only members of the authentik group **`local-ai`** may use. New SSO
+  users are created with the instance's default role (pending unless an
+  admin changed it). An existing account with the same e-mail is linked
+  to its SSO login. Roles are never taken from authentik.
+- **Models.** vLLM's OpenAI API on c4130's LAN address (`10.0.0.95:8000`),
+  so the model follows `services.vllm-sm70.activeModel` as before.
+- **Secrets.** Never in git. The Secret `open-webui/open-webui-secrets` has
+  `WEBUI_SECRET_KEY` (signs sessions; carried over from c4130's
+  `.webui_secret_key`) and `OAUTH_CLIENT_SECRET` (authentik's generated
+  secret for `open-webui`, readable in the admin UI under Providers).
+

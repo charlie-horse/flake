@@ -22,13 +22,18 @@ metadata:
   name: authentik-server
   namespace: authentik
 spec:
-  replicas: 1
+  replicas: 3
   revisionHistoryLimit: 3
   selector:
     matchLabels:
       app.kubernetes.io/component: server
       app.kubernetes.io/instance: authentik
       app.kubernetes.io/name: authentik
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
   template:
     metadata:
       annotations:
@@ -51,8 +56,15 @@ spec:
                   app.kubernetes.io/component: server
                   app.kubernetes.io/instance: authentik
                   app.kubernetes.io/name: authentik
-              topologyKey: kubernetes.io/hostname
+              topologyKey: topology.kubernetes.io/zone
             weight: 100
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: server
+                app.kubernetes.io/instance: authentik
+                app.kubernetes.io/name: authentik
+            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - server
@@ -60,7 +72,7 @@ spec:
         - name: AUTHENTIK_ERROR_REPORTING__ENABLED
           value: "false"
         - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
-          value: 10.0.0.239/32,10.244.0.1/32,127.0.0.1/32,::1/128
+          value: 10.244.0.0/31,10.244.1.0/31,10.244.2.0/31,127.0.0.1/32,::1/128,10.0.0.95/32,10.0.0.147/32,10.0.0.239/32
         - name: AUTHENTIK_LOG_LEVEL
           value: info
         - name: AUTHENTIK_POSTGRESQL__HOST
@@ -124,13 +136,16 @@ spec:
           successThreshold: 1
           timeoutSeconds: 3
       enableServiceLinks: true
-      nodeSelector:
-        kubernetes.io/arch: amd64
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Equal
+        value: vllm
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -146,13 +161,18 @@ metadata:
   name: authentik-worker
   namespace: authentik
 spec:
-  replicas: 1
+  replicas: 3
   revisionHistoryLimit: 3
   selector:
     matchLabels:
       app.kubernetes.io/component: worker
       app.kubernetes.io/instance: authentik
       app.kubernetes.io/name: authentik
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
   template:
     metadata:
       annotations:
@@ -175,8 +195,15 @@ spec:
                   app.kubernetes.io/component: worker
                   app.kubernetes.io/instance: authentik
                   app.kubernetes.io/name: authentik
-              topologyKey: kubernetes.io/hostname
+              topologyKey: topology.kubernetes.io/zone
             weight: 100
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: worker
+                app.kubernetes.io/instance: authentik
+                app.kubernetes.io/name: authentik
+            topologyKey: kubernetes.io/hostname
       containers:
       - args:
         - worker
@@ -184,7 +211,7 @@ spec:
         - name: AUTHENTIK_ERROR_REPORTING__ENABLED
           value: "false"
         - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
-          value: 10.0.0.239/32,10.244.0.1/32,127.0.0.1/32,::1/128
+          value: 10.244.0.0/31,10.244.1.0/31,10.244.2.0/31,127.0.0.1/32,::1/128,10.0.0.95/32,10.0.0.147/32,10.0.0.239/32
         - name: AUTHENTIK_LOG_LEVEL
           value: info
         - name: AUTHENTIK_POSTGRESQL__HOST
@@ -251,14 +278,17 @@ spec:
         - mountPath: /blueprints/mounted/cm-authentik-blueprints
           name: blueprints-cm-authentik-blueprints
       enableServiceLinks: true
-      nodeSelector:
-        kubernetes.io/arch: amd64
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: authentik
       terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Equal
+        value: vllm
       volumes:
       - configMap:
           name: authentik-blueprints
@@ -430,6 +460,11 @@ data:
           name: kubernetes
           client_type: public
           client_id: kubernetes
+          # authentik >= 2026.x allows only the listed grants (empty = none):
+          # the browser login (code + PKCE) and kubelogin's silent renewals.
+          grant_types:
+            - authorization_code
+            - refresh_token
           authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
           invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
           signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
@@ -463,6 +498,113 @@ data:
         identifiers:
           target: !KeyOf application
           group: !KeyOf cluster-admins
+        attrs:
+          order: 0
+
+      # Headlamp (k8s/components/headlamp.nix): confidential client. Headlamp
+      # forwards the ID token to the apiserver, which trusts this provider's
+      # issuer (.../application/o/headlamp/) with audience `headlamp`
+      # (cluster/definition.nix oidc.extraIssuers). authentik generates the
+      # client secret; it goes into the hand-made Secret headlamp/headlamp-oidc
+      # (k8s/README.md), never into git.
+      - model: authentik_providers_oauth2.oauth2provider
+        id: headlamp-provider
+        identifiers:
+          name: headlamp
+        attrs:
+          name: headlamp
+          client_type: confidential
+          client_id: headlamp
+          # Same as `kubernetes`: only listed grants are allowed (empty = none).
+          grant_types:
+            - authorization_code
+            - refresh_token
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+          issuer_mode: per_provider
+          sub_mode: hashed_user_id
+          include_claims_in_id_token: true
+          access_token_validity: minutes=15
+          refresh_token_validity: days=1
+          redirect_uris:
+            - matching_mode: strict
+              url: https://k8s.neuros.is/oidc-callback
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+
+      - model: authentik_core.application
+        id: headlamp-application
+        identifiers:
+          slug: headlamp
+        attrs:
+          name: Headlamp (solaris)
+          provider: !KeyOf headlamp-provider
+          meta_launch_url: https://k8s.neuros.is/
+          policy_engine_mode: any
+
+      - model: authentik_policies.policybinding
+        identifiers:
+          target: !KeyOf headlamp-application
+          group: !KeyOf cluster-admins
+        attrs:
+          order: 0
+
+      # Open WebUI (k8s/components/open-webui.nix): confidential client; its
+      # secret is generated by authentik on creation (never in git) and
+      # copied into the Secret open-webui/open-webui-secrets.
+      - model: authentik_core.group
+        id: local-ai
+        identifiers:
+          name: local-ai
+        attrs:
+          name: local-ai
+
+      - model: authentik_providers_oauth2.oauth2provider
+        id: open-webui-provider
+        identifiers:
+          name: open-webui
+        attrs:
+          name: open-webui
+          client_type: confidential
+          client_id: open-webui
+          grant_types:
+            - authorization_code
+            - refresh_token
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+          issuer_mode: per_provider
+          sub_mode: hashed_user_id
+          include_claims_in_id_token: true
+          access_token_validity: minutes=15
+          refresh_token_validity: days=30
+          redirect_uris:
+            - matching_mode: strict
+              url: https://chat.neuros.is/oauth/oidc/callback
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+
+      - model: authentik_core.application
+        id: open-webui-application
+        identifiers:
+          slug: open-webui
+        attrs:
+          name: Open WebUI
+          provider: !KeyOf open-webui-provider
+          meta_launch_url: https://chat.neuros.is/
+          policy_engine_mode: any
+
+      # Only members of local-ai may log in to Open WebUI.
+      - model: authentik_policies.policybinding
+        identifiers:
+          target: !KeyOf open-webui-application
+          group: !KeyOf local-ai
         attrs:
           order: 0
 kind: ConfigMap

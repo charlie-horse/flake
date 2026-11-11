@@ -4,7 +4,6 @@
 {
   imports = [
     inputs.vllm-fork.nixosModules.vllm # also imports nixosModules.lmcache
-    ./open-webui.nix
   ];
 
   services.vllm-sm70 = {
