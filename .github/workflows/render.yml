@@ -23,7 +23,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: k8s-${{ github.ref }}
+  group: render-${{ github.ref }}
   # PRs: newest push wins. main: queue, so render commits never race.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
