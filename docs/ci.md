@@ -14,7 +14,7 @@ Every action is pinned by full commit SHA ([below](#pinned-actions)).
 | --- | --- | --- |
 | `secrets-guard` | ubuntu-24.04 | Fails if the diff adds a key file, a kubeconfig or a plaintext password ([details](#secrets-guard)). |
 | `flake-check` | ubuntu-24.04 | `nix flake check --keep-going`: every output evaluates (all NixOS hosts including the desktops, the ISOs, the packages). The flake has no `checks`, so nothing heavy is built. The k8s render is the system-independent output `k8s`, which flake check does not evaluate. |
-| `format` | ubuntu-24.04 | `nix fmt -- --check` over every tracked `.nix` file (the flake's formatter, RFC-style nixfmt). Excluded: generated files (`modules/programs/neovim/cssmodules-lsp/node-*.nix`, `omnisharp-roslyn/deps.nix`) and `hosts/Pestilence/servarr.nix` (its plaintext `rpc-password` line trips the secrets guard on any edit, reformatting included). Run `nix fmt` before committing. |
+| `format` | ubuntu-24.04 | `nix fmt -- --check` over every tracked `.nix` file (the flake's formatter, RFC-style nixfmt). Excluded: `hosts/Pestilence/servarr.nix` (its plaintext `rpc-password` line trips the secrets guard on any edit, reformatting included). Run `nix fmt` before committing. |
 | `eval-hosts` (matrix) | x86: ubuntu-24.04, m2mini: ubuntu-24.04-arm | `nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath` with import-from-derivation **disabled**, for c4130, r440 and m2mini. It checks `.system` and writes the drvPath to the job summary. |
 
 `flake check` alone is not enough: it checks that each

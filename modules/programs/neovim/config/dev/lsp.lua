@@ -20,9 +20,9 @@ vim.diagnostic.config {
 local servers = {
     'rust_analyzer', 'jdtls',--'java_language_server',
     'svelte', 'nil_ls', 'clangd', 'bashls', 'eslint',
-    'hls', 'html', 'cssls', 'taplo', 'vimls', 'omnisharp',
+    'hls', 'html', 'cssls', 'taplo', 'vimls',
     'jsonls', 'yamlls', 'pyright', 'dockerls', 'prismals',
-    'tsserver', 'lua_ls', 'tailwindcss', 'cssmodules_ls'
+    'tsserver', 'lua_ls', 'tailwindcss'
 }
 
 local override = function(server)
@@ -47,17 +47,6 @@ local override = function(server)
                 or vim.fn.getcwd()
             end,
             cmd = { 'java-language-server' },
-        }
-        return true
-    end
-
-    if server == 'omnisharp' then
-        lspconfig[server].setup {
-            capabilities = capabilities,
-            cmd = {
-                'OmniSharp', '--languageserver',
-                '--hostPID', tostring(vim.fn.getpid())
-            }
         }
         return true
     end

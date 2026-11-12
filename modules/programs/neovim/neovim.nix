@@ -97,9 +97,7 @@ in
           dockerfile-language-server-nodejs
         ])
         ++ (with (pkgs.callPackage ./customBins.nix { }); [
-          #omnisharp-roslyn
           prisma-language-server
-          cssmodules-language-server
           tailwindcss-language-server
         ])
       else
