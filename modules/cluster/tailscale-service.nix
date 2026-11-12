@@ -119,7 +119,7 @@ in
           echo "tailscaled is not Running (state: ''${state:-unknown})" >&2
           exit 1
         fi
-        tailscale serve set-config --service=${svc} ${serviceConfig}
+        tailscale serve set-config --all ${serviceConfig}
       '';
     };
   };
