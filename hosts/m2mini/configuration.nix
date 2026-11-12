@@ -44,12 +44,10 @@
     22
   ];
 
-  services.tailscale.enable = true;
-  # net.ipv4.ip_forward = 1 comes from the kubelet module (modules/cluster).
-  boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
-  systemd.services.tailscaled.serviceConfig.Environment = [
-    "TS_DEBUG_FIREWALL_MODE=nftables"
-  ];
+  # Tailscale (modules/server/tailscale.nix, which also turns on IP
+  # forwarding). Live prefs 2026-11-12: exit node + 10.0.0.0/16; tag:node
+  # was set in the admin console, so no tag is advertised.
+  server.tailscale.advertiseRoutes = [ "10.0.0.0/16" ];
 
   system.stateVersion = "26.05";
 }

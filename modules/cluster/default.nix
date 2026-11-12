@@ -14,6 +14,8 @@
 #                                         cri-o, NVIDIA runtime on gpu nodes)
 #   every node   -> ./keepalived.nix    (apiserver VIP, local /readyz check)
 #                   ./firewall.nix      (cluster ports open to the nodes only)
+#   controlPlane -> ./tailscale-service.nix (Tailscale Service svc:kube-api
+#                                         -> local apiserver)
 # limited by clusterNode.stage (cluster.nodes.<n>.rollout.stage) during the
 # cut-over: "etcd" -> etcd only, "controlPlane" -> + control plane and
 # keepalived, "full" -> everything. clusterNode.etcd.phase picks the etcd
@@ -44,6 +46,7 @@ in
     ./node.nix
     ./keepalived.nix
     ./firewall.nix
+    ./tailscale-service.nix
   ];
 
   options.clusterNode = {

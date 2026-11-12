@@ -33,15 +33,16 @@
     80
     443
   ];
-  # net.ipv4.ip_forward = 1 comes from the kubelet module (modules/cluster);
-  # a second definition here would be an eval error.
-  boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
+  # IP forwarding (v4 and v6) comes from modules/server/tailscale.nix
+  # (useRoutingFeatures = "server") and the kubelet module.
 
-  services.tailscale.enable = true;
+  # Tailscale (modules/server/tailscale.nix). Live prefs 2026-11-12: exit
+  # node + 10.0.1.0/24, AdvertiseTags [ tag:node ].
+  server.tailscale = {
+    advertiseRoutes = [ "10.0.1.0/24" ];
+    advertiseTags = [ "tag:node" ];
+  };
   services.openssh.enable = true;
-  systemd.services.tailscaled.serviceConfig.Environment = [
-    "TS_DEBUG_FIREWALL_MODE=nftables"
-  ];
 
   users.groups.video = { };
   users.users.charlie = {

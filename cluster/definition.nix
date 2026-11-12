@@ -62,7 +62,13 @@
 #                           peerClientCertAuth off, as today
 #                  "final"  new etcd-server/-peer/-client-apiserver leaves,
 #                           peerClientCertAuth on (end state)
+#   apiserverTailscaleService  optional string  name of the Tailscale Service
+#                        (svc:<name>) every controlPlane node hosts for the
+#                        apiserver port; clients use <name>.<domain>:6443.
+#                        Absent = off. Read by
+#                        modules/cluster/tailscale-service.nix
 #   apiserverExtraSANs   list of string  extra SANs on every apiserver leaf
+#                        (must hold <apiserverTailscaleService>.<domain>)
 #   oidc                 optional { issuerUrl; audiences; extraIssuers?; }
 #                        kube-apiserver OIDC (JWT) login; absent = off.
 #                        extraIssuers: list of { issuerUrl; audiences; },
@@ -100,9 +106,15 @@
   dnsServiceIP = "10.96.0.10";
   clusterDomain = "cluster.local";
 
-  # Extra SANs on every apiserver leaf (none since the Service-CIDR
-  # cut-over; re-issue the leaves with cluster-pki after changing this).
-  apiserverExtraSANs = [ ];
+  # Tailscale Service for the API (modules/cluster/tailscale-service.nix):
+  # every controlPlane node hosts svc:kube-api, TCP 6443 -> its local
+  # apiserver, reachable tailnet-wide as kube-api.<domain>:6443.
+  apiserverTailscaleService = "kube-api";
+
+  # Extra SANs on every apiserver leaf. Re-issue all apiserver leaves with
+  # cluster-pki (on r440) and deploy them after changing this (docs/pki.md).
+  # The Tailscale Service name must be here for kubectl to verify TLS.
+  apiserverExtraSANs = [ "kube-api.leaffish-monster.ts.net" ];
 
   # The single Cloudflare tunnel (locally managed: the ingress rules live in
   # k8s/components/cloudflared.nix). Its credential is the Secret
