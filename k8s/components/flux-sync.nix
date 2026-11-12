@@ -15,7 +15,6 @@
 }:
 let
   namespace = "flux-system";
-  name = "flux-system";
 
   chartCrds = lib.filter (m: (m.kind or null) == "CustomResourceDefinition") (
     builtins.fromJSON (
@@ -37,7 +36,7 @@ in
 
   validation.strict = true;
 
-  resources."source.toolkit.fluxcd.io".v1.OCIRepository."${name}-oci" = {
+  resources."source.toolkit.fluxcd.io".v1.OCIRepository."flux-system-oci" = {
     metadata.namespace = namespace;
     spec = {
       url = "oci://ghcr.io/charlie-horse/flake/manifests";
@@ -66,12 +65,12 @@ in
     };
   };
 
-  resources."kustomize.toolkit.fluxcd.io".v1.Kustomization.${name} = {
+  resources."kustomize.toolkit.fluxcd.io".v1.Kustomization.flux-system = {
     metadata.namespace = namespace;
     spec = {
       sourceRef = {
         kind = "OCIRepository";
-        inherit name;
+        name = "flux-system-oci";
       };
       path = "./";
       interval = "10m";
