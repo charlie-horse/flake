@@ -202,6 +202,26 @@ in
         }
       ];
 
+      # dhcpcd runs on every interface unless told otherwise. On 2026-11-11
+      # eno1 lost carrier on r440 and c4130 for 8 h; dhcpcd then dropped the
+      # LAN routes and address and added an IPv4LL default route via
+      # flannel.1, so nothing could reach any apiserver address and Flux,
+      # flannel and cloudflared crash-looped until the link returned.
+      #   - deny the CNI, overlay and tailscale interfaces (pod veths, cni0,
+      #     flannel.1, tailscale0 are never DHCP clients). A list: merges
+      #     with the hosts' own entries (bond0 etc. in hosts/*/builder.nix).
+      #   - persistent: keep the LAN address (and with it the node's own
+      #     apiserver endpoint and etcd peer address) when carrier drops.
+      networking.dhcpcd = {
+        denyInterfaces = [
+          "veth*"
+          "cni*"
+          "flannel*"
+          "tailscale*"
+        ];
+        persistent = true;
+      };
+
       # Manual PKI: no easyCerts / certmgr / cfssl, no roles (they would
       # turn easyCerts and flannel back on), no NixOS addons (CoreDNS etc.
       # come from k8s/ via Flux).
