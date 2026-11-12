@@ -22,9 +22,9 @@
       packages = {
         cluster-pki = pki;
       }
-      # Installer ISOs for the desktop hosts (lib/system/mkHost.nix).
-      // (config.flake.lib.system.${system}.mkHostIso "Famine").${system}
-      // (config.flake.lib.system.${system}.mkHostIso "Pestilence").${system};
+      # Installer ISO for the desktop host (lib/system/mkHost.nix).
+      # Pestilence is archived, so it has none (parts/hosts.nix).
+      // (config.flake.lib.system.${system}.mkHostIso "Famine").${system};
 
       # nix run .#cluster-pki             -> ./pki-out (CAs + leaves)
       # nix run .#cluster-pki-deploy -- <node>  (stage + print sudo cmds)
