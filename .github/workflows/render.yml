@@ -147,10 +147,10 @@ jobs:
       - uses: actions/download-artifact@v8.0.2
         with:
           name: k8s-rendered
-          path: k8s/rendered
+          path: render
 
       - name: Push artifact
         run: |
-          flux push artifact \
-            oci://ghcr.io/${{ github.repository }}/manifests:$(git rev-parse --short HEAD) \
-            --path k8s/rendered
+          url="oci://ghcr.io/$GITHUB_REPOSITORY/manifests:${GITHUB_SHA::12}"
+          flux push artifact "$url" --path render -o json
+          flux tag artifact "$url" --tag main
