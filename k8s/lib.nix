@@ -1,5 +1,5 @@
 # Helpers shared by the catenix components (k8s/components/*), passed to
-# every component as the `k8sLib` module argument by k8s/default.nix.
+# every component as the `k8sLib` module argument by k8s/render.nix.
 { lib, cluster }:
 {
   # A node-local volume: a hostPath PersistentVolume pinned to `node` and
