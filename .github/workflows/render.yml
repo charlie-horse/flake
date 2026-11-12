@@ -137,12 +137,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Setup Flux CLI
-        uses: fluxcd/flux2/action@main
+        uses: fluxcd/flux2/action@v2.9.5
 
       - name: Login to GHCR
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
-            flux oci login ghcr.io --username flux --password-stdin
+            docker login ghcr.io -U "$GITHUB_ACTOR" --password-stdin
 
       - uses: actions/download-artifact@v8.0.2
         with:
