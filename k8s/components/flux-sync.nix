@@ -37,7 +37,7 @@ in
 
   validation.strict = true;
 
-  resources."source.toolkit.fluxcd.io".v1.OCIRepository.${name}-oci = {
+  resources."source.toolkit.fluxcd.io".v1.OCIRepository."${name}-oci" = {
     metadata.namespace = namespace;
     spec = {
       url = "oci://ghcr.io/charlie-horse/flake/manifests";
