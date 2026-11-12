@@ -16,7 +16,7 @@
     in
     {
       # `nix fmt`: RFC-style nixfmt over the tracked .nix files (checks.yml
-      # runs it with --check). Generated files are excluded there.
+      # runs it with --check, excluding only hosts/Pestilence/servarr.nix).
       formatter = pkgs.nixfmt;
 
       packages = {
