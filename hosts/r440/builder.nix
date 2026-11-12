@@ -1,6 +1,6 @@
-# r440 as a Nix remote builder and binary cache for c4130, over the direct
-# 2x25G link (bond0, 10.25.0.0/30). The cache binds to the link address
-# only (and ./firewall.nix opens 5000 on bond0 only); sshd listens everywhere.
+# r440 as a Nix remote builder for c4130, over the direct 2x25G link
+# (bond0, 10.25.0.0/30); sshd listens everywhere. The binary cache is
+# ./cache.nix (https://cache.neuros.is for every host, c4130 included).
 { lib, ... }:
 let
   # c4130 root's builder key: /root/.ssh/nixremote.pub on c4130 (see the
@@ -74,15 +74,5 @@ in
   nix.daemonCPUSchedPolicy = "batch";
   nix.daemonIOSchedClass = "idle";
 
-  # --- Binary cache --------------------------------------------------------
-  # Signing key generated on r440 (never leaves it): see the switch steps.
-  services.harmonia.cache = {
-    enable = true;
-    signKeyPaths = [ "/var/lib/secrets/harmonia.secret" ];
-    # Lower than cache.nixos.org (40), so c4130 asks r440 first.
-    settings.priority = 30;
-    settings.bind = "10.25.0.2:5000";
-  };
-  # Bind even before bond0 has its address.
-  systemd.sockets.harmonia.socketConfig.FreeBind = true;
+  # The binary cache (harmonia behind nginx with basic auth) is ./cache.nix.
 }

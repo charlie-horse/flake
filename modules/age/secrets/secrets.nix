@@ -26,4 +26,6 @@ in
   "acme-cloudflare.age".publicKeys = Pestilence;
 
   "key-famine.age".publicKeys = Famine;
+  # netrc for https://cache.neuros.is (modules/system/nix-cache.nix).
+  "nix-cache-netrc.age".publicKeys = Famine;
 }

@@ -11,10 +11,9 @@
     # ssh (22) is opened in ./configuration.nix on every interface.
     # tailscaled's WireGuard port, for direct (non-relayed) connections.
     allowedUDPPorts = [ 41641 ];
-    # The 25G link to c4130: ssh (remote builds) and the harmonia cache.
-    interfaces.bond0.allowedTCPPorts = [
-      22
-      5000
-    ];
+    # The 25G link to c4130: ssh (remote builds). The cache is not served
+    # on the link any more; its nginx port (5080) is opened per source in
+    # ./cache.nix.
+    interfaces.bond0.allowedTCPPorts = [ 22 ];
   };
 }

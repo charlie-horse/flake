@@ -34,6 +34,12 @@ mkIf age.enable {
       vpn-password.file = ./secrets/vpn-password.age;
       acme-cloudflare.file = ./secrets/acme-cloudflare.age;
     })
+    # netrc for r440's binary cache (custom.nixCache, hosts/Famine). Owned
+    # by root, 0400: only the nix-daemon reads it. Declared once the
+    # encrypted file is committed (docs/cluster.md, "Binary cache").
+    (mkIf (name == "Famine" && builtins.pathExists ./secrets/nix-cache-netrc.age) {
+      nix-cache-netrc.file = ./secrets/nix-cache-netrc.age;
+    })
   ];
 
   custom.age.systemIdentity.file = switch name (c: v: c == v) {

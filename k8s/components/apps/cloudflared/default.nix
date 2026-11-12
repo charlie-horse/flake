@@ -4,6 +4,8 @@
 #   https://<host> -> Cloudflare edge -> cloudflared (any replica)
 #     -> nginx sidecar on 127.0.0.1:9190 (same pod)
 #     -> http://<service ClusterIP>:80 (cluster.<service>.serviceIP)
+#        or, for the Nix cache (cluster.binaryCache), r440's LAN address
+#        (nginx with basic auth in front of harmonia, hosts/r440/cache.nix)
 #
 #   files.nix       routes (hostname -> ClusterIP) and both config files
 #   nginx.conf      the nginx sidecar's config (template)

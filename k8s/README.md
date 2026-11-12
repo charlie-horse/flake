@@ -38,7 +38,7 @@ with one line in `components` in `default.nix` (or in `deferred.modules`,
 | `infra/cert-manager` | cert-manager v1.21.3 (namespace `cert-manager`, enforce `restricted`): CRDs, controller and cainjector (1 replica each), webhook (2 replicas, PDB); r440 and m2mini ([cert-manager](#cert-manager)) | jetstack cert-manager chart v1.21.3 |
 | `infra/cert-manager-issuers` (deferred: `deferred/infra/cert-manager-issuers/`) | the workload CA: ClusterIssuer `selfsigned`, root Certificate `cert-manager/cluster-ca` (ECDSA P-384, 10 y), CA ClusterIssuer **`cluster-ca`**; applied by the Kustomization `cert-manager-issuers` | hand-written (`components/infra/cert-manager/issuers.nix`) |
 | `flux` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers; OCIRepository `flux-system-oci` (the signed GHCR artifact) + Kustomization `flux-system`, one Kustomization per deferred component (`cert-manager-issuers`); Receiver `ghcr` (push webhook) | fluxcd-community flux2 chart 2.19.1 |
-| `apps/cloudflared` | the single Cloudflare tunnel `cluster`: cloudflared, one replica per node (hostNetwork), nginx sidecar that sets `X-Forwarded-For` from `Cf-Connecting-Ip`; routes auth/k8s/chat and the Flux webhook host (`/hook/` only) | hand-written |
+| `apps/cloudflared` | the single Cloudflare tunnel `cluster`: cloudflared, one replica per node (hostNetwork), nginx sidecar that sets `X-Forwarded-For` from `Cf-Connecting-Ip`; routes auth/k8s/chat, the Flux webhook host (`/hook/` only) and `cache.neuros.is` (r440's Nix cache, outside the cluster) | hand-written |
 | `apps/authentik` | authentik (SSO/OIDC): one server + one worker per node, PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprints (one file per OIDC client: `kubernetes`, `headlamp`, `open-webui`). Secrets come from a hand-made Secret ([below](#authentik)) | authentik chart 2026.8.5 + hand-written |
 | `apps/headlamp` | Headlamp web UI (namespace `headlamp`, enforce `restricted`): 1 replica on amd64 (r440), Service `headlamp` at fixed ClusterIP 10.96.0.21, OIDC login via authentik's confidential client `headlamp`; its ServiceAccount has no RBAC (users act with their own token). Client secret from a hand-made Secret ([below](#headlamp)) | headlamp chart 0.46.0 |
 | `apps/open-webui` | Open WebUI 0.12.2 (chat for c4130's vLLM at `10.0.0.95:8000`), one replica, data on r440 (hostPath PV), OIDC login via authentik for group `local-ai`; secrets from the hand-made Secret `open-webui/open-webui-secrets` ([below](#open-webui)) | hand-written |
@@ -394,6 +394,15 @@ cluster by `components/apps/cloudflared/`:
 | `auth.neuros.is` | authentik, ClusterIP 10.96.0.20 |
 | `k8s.neuros.is` | Headlamp, ClusterIP 10.96.0.21 |
 | `chat.neuros.is` | Open WebUI, ClusterIP 10.96.0.22 |
+| `flux.neuros.is` | Flux Receiver, ClusterIP 10.96.0.23 (`/hook/` only) |
+| `cache.neuros.is` | r440's Nix binary cache: nginx (basic auth) on r440's LAN address, `10.0.0.239:5080` (`cluster.binaryCache`; not a Service) |
+
+The cache is the one route that leaves the cluster: nginx on r440
+(`hosts/r440/cache.nix`) asks for the password and fronts harmonia; its
+firewall opens 5080 to the nodes' LAN IPs, which is where these hostNetwork
+pods connect from. Authorization headers pass through the sidecar
+untouched; responses carry `Cache-Control: private, no-store`, so the edge
+caches nothing. Setup and secrets: docs/cluster.md, "Binary cache".
 
 - **Replicas.** One per node (required anti-affinity; c4130's GPU taint is
   tolerated), so every node is a connector and the tunnel survives any one
