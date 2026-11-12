@@ -235,6 +235,7 @@
       tailnetIP = "100.71.194.116";
       roles = [
         "etcd"
+        "controlPlane"
         "worker"
       ];
       gpu = false;

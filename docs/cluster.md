@@ -10,9 +10,13 @@ October 2026 cut-over) is [history/cluster-handoff-2026-10.md](history/cluster-h
 | --- | --- | --- | --- |
 | c4130 | x86_64 | etcd, control plane, worker | 2× V100 for the host's vLLM; tainted `nvidia.com/gpu=vllm:NoSchedule` (only one-per-node workloads tolerate it); root on SATA SSD RAID1 |
 | r440 | x86_64 | etcd, control plane, worker | Nix builder for c4130; root is a slow HDD shared with etcd's WAL; holds the cluster PKI |
-| m2mini | aarch64 (Asahi, 16 KiB pages) | etcd, worker | NVMe; authentik's PostgreSQL lives here |
+| m2mini | aarch64 (Asahi, 16 KiB pages) | etcd, control plane, worker | NVMe; authentik's PostgreSQL lives here |
 
-The apiserver VIP is 10.0.0.200 (keepalived). Nodes reach each other over
+The apiserver VIP is 10.0.0.200 (keepalived on every node, VRRP unicast on
+the LAN). Every node runs kube-apiserver, controller-manager and scheduler
+(the latter two leader-elected); the highest-priority node whose local
+`/readyz` answers holds the VIP (c4130 150 > r440 100 > m2mini 50), so the
+VIP survives any one node going down. Nodes reach each other over
 Tailscale (MagicDNS names) and the LAN (10.0.0.0/16).
 
 ## What runs where
