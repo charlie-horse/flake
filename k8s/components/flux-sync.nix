@@ -61,7 +61,7 @@ in
       type = "generic-hmac";
       secretRef.name = "webhook-token";   # made by hand, never in git
       resources = [
-        { apiVersion = "source.toolkit.fluxcd.io/v1"; kind = "OCIRepository"; name = "flux-system"; }
+        { apiVersion = "source.toolkit.fluxcd.io/v1"; kind = "OCIRepository"; name = "flux-system-oci"; }
       ];
     };
   };
