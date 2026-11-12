@@ -32,6 +32,15 @@ in
         clusterDomain = cluster.clusterDomain;
         imageAutomationController.create = false;
         imageReflectionController.create = false;
+        # Keyless cosign (OCIRepository verify) caches Sigstore's TUF trust
+        # root under $HOME/.sigstore; HOME is / on a read-only root fs. Use
+        # the writable /tmp emptyDir, as upstream Flux's own manifests do.
+        sourceController.extraEnv = [
+          {
+            name = "TUF_ROOT";
+            value = "/tmp/.sigstore";
+          }
+        ];
       };
       noHooks = true;
     })
