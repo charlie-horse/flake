@@ -32,6 +32,11 @@ on:
       - "flake.lock"
       - ".github/workflows/k8s.yml"
   workflow_dispatch:
+    inputs:
+      reused-run-id:
+        required: false
+        type: number
+        description: The run ID of a previous manifest build.
 
 permissions:
   contents: read
@@ -70,12 +75,14 @@ jobs:
     name: Render k8s manifests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    if: ${{ inputs.reused-run-id == '' }}
     outputs:
       changed: ${{ steps.diff.outputs.changed }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
+
       - uses: cachix/install-nix-action@v31.11.2
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
@@ -129,9 +136,10 @@ jobs:
   publish:
     name: Publish k8s/rendered
     if: >-
-      needs.render.outputs.changed == 'true'
-      && ((github.ref == 'refs/heads/main' && github.event_name == 'push')
-      || github.event_name == 'workflow_dispatch')
+      (inputs.reused-run-id != '' && needs.render.result == 'skipped')
+      || (needs.render.outputs.changed == 'true'
+          && ((github.ref == 'refs/heads/main' && github.event_name == 'push')
+              || github.event_name == 'workflow_dispatch'))
     needs: [render]
     permissions:
       packages: write
@@ -142,6 +150,9 @@ jobs:
       - name: Setup Flux CLI
         uses: fluxcd/flux2/action@v2.9.5
 
+      - name: Setup Cosign
+        uses: sigstore/cosign-installer@latest
+
       - name: Login to GHCR
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
@@ -151,6 +162,7 @@ jobs:
         with:
           name: k8s-rendered
           path: render
+          run-id: ${{ github.run_id || inputs.reused-run-id }}
 
       - name: Push artifact
         run: |
