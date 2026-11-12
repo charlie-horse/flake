@@ -28,7 +28,7 @@ There are two PKIs, and they never share a CA.
 | --- | --- | --- |
 | For | etcd, kube-apiserver, controller-manager, scheduler, kubelet, kube-proxy, flannel client, front-proxy, service-account keys, admin kubeconfig | TLS for workloads in the cluster |
 | Made by | `cluster-pki` on r440 (this document) | cert-manager in the cluster (`k8s/components/infra/cert-manager/`, [k8s/README.md](../k8s/README.md#cert-manager)) |
-| CAs | k8s, etcd, front-proxy; keys only in `r440:~/.local/share/cluster-pki/solaris` | `cluster-ca` (root Certificate from a `selfSigned` ClusterIssuer), key only in the Secret `cert-manager/cluster-ca` |
+| CAs | k8s, etcd, front-proxy; keys only in `r440:~/.local/share/cluster-pki/neurosis` | `cluster-ca` (root Certificate from a `selfSigned` ClusterIssuer), key only in the Secret `cert-manager/cluster-ca` |
 | Delivered as | files in `/var/lib/kubernetes/secrets/` (`cluster-pki-deploy`) | Secrets, issued on request (`issuerRef: {kind: ClusterIssuer, name: cluster-ca}`) |
 
 **Why the bootstrap PKI stays files.** cert-manager is a set of pods. Pods
