@@ -41,7 +41,7 @@ in
     spec = {
       url = "oci://ghcr.io/charlie-horse/flake/manifests";
       ref.tag = "main";
-      interval = "1m";
+      interval = "24h";
       verify = {
         provider = "cosign";
         matchOIDCIdentity = [

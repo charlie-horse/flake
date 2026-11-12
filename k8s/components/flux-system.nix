@@ -9,6 +9,7 @@
 # 50-flux-sync (flux-sync.nix), a separate file so a fresh
 # `kubectl apply -f k8s/rendered/` creates these CRDs first.
 {
+  lib,
   pkgs,
   catenix,
   charts,

@@ -37,7 +37,6 @@ jobs:
     name: Render k8s manifests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    if: ${{ inputs.publish-cached-anyways == false }}
     outputs:
       cached: ${{ steps.cache.outputs.cache-hit }}
     steps:
@@ -87,13 +86,11 @@ jobs:
     name: Publish manifests
     if: >-
       always()
-      && (needs.render.result == 'skipped'
-          && inputs.publish-cached-anyways)
+      && inputs.publish-cached-anyways
       || (needs.render.result == 'success'
           && needs.render.outputs.cached == false
-          && (github.event_name == 'workflow_dispatch'
-              || (github.ref == 'refs/heads/main'
-                  && github.event_name == 'push')))
+          && github.ref == 'refs/heads/main'
+          && github.event_name == 'push')
     needs: [render]
     permissions:
       packages: write
@@ -137,9 +134,9 @@ jobs:
           URL: ${{ secrets.FLUX_WEBHOOK_URL }}
         run: |
           body="{\"revision\":\"main@sha1:$GITHUB_SHA\"}"
-          sig=$(printf '%s' "$body"
-          | openssl dgst -sha256 -hmac "$TOKEN" -r
-          | cut -d' ' -f1)
+          sig=$(printf '%s' "$body" |
+            openssl dgst -sha256 -hmac "$TOKEN" -r |
+            cut -d' ' -f1)
 
           curl -fsS -X POST "$URL" \
             -H "Content-Type: application/json" \
