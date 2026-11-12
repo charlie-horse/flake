@@ -12,35 +12,43 @@
 #   - servers (mkServer): `nixpkgs` (26.05), through `nixpkgs.lib.nixosSystem`
 #     of the input passed in. They take only eval-time helpers (mkDefault,
 #     removeSuffix) from this lib; no unstable package reaches them.
-{ inputs, config, ... }: let
-    lib = config.flake.lib;
-in {
-    flake.lib = (inputs.nixpkgs-unstable.lib.extend (final: _: {
-        custom = import ../lib { inherit inputs; lib = final; };
-    })).custom;
+{ inputs, config, ... }:
+let
+  lib = config.flake.lib;
+in
+{
+  flake.lib =
+    (inputs.nixpkgs-unstable.lib.extend (
+      final: _: {
+        custom = import ../lib {
+          inherit inputs;
+          lib = final;
+        };
+      }
+    )).custom;
 
-    flake.nixosConfigurations = lib.merge [
-        (lib.system.x86_64-linux.mkHost ../hosts/Famine)
-        (lib.system.x86_64-linux.mkHost ../hosts/Pestilence)
+  flake.nixosConfigurations = lib.merge [
+    (lib.system.x86_64-linux.mkHost ../hosts/Famine)
+    (lib.system.x86_64-linux.mkHost ../hosts/Pestilence)
 
-        # Servers: only the host dir + modules/cluster (no desktop,
-        # home-manager or agenix). See lib/system/mkServer.nix.
-        (lib.system.x86_64-linux.mkServer {
-            path = ../hosts/c4130;
-            nixpkgs = inputs.nixpkgs;
-        })
-        (lib.system.x86_64-linux.mkServer {
-            path = ../hosts/r440;
-            nixpkgs = inputs.nixpkgs;
-        })
-        (lib.system.aarch64-linux.mkServer {
-            path = ../hosts/m2mini;
-            nixpkgs = inputs.nixpkgs;
-            # Same order as m2mini's own flake: apple-silicon first.
-            preModules = [ inputs.apple-silicon-m2mini.nixosModules.default ];
-            modules = [
-                { m2mini.vendorFirmware = inputs.m2mini-vendorfw; }
-            ];
-        })
-    ];
+    # Servers: only the host dir + modules/cluster (no desktop,
+    # home-manager or agenix). See lib/system/mkServer.nix.
+    (lib.system.x86_64-linux.mkServer {
+      path = ../hosts/c4130;
+      nixpkgs = inputs.nixpkgs;
+    })
+    (lib.system.x86_64-linux.mkServer {
+      path = ../hosts/r440;
+      nixpkgs = inputs.nixpkgs;
+    })
+    (lib.system.aarch64-linux.mkServer {
+      path = ../hosts/m2mini;
+      nixpkgs = inputs.nixpkgs;
+      # Same order as m2mini's own flake: apple-silicon first.
+      preModules = [ inputs.apple-silicon-m2mini.nixosModules.default ];
+      modules = [
+        { m2mini.vendorFirmware = inputs.m2mini-vendorfw; }
+      ];
+    })
+  ];
 }

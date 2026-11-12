@@ -12,6 +12,9 @@
     # tailscaled's WireGuard port, for direct (non-relayed) connections.
     allowedUDPPorts = [ 41641 ];
     # The 25G link to c4130: ssh (remote builds) and the harmonia cache.
-    interfaces.bond0.allowedTCPPorts = [ 22 5000 ];
+    interfaces.bond0.allowedTCPPorts = [
+      22
+      5000
+    ];
   };
 }

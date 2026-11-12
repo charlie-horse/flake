@@ -4,15 +4,25 @@
 # (r440, c4130, m2mini; https://<name>:2380): no membership change. <name>
 # resolves to the node's tailnet IP via MagicDNS. initialCluster/-State only
 # matter when a data dir is created; existing members ignore them.
-{ config, lib, cluster, ... }:
+{
+  config,
+  lib,
+  cluster,
+  ...
+}:
 let
   cfg = config.clusterNode;
   name = cfg.name;
   # Today's order (the old k8s.nix files); cosmetic, kept for stable env.
-  memberOrder = [ "r440" "c4130" "m2mini" ];
-  etcdNodes = lib.filter (n: lib.elem "etcd" cluster.nodes.${n}.roles)
-    (lib.filter (n: cluster.nodes ? ${n}) memberOrder
-      ++ lib.subtractLists memberOrder (lib.attrNames cluster.nodes));
+  memberOrder = [
+    "r440"
+    "c4130"
+    "m2mini"
+  ];
+  etcdNodes = lib.filter (n: lib.elem "etcd" cluster.nodes.${n}.roles) (
+    lib.filter (n: cluster.nodes ? ${n}) memberOrder
+    ++ lib.subtractLists memberOrder (lib.attrNames cluster.nodes)
+  );
   final = cfg.etcd.phase == "final";
   # "trust" phase: the legacy member cert (tls/etcd/peer/etcd.pem, issuer
   # "ETCD CA 1", EKU server+client, SAN <n>/localhost/127.0.0.1) was both

@@ -25,9 +25,12 @@
 }:
 let
   d = definition;
-  first = attrs: names: default:
-    let hit = lib.findFirst (n: attrs ? ${n}) null names;
-    in if hit == null then default else attrs.${hit};
+  first =
+    attrs: names: default:
+    let
+      hit = lib.findFirst (n: attrs ? ${n}) null names;
+    in
+    if hit == null then default else attrs.${hit};
 
   projected = {
     name = first d [ "name" "clusterName" ] "cluster";
@@ -46,18 +49,26 @@ let
     }) d.nodes;
   };
 
-  definitionJSON = writeText "cluster-pki-definition.json"
-    (builtins.toJSON projected);
+  definitionJSON = writeText "cluster-pki-definition.json" (builtins.toJSON projected);
 
   cluster-pki = writeShellApplication {
     name = "cluster-pki";
     runtimeInputs = [
-      cfssl jq openssl openssh gnutar gnugrep gnused coreutils git
+      cfssl
+      jq
+      openssl
+      openssh
+      gnutar
+      gnugrep
+      gnused
+      coreutils
+      git
     ];
     text = ''
       : "''${CLUSTER_PKI_DEFINITION:=${definitionJSON}}"
       export CLUSTER_PKI_DEFINITION
-    '' + builtins.readFile ./cluster-pki.sh;
+    ''
+    + builtins.readFile ./cluster-pki.sh;
   };
 
   cluster-pki-deploy = writeShellApplication {
@@ -67,7 +78,10 @@ let
 in
 symlinkJoin {
   name = "cluster-pki";
-  paths = [ cluster-pki cluster-pki-deploy ];
+  paths = [
+    cluster-pki
+    cluster-pki-deploy
+  ];
   passthru = {
     inherit cluster-pki cluster-pki-deploy definitionJSON;
   };

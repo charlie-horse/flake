@@ -21,7 +21,10 @@ in
   # LACP across both cables: one address, survives a cable/port failure,
   # and parallel substitutions/builds hash onto both links (layer3+4).
   networking.bonds.bond0 = {
-    interfaces = [ "ens3f0np0" "ens3f1np1" ];
+    interfaces = [
+      "ens3f0np0"
+      "ens3f1np1"
+    ];
     driverOptions = {
       mode = "802.3ad";
       miimon = "100";
@@ -31,10 +34,18 @@ in
   };
   networking.interfaces.bond0 = {
     mtu = 9000;
-    ipv4.addresses = [ { address = "10.25.0.2"; prefixLength = 30; } ];
+    ipv4.addresses = [
+      {
+        address = "10.25.0.2";
+        prefixLength = 30;
+      }
+    ];
   };
   # No dhcpcd (IPv4LL) on the link.
-  networking.dhcpcd.denyInterfaces = [ "ens3f*" "bond0" ];
+  networking.dhcpcd.denyInterfaces = [
+    "ens3f*"
+    "bond0"
+  ];
 
   # --- Remote builder ----------------------------------------------------
   users.users.nixremote = {
@@ -52,7 +63,12 @@ in
     max-jobs = builderMaxJobs;
     # See builderMaxJobs: max-jobs x cores = 16 nvcc at most.
     cores = 8;
-    system-features = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
+    system-features = [
+      "nixos-test"
+      "benchmark"
+      "big-parallel"
+      "kvm"
+    ];
   };
   # Builds yield to etcd / the apiserver.
   nix.daemonCPUSchedPolicy = "batch";

@@ -11,7 +11,10 @@
     # Only one model fits on the GPUs at a time.
     activeModel = "flint";
     # API (8000); no authentication.
-    firewallInterfaces = [ "eno1" "tailscale0" ];
+    firewallInterfaces = [
+      "eno1"
+      "tailscale0"
+    ];
     # Up to 20 concurrent sequences (the fork's profile uses 2). KV cache is
     # ~979K tokens, so 20 long requests share it; above 2 the M<=2 decode
     # fast paths (VLLM_SM70_MODELOPT_NVFP4_GEMV, ..._MOE_QPN_DECODE) give way
@@ -27,14 +30,20 @@
     # (vllm-sm70 #36). Move the override into vllm-sm70's built-in Flint entry
     # once that lands, then drop this block.
     models.flint.args = [
-      "--kv-cache-dtype" "auto"
+      "--kv-cache-dtype"
+      "auto"
       "--enable-prompt-tokens-details"
-      "--tool-call-parser" "glm47"
-      "--reasoning-parser-plugin" "vllm_sm70.reasoning"
-      "--reasoning-parser" "glm47_sm70"
+      "--tool-call-parser"
+      "glm47"
+      "--reasoning-parser-plugin"
+      "vllm_sm70.reasoning"
+      "--reasoning-parser"
+      "glm47_sm70"
       "--exclude-tools-when-tool-choice-none"
-      "--override-generation-config" ''{"temperature":1.0,"top_p":0.95,"top_k":20}''
-      "--hf-overrides" ''{"architectures":["FlintSm70ForCausalLM"]}''
+      "--override-generation-config"
+      ''{"temperature":1.0,"top_p":0.95,"top_k":20}''
+      "--hf-overrides"
+      ''{"architectures":["FlintSm70ForCausalLM"]}''
     ];
   };
 
@@ -48,6 +57,9 @@
     # of this.
     l2SizeGb = 32;
     # Dashboard (8081); no authentication.
-    ui.firewallInterfaces = [ "eno1" "tailscale0" ];
+    ui.firewallInterfaces = [
+      "eno1"
+      "tailscale0"
+    ];
   };
 }

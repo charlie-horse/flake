@@ -5,31 +5,38 @@
 # (parts/k8s.nix). The desktop ISOs come from the flake lib
 # (nixpkgs-unstable, see parts/hosts.nix).
 { inputs, config, ... }: {
-    perSystem = { system, ... }: let
-        pkgs = inputs.nixpkgs.legacyPackages.${system};
-        # Operator-side PKI tool (docs/pki.md).
-        pki = pkgs.callPackage ../pkgs/cluster-pki {
-            definition = import ../cluster/definition.nix;
-        };
-    in {
-        packages = {
-            cluster-pki = pki;
-        }
-        # Installer ISOs for the desktop hosts (lib/system/mkHost.nix).
-        // (config.flake.lib.system.${system}.mkHostIso "Famine").${system}
-        // (config.flake.lib.system.${system}.mkHostIso "Pestilence").${system};
+  perSystem =
+    { system, ... }:
+    let
+      pkgs = inputs.nixpkgs.legacyPackages.${system};
+      # Operator-side PKI tool (docs/pki.md).
+      pki = pkgs.callPackage ../pkgs/cluster-pki {
+        definition = import ../cluster/definition.nix;
+      };
+    in
+    {
+      # `nix fmt`: RFC-style nixfmt over the tracked .nix files (checks.yml
+      # runs it with --check). Generated files are excluded there.
+      formatter = pkgs.nixfmt;
 
-        # nix run .#cluster-pki             -> ./pki-out (CAs + leaves)
-        # nix run .#cluster-pki-deploy -- <node>  (stage + print sudo cmds)
-        apps = {
-            cluster-pki = {
-                type = "app";
-                program = "${pki}/bin/cluster-pki";
-            };
-            cluster-pki-deploy = {
-                type = "app";
-                program = "${pki}/bin/cluster-pki-deploy";
-            };
+      packages = {
+        cluster-pki = pki;
+      }
+      # Installer ISOs for the desktop hosts (lib/system/mkHost.nix).
+      // (config.flake.lib.system.${system}.mkHostIso "Famine").${system}
+      // (config.flake.lib.system.${system}.mkHostIso "Pestilence").${system};
+
+      # nix run .#cluster-pki             -> ./pki-out (CAs + leaves)
+      # nix run .#cluster-pki-deploy -- <node>  (stage + print sudo cmds)
+      apps = {
+        cluster-pki = {
+          type = "app";
+          program = "${pki}/bin/cluster-pki";
         };
+        cluster-pki-deploy = {
+          type = "app";
+          program = "${pki}/bin/cluster-pki-deploy";
+        };
+      };
     };
 }

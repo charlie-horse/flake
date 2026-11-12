@@ -20,7 +20,12 @@
 # - "charlie's" GPU processes means PIDs in user-<uid>.slice (a login session,
 #   tmux, a user service). A GPU pod run by kubelet as the same uid is in a
 #   kubepods cgroup, is not matched, and is only logged as skipped.
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   gpuUser = "charlie";
   nvidiaSmi = "${config.hardware.nvidia.package.bin}/bin/nvidia-smi";

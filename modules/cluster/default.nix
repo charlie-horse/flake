@@ -26,7 +26,13 @@
 # ever copied into /nix/store. File names:
 #   ca.pem etcd-ca.pem front-proxy-ca.pem sa.pub sa.key
 #   <component>-<node>.pem / <component>-<node>-key.pem
-{ config, lib, cluster, hostName, ... }:
+{
+  config,
+  lib,
+  cluster,
+  hostName,
+  ...
+}:
 let
   inherit (lib) mkOption types;
   cfg = config.clusterNode;
@@ -64,7 +70,11 @@ in
     };
 
     stage = mkOption {
-      type = types.enum [ "etcd" "controlPlane" "full" ];
+      type = types.enum [
+        "etcd"
+        "controlPlane"
+        "full"
+      ];
       default = cfg.node.rollout.stage or "full";
       defaultText = "cluster.nodes.<name>.rollout.stage or \"full\"";
       description = ''
@@ -75,7 +85,10 @@ in
     };
 
     etcd.phase = mkOption {
-      type = types.enum [ "trust" "final" ];
+      type = types.enum [
+        "trust"
+        "final"
+      ];
       default = cfg.node.rollout.etcdPhase or "final";
       defaultText = "cluster.nodes.<name>.rollout.etcdPhase or \"final\"";
       description = ''
@@ -129,14 +142,26 @@ in
           kubeletConfig = { };
           rollout = { };
           roles = [ ];
-        } // (cluster.nodes.${cfg.name} or { });
-        activeRoles = lib.filter
-          (r: lib.elem r ({
-            etcd = [ "etcd" ];
-            controlPlane = [ "etcd" "controlPlane" ];
-            full = [ "etcd" "controlPlane" "worker" ];
-          }.${cfg.stage}))
-          cfg.node.roles;
+        }
+        // (cluster.nodes.${cfg.name} or { });
+        activeRoles = lib.filter (
+          r:
+          lib.elem r (
+            {
+              etcd = [ "etcd" ];
+              controlPlane = [
+                "etcd"
+                "controlPlane"
+              ];
+              full = [
+                "etcd"
+                "controlPlane"
+                "worker"
+              ];
+            }
+            .${cfg.stage}
+          )
+        ) cfg.node.roles;
         secret = n: "${cfg.secretsDir}/${n}";
         leaf = component: {
           cert = cfg.secret "${component}-${cfg.name}.pem";
@@ -152,15 +177,17 @@ in
           message = "clusterNode: ${cfg.name} is not in cluster.nodes.";
         }
         {
-          assertion = lib.hasPrefix "/" cfg.secretsDir
-            && !(lib.hasPrefix builtins.storeDir cfg.secretsDir);
+          assertion = lib.hasPrefix "/" cfg.secretsDir && !(lib.hasPrefix builtins.storeDir cfg.secretsDir);
           message = ''
             clusterNode.secretsDir must be an absolute path outside the
             Nix store (got ${cfg.secretsDir}).
           '';
         }
         {
-          assertion = lib.elem cfg.node.cri [ "containerd" "cri-o" ];
+          assertion = lib.elem cfg.node.cri [
+            "containerd"
+            "cri-o"
+          ];
           message = "clusterNode: cri must be \"containerd\" or \"cri-o\".";
         }
         {
@@ -186,16 +213,14 @@ in
         # Only used by NixOS defaults we override; the VIP is the stable
         # apiserver address.
         masterAddress = cluster.vip;
-        apiserverAddress =
-          "https://${cluster.vip}:${toString cluster.apiserverPort}";
+        apiserverAddress = "https://${cluster.vip}:${toString cluster.apiserverPort}";
         clusterCidr = cluster.podCidr;
       };
 
       # The kubelet module sets net.ipv4.ip_forward = 1 (hosts rely on it,
       # e.g. for Tailscale). Keep it in the stages without a kubelet; a
       # second definition next to the kubelet's would be a conflict.
-      boot.kernel.sysctl."net.ipv4.ip_forward" =
-        lib.mkIf (!config.services.kubernetes.kubelet.enable) 1;
+      boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkIf (!config.services.kubernetes.kubelet.enable) 1;
     })
   ];
 }

@@ -10,7 +10,12 @@
 # and up) can therefore not forge a client IP. Both containers listen on
 # loopback only (nginx 9190, cloudflared's metrics 20250), so nothing is
 # exposed on the nodes.
-{ lib, cluster, k8sLib, ... }:
+{
+  lib,
+  cluster,
+  k8sLib,
+  ...
+}:
 let
   namespace = "cloudflared";
   name = "cloudflared";

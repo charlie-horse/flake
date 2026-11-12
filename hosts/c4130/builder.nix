@@ -10,7 +10,10 @@ in
 {
   # --- Direct link -----------------------------------------------------
   networking.bonds.bond0 = {
-    interfaces = [ "enp8s0f0np0" "enp8s0f1np1" ];
+    interfaces = [
+      "enp8s0f0np0"
+      "enp8s0f1np1"
+    ];
     driverOptions = {
       mode = "802.3ad";
       miimon = "100";
@@ -20,9 +23,17 @@ in
   };
   networking.interfaces.bond0 = {
     mtu = 9000;
-    ipv4.addresses = [ { address = "10.25.0.1"; prefixLength = 30; } ];
+    ipv4.addresses = [
+      {
+        address = "10.25.0.1";
+        prefixLength = 30;
+      }
+    ];
   };
-  networking.dhcpcd.denyInterfaces = [ "enp8s0f*" "bond0" ];
+  networking.dhcpcd.denyInterfaces = [
+    "enp8s0f*"
+    "bond0"
+  ];
   # r440 may reach the vLLM API over the link (source 10.25.0.2 only);
   # ssh is already open globally.
   networking.firewall.extraCommands = ''
@@ -46,7 +57,12 @@ in
       # cores, so at most 16 nvcc on r440 (2 x 16 ran it out of RAM).
       maxJobs = 2;
       speedFactor = 4;
-      supportedFeatures = [ "nixos-test" "benchmark" "big-parallel" "kvm" ];
+      supportedFeatures = [
+        "nixos-test"
+        "benchmark"
+        "big-parallel"
+        "kvm"
+      ];
     }
   ];
   nix.settings = {
