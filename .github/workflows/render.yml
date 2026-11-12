@@ -86,13 +86,11 @@ jobs:
     name: Publish manifests
     if: >-
       always()
-      && (needs.render.result == 'skipped'
-          && inputs.publish-cached-anyways)
+      && inputs.publish-cached-anyways
       || (needs.render.result == 'success'
           && needs.render.outputs.cached == false
-          && (github.event_name == 'workflow_dispatch'
-              || (github.ref == 'refs/heads/main'
-                  && github.event_name == 'push')))
+          && github.ref == 'refs/heads/main'
+          && github.event_name == 'push')
     needs: [render]
     permissions:
       packages: write
