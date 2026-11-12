@@ -70,7 +70,10 @@ jobs:
       - name: nix build .#k8s-manifests
         id: build
         if: steps.nix-cache.outcome == 'success'
-        run: nix build -L --out-link manifests github:${{github.repository}}#k8s-manifests
+        run: |
+          nix build -L --out-link build github:${{github.repository}}#k8s-manifests
+          mkdir manifests
+          cp -r build/* manifests/
 
       - uses: actions/upload-artifact@v7.0.2
         with:
