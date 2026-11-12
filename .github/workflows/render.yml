@@ -152,5 +152,7 @@ jobs:
       - name: Push artifact
         run: |
           url="oci://ghcr.io/$GITHUB_REPOSITORY/manifests:${GITHUB_SHA::12}"
-          flux push artifact "$url" --path render -o json
+          flux push artifact "$url" --path render -o json \
+            --source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --revision="main@sha1:$$GITHUB_SHA"
           flux tag artifact "$url" --tag main
