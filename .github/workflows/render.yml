@@ -57,7 +57,9 @@ jobs:
     
       - uses: cachix/install-nix-action@v31.11.2
         id: install-nix
-        if: steps.cache.outputs.cache-hit != 'true'
+        if: always()
+            && steps.cache.outputs.cache-hit != 'true'
+            && steps.cache.outcome == 'success'
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
