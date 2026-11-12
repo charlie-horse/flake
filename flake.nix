@@ -43,7 +43,7 @@
         # (`latest` moves only after main
         # CI, the c4130 check, the GPU gate and release sign-off, same commit.)
         # `nix flake update vllm-fork` to move it.
-        vllm-fork.url = "github:charlie-horse/vllm-sm70/cef0f9ef9c94ec21ba18d68b280c4d1dde856166";
+        vllm-fork.url = "github:charlie-horse/vllm-sm70/latest";
 
         # m2mini's Asahi support (pinned rev; bump deliberately).
         apple-silicon-m2mini.url =
