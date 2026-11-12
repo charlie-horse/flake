@@ -166,6 +166,7 @@ jobs:
           name: k8s-rendered
           path: render
           run-id: ${{ github.run_id || inputs.reused-run-id }}
+          github-token: ${{ github.token }}
 
       - name: Push artifact
         run: |
