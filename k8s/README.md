@@ -31,7 +31,6 @@ modules read.
 | `60-authentik.yaml` | authentik (SSO/OIDC): server + worker on amd64 (r440), PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprint for the `kubernetes` OIDC client. Secrets come from a hand-made Secret ([below](#authentik)) | authentik chart 2026.8.5 + hand-written |
 | `65-headlamp.yaml` | Headlamp web UI (namespace `headlamp`, enforce `restricted`): 1 replica on amd64 (r440), Service `headlamp` at fixed ClusterIP 10.96.0.21, OIDC login via authentik's confidential client `headlamp`; its ServiceAccount has no RBAC (users act with their own token). Client secret from a hand-made Secret ([below](#headlamp)) | headlamp chart 0.46.0 |
 | `70-open-webui.yaml` | Open WebUI 0.12.2 (chat for c4130's vLLM at `10.0.0.95:8000`), one replica, data on r440 (hostPath PV), OIDC login via authentik for group `local-ai`; secrets from the hand-made Secret `open-webui/open-webui-secrets` ([below](#open-webui)) | hand-written |
-| `90-podinfo.yaml` | podinfo smoke app (namespace `podinfo`), 3 replicas spread one per node (incl. the arm64 m2mini) | hand-written |
 
 Every image is a multi-arch manifest list (linux/amd64 + linux/arm64);
 `nix run .#k8s-check-images` checks it. The device plugin is pinned to the
@@ -116,9 +115,9 @@ kubectl apply --server-side -f k8s/rendered/50-flux-sync.yaml
 flux get kustomizations --watch   # or: kubectl -n flux-system get ks
 ```
 
-Smoke test: `kubectl -n podinfo get pods -o wide` shows one pod per node,
-and `kubectl -n podinfo run curl --rm -it --restart=Never
---image=curlimages/curl -- curl -s podinfo.podinfo:9898` answers from each.
+Smoke test: `flux get kustomizations` shows `flux-system` Ready, and
+`kubectl get pods -A -o wide` shows one cloudflared and one authentik
+server per node.
 
 ## Host-side assumptions (modules/cluster)
 

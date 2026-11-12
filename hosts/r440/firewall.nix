@@ -2,7 +2,7 @@
 # c4130). The cluster ports (etcd 2379/2380, apiserver 6443, kubelet,
 # flannel) are NOT opened here: the cluster module (modules/cluster) owns
 # them, restricted to the cluster peers. Until 2026-10 they lived in this
-# file; see ./legacy-k8s-firewall.nix (not imported, parity proof only).
+# file (git history: legacy-k8s-firewall.nix).
 { ... }:
 {
   networking.firewall = {
