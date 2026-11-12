@@ -45,6 +45,15 @@ in
     hash = "sha256-AOWfrkxAKCFu1gxbWOTpUa5EJ+WzfSimHkRTyOjAqM8=";
   };
 
+  # cert-manager v1.21.3 (controller, webhook, cainjector; CRDs rendered by
+  # the chart, crds.enabled). The workload CA, components/infra/cert-manager/.
+  cert-manager = fetch {
+    repo = "https://charts.jetstack.io";
+    name = "cert-manager";
+    version = "v1.21.3";
+    hash = "sha256-kjGAYWkePhiNrUUdpesTcGa9jlpFk1/gZs8sztLElRw=";
+  };
+
   # Headlamp 0.46.0 (Kubernetes web UI; OIDC via authentik, no Ingress).
   headlamp = fetch {
     repo = "https://kubernetes-sigs.github.io/headlamp/";

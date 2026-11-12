@@ -13,11 +13,42 @@ nix run .#cluster-pki -- status        # what is issued, by which CA, until when
 nix run .#cluster-pki-deploy -- m2mini # stage m2mini's files, print sudo cmds
 ```
 
+- [Bootstrap PKI and workload PKI](#bootstrap-pki-and-workload-pki)
 - [Inventory of the legacy PKI](#inventory-of-the-legacy-pki-2026-10-31)
 - [New layout](#new-layout)
 - [cluster-pki usage](#cluster-pki-usage)
 - [Cut-over from the legacy PKI](#cut-over-from-the-legacy-pki)
 - [etcd CA rotation runbook](#etcd-ca-rotation-runbook-no-quorum-loss)
+
+## Bootstrap PKI and workload PKI
+
+There are two PKIs, and they never share a CA.
+
+| | Bootstrap PKI | Workload PKI |
+| --- | --- | --- |
+| For | etcd, kube-apiserver, controller-manager, scheduler, kubelet, kube-proxy, flannel client, front-proxy, service-account keys, admin kubeconfig | TLS for workloads in the cluster |
+| Made by | `cluster-pki` on r440 (this document) | cert-manager in the cluster (`k8s/components/infra/cert-manager/`, [k8s/README.md](../k8s/README.md#cert-manager)) |
+| CAs | k8s, etcd, front-proxy; keys only in `r440:~/.local/share/cluster-pki/solaris` | `cluster-ca` (root Certificate from a `selfSigned` ClusterIssuer), key only in the Secret `cert-manager/cluster-ca` |
+| Delivered as | files in `/var/lib/kubernetes/secrets/` (`cluster-pki-deploy`) | Secrets, issued on request (`issuerRef: {kind: ClusterIssuer, name: cluster-ca}`) |
+
+**Why the bootstrap PKI stays files.** cert-manager is a set of pods. Pods
+need a kubelet registered with an apiserver, that apiserver needs etcd and
+its serving cert, the kubelet needs its client cert, and the pod network
+(flannel) needs its own. Every one of those certificates must exist before
+cert-manager can run, so cert-manager cannot be where they come from. And if
+it issued their renewals later, an outage of cert-manager (or of etcd, where
+its state lives) at renewal time could leave the control plane unable to
+start, with nothing left to fix it from. So they stay files signed offline,
+renewed by `cluster-pki` and installed by the operator.
+
+**Why the workload CA is a new one.** The bootstrap CA keys never leave r440
+(CLAUDE.md). A cert-manager `CA` issuer needs its key in a Secret, i.e. in
+etcd on all three nodes, readable by anyone with Secret access in
+`cert-manager`. The k8s CA in particular signs `system:masters` and
+`system:node:*` client certs, so its key in the cluster would hand out
+cluster-admin. The workload CA is created inside the cluster instead; it
+signs nothing the apiserver or etcd trust (none of the bootstrap trust
+bundles include it), so a leak of it compromises workload TLS only.
 
 ## Inventory of the legacy PKI (2026-10-31)
 

@@ -10,10 +10,10 @@ applies ([Deployment](#deployment)).
 | `default.nix` | `{ inputs, pkgs, lib }` → `manifests` (the rendered tree), `checkImages`, `components`; the flake output `k8s` (`parts/k8s.nix`) |
 | `charts.nix` | published Helm charts, pinned by version + NAR hash (`catenix.lib.fetchChart`) |
 | `lib.nix` | helpers for the components: `localVolume`, `nodeTolerations`, `fixedServiceIP` |
-| `components/infra/*.nix` | cluster plumbing, one file per component |
-| `components/flux/` | Flux itself: `install.nix` (chart), `sync.nix` (OCIRepository + Kustomization), `receiver.nix` (push webhook) |
+| `components/infra/` | cluster plumbing, one file per component (a directory when split by concern, e.g. `cert-manager/`) |
+| `components/flux/` | Flux itself: `install.nix` (chart), `sync.nix` (OCIRepository + Kustomization `flux-system`), `stages.nix` (a Kustomization per deferred component), `receiver.nix` (push webhook) |
 | `components/apps/` | applications; small ones are a file, larger ones a directory split by concern (e.g. `authentik/`: `chart.nix`, `postgres.nix`, `backup.nix`, `blueprints/*.yaml`) |
-| (render) | `nix build .#k8s.manifests`: `<component>/<plural kind>.yaml`, namespaces and CRDs as `00-`/`01-` files. Built by CI, never committed. |
+| (render) | `nix build .#k8s.manifests`: `<component>/<plural kind>.yaml`, namespaces and CRDs as `00-`/`01-` files; deferred components under `deferred/<component>/` ([Deferred components](#deferred-components)). Built by CI, never committed. |
 
 Cluster values (pod/service CIDRs, DNS IP, domain, nodes and their `gpu`
 flag) come from `../cluster/definition.nix`, the same file the NixOS
@@ -29,7 +29,9 @@ modules read.
 | `infra/flannel` | flannel VXLAN DaemonSet, `Network` = `podCidr`, kube-subnet-mgr, `--public-ip=$(status.hostIP)` (the node's LAN IP); no CNI install init containers (the host ships the plugin + conflist) | flannel chart v0.28.10 |
 | `infra/coredns` | CoreDNS, Service `kube-system/kube-dns` at `dnsServiceIP` (10.96.0.10), zone `clusterDomain` (cluster.local), 2 replicas | coredns chart 1.48.2 (CoreDNS 1.14.7) |
 | `infra/nvidia-device-plugin` | NVIDIA device plugin on `nvidia.com/gpu.present=true` nodes, `runtimeClassName: nvidia`, `DEVICE_ID_STRATEGY=index` (matches the host's index-named CDI spec) | nvidia-device-plugin chart 0.20.1 |
-| `flux` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers; OCIRepository `flux-system-oci` (the signed GHCR artifact) + Kustomization `flux-system`; Receiver `ghcr` (push webhook) | fluxcd-community flux2 chart 2.19.1 |
+| `infra/cert-manager` | cert-manager v1.21.3 (namespace `cert-manager`, enforce `restricted`): CRDs, controller and cainjector (1 replica each), webhook (2 replicas, PDB); r440 and m2mini ([cert-manager](#cert-manager)) | jetstack cert-manager chart v1.21.3 |
+| `infra/cert-manager-issuers` (deferred: `deferred/infra/cert-manager-issuers/`) | the workload CA: ClusterIssuer `selfsigned`, root Certificate `cert-manager/cluster-ca` (ECDSA P-384, 10 y), CA ClusterIssuer **`cluster-ca`**; applied by the Kustomization `cert-manager-issuers` | hand-written (`components/infra/cert-manager/issuers.nix`) |
+| `flux` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers; OCIRepository `flux-system-oci` (the signed GHCR artifact) + Kustomization `flux-system`, one Kustomization per deferred component (`cert-manager-issuers`); Receiver `ghcr` (push webhook) | fluxcd-community flux2 chart 2.19.1 |
 | `apps/cloudflared` | the single Cloudflare tunnel `cluster`: cloudflared, one replica per node (hostNetwork), nginx sidecar that sets `X-Forwarded-For` from `Cf-Connecting-Ip`; routes auth/k8s/chat and the Flux webhook host (`/hook/` only) | hand-written |
 | `apps/authentik` | authentik (SSO/OIDC): one server + one worker per node, PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprints (one file per OIDC client: `kubernetes`, `headlamp`, `open-webui`). Secrets come from a hand-made Secret ([below](#authentik)) | authentik chart 2026.8.5 + hand-written |
 | `apps/headlamp` | Headlamp web UI (namespace `headlamp`, enforce `restricted`): 1 replica on amd64 (r440), Service `headlamp` at fixed ClusterIP 10.96.0.21, OIDC login via authentik's confidential client `headlamp`; its ServiceAccount has no RBAC (users act with their own token). Client secret from a hand-made Secret ([below](#headlamp)) | headlamp chart 0.46.0 |
@@ -77,6 +79,31 @@ republishes. Nothing reaches the cluster before it is merged.
 Validation: catenix type-checks every object against the Kubernetes v1.37
 OpenAPI spec and the charts' CRDs at evaluation time (`validation.strict`).
 
+### Deferred components
+
+The Kustomization `flux-system` applies the whole tree in one go, and Flux
+server-side dry-runs **every** object before applying **any**: one rejected
+object fails the whole apply. Objects guarded by an admission webhook with
+`failurePolicy: Fail` (cert-manager's checks every `cert-manager.io` object,
+dry runs included) would therefore tie the whole cluster's deployment to
+that webhook: with it down, nothing would be applied, including a fix for
+the webhook itself.
+
+Such objects go in a *deferred* component (`deferred` in `default.nix`):
+
+- it renders under `deferred/<component>/`; `deferred/kustomization.yaml`
+  lists no resources, and Flux's generator takes a directory holding a
+  `kustomization.yaml` as a base without looking inside, so `flux-system`
+  (path `./`) skips the subtree;
+- `components/flux/stages.nix` gives it its own Kustomization (named after
+  the component's last path element), from the same artifact, with
+  `dependsOn: flux-system` (it runs once `flux-system` has applied the same
+  revision: CRDs, the webhook Deployment), `retryInterval: 1m` (until the
+  webhook answers) and `wait: true` (Ready only when its objects are).
+
+A failure there stays there: `flux-system` keeps applying the rest.
+Today the only one is `infra/cert-manager-issuers`.
+
 ## Bootstrap (fresh cluster, operator with an admin kubeconfig)
 
 Flux can't run before the pod network and DNS do, so the first apply is
@@ -98,11 +125,14 @@ In every component, `00-namespaces.yaml` and
 `01-customresourcedefinitions.yaml` sort first, so `kubectl apply -R`
 creates them before the objects that need them. Flux's custom resources
 also need their CRDs *established*, hence the separate step and the wait.
-The apps need no manual apply: Flux brings them up.
+The apps and `deferred/` need no manual apply: Flux brings them up (never
+`kubectl apply -R -f $R` on the whole tree: `deferred/kustomization.yaml`
+is not a Kubernetes object).
 
-Smoke test: `flux get kustomizations` shows `flux-system` Ready, and
-`kubectl get pods -A -o wide` shows one cloudflared and one authentik
-server per node.
+Smoke test: `flux get kustomizations` shows `flux-system` and
+`cert-manager-issuers` Ready, `kubectl get clusterissuers` shows
+`cluster-ca` Ready, and `kubectl get pods -A -o wide` shows one cloudflared
+and one authentik server per node.
 
 ## Host-side assumptions (modules/cluster)
 
@@ -119,6 +149,84 @@ server per node.
 - udp/8472 open between the nodes' LAN IPs (VXLAN). To run VXLAN over
   Tailscale instead, set `transport = "tailscale"` in
   `components/infra/flannel.nix`.
+- kube-proxy runs on every node with `--cluster-cidr` = `podCidr`, so the
+  apiservers (host network) reach webhook Services by ClusterIP, masqueraded
+  to the node's flannel address; no extra firewall rule (see
+  [cert-manager](#cert-manager)).
+
+## cert-manager
+
+The workload PKI (`components/infra/cert-manager/`): TLS for things that run
+**in** the cluster. The cluster's own certificates (etcd, apiservers,
+kubelets, …) are not cert-manager's: they are files from `cluster-pki`, made
+before the cluster exists ([docs/pki.md](../docs/pki.md#bootstrap-pki-and-workload-pki)).
+
+| Object | What |
+| --- | --- |
+| ClusterIssuer `selfsigned` | signs the root below; nothing else should use it |
+| Certificate `cert-manager/cluster-ca` | the root CA: `isCA`, ECDSA P-384, 10 years, renewed one year before expiry with the same key (`rotationPolicy: Never`, so issued leaves keep verifying) |
+| Secret `cert-manager/cluster-ca` | its key and cert, generated by cert-manager in the cluster; never copied out, never in git |
+| ClusterIssuer **`cluster-ca`** | CA issuer over that Secret: **what workloads use** |
+
+All of it is declared; nothing is made by hand. The CA is independent of
+the bootstrap CAs on r440 and its key never leaves the cluster (a backup of
+the etcd data holds it, like every Secret).
+
+### Requesting a certificate
+
+```yaml
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: myapp-tls
+  namespace: myapp
+spec:
+  secretName: myapp-tls           # gets tls.crt, tls.key and ca.crt (the root)
+  dnsNames:
+    - myapp.myapp.svc
+    - myapp.myapp.svc.cluster.local
+  privateKey: { algorithm: ECDSA, size: 256 }
+  issuerRef: { group: cert-manager.io, kind: ClusterIssuer, name: cluster-ca }
+```
+
+As a catenix component: `resources."cert-manager.io".v1.Certificate.<name>`,
+which needs the cert-manager CRDs imported to type-check (see `issuers.nix`:
+`catenix.crdModule` over the chart's CRDs), and the component must be
+**deferred** ([Deferred components](#deferred-components)), as everything
+`cert-manager.io` is. Defaults: 90 days, renewed at 2/3. Clients that should
+trust these certificates use `ca.crt` from any issued Secret, or the root:
+`kubectl -n cert-manager get secret cluster-ca -o jsonpath='{.data.ca\.crt}' | base64 -d`
+(read only `ca.crt`; the Secret also holds the key).
+
+cert-manager approves every CertificateRequest for its own issuers, so
+whoever may create a Certificate may get any name signed by `cluster-ca`.
+Today that is only cluster admins and Flux; per-namespace policy would be
+cert-manager's approver-policy. Nothing outside the cluster trusts
+`cluster-ca`: it is for in-cluster TLS, not public hostnames (those go
+through the Cloudflare tunnel).
+
+### Webhook and network
+
+The apiserver calls the webhook (`cert-manager/cert-manager-webhook`, port
+443 → pod 10250) through its ClusterIP, with no aggregator routing.
+kube-proxy on the apiserver's node DNATs it to a webhook pod and, the source
+being outside `podCidr`, masquerades it to that node's flannel address;
+VXLAN carries it to the pod's node (udp/8472 between LAN IPs, open on every
+node by `modules/cluster/firewall.nix`, c4130 included, whatever
+`trustTailscale`), and the reply returns on the same connection. The
+NixOS firewall filters only INPUT, not forwarded pod traffic. Checked
+2026-11-12: every apiserver (c4130, r440, m2mini) reaches pods on all three
+nodes through the apiserver proxy. The webhook's own serving cert is
+self-managed (Secret `cert-manager-webhook-ca`, injected into the webhook
+configurations by the cainjector), so it does not depend on `cluster-ca`.
+
+### Removing it
+
+Deleting the root Certificate, or the whole component, leaves the Secret
+`cluster-ca` (no owner reference): re-adding the Certificate picks the same
+CA up again. Deleting the Secret makes a new root, and every client trusting
+the old one must be updated. Removing `infra/cert-manager` removes its CRDs
+and with them every Certificate and Issuer in the cluster.
 
 ## authentik
 

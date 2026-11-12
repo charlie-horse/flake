@@ -1,12 +1,13 @@
 # Flux, namespace `flux-system`: the controllers (install.nix), what they
-# reconcile (sync.nix) and the push trigger (receiver.nix). Flux applies the
-# whole render, itself included, so it keeps itself up to date and prunes
-# whatever is removed from it.
+# reconcile (sync.nix; stages.nix for the deferred components) and the push
+# trigger (receiver.nix). Flux applies the whole render, itself included, so
+# it keeps itself up to date and prunes whatever is removed from it.
 { ... }:
 {
   imports = [
     ./install.nix
     ./sync.nix
+    ./stages.nix
     ./receiver.nix
   ];
 

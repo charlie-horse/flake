@@ -25,9 +25,15 @@ Tailscale (MagicDNS names) and the LAN (10.0.0.0/16).
   CLAUDE.md), GPU-window timers on c4130 (vLLM stopped 22:00–05:55 EST),
   the Nix builder on r440.
 - **Cluster (`k8s/README.md` has the full table):** flannel, CoreDNS, the
-  NVIDIA device plugin, Flux; cloudflared (the one Cloudflare tunnel, a
-  replica per node); authentik (one server + worker per node); Headlamp;
-  Open WebUI (on r440).
+  NVIDIA device plugin, Flux; cert-manager (controller, cainjector, two
+  webhook replicas; r440 and m2mini) with the workload CA, ClusterIssuer
+  `cluster-ca`; cloudflared (the one Cloudflare tunnel, a replica per
+  node); authentik (one server + worker per node); Headlamp; Open WebUI (on
+  r440).
+- **Certificates:** the cluster's own (etcd, apiservers, kubelets, …) are
+  files from `cluster-pki` on r440; workload TLS comes from cert-manager
+  (`issuerRef: {kind: ClusterIssuer, name: cluster-ca}`). Why two:
+  [pki.md](pki.md#bootstrap-pki-and-workload-pki).
 
 Public hostnames all go through the tunnel `cluster`: `auth.neuros.is`
 (authentik), `k8s.neuros.is` (Headlamp), `chat.neuros.is` (Open WebUI),
@@ -73,6 +79,7 @@ Check or force it (r440, admin kubeconfig):
 export KUBECONFIG=~/.local/share/cluster-pki/neurosis/admin.kubeconfig
 nix shell nixpkgs#fluxcd -c flux get sources oci                    # Ready, SourceVerified
 nix shell nixpkgs#fluxcd -c flux reconcile kustomization flux-system --with-source
+nix shell nixpkgs#fluxcd -c flux get kustomizations                 # flux-system, cert-manager-issuers Ready
 ```
 
 Rendering on r440 needs a workaround (Nix's git fetcher fails on
@@ -193,6 +200,7 @@ Rollout (after the PR is merged):
 | --- | --- | --- |
 | Cluster PKI (CA keys + leaves) | `r440:~/.local/share/cluster-pki/neurosis` (back it up) | `cluster-pki` (docs/pki.md) |
 | Node keys and certs | `/var/lib/kubernetes/secrets/` on each node | `cluster-pki deploy` |
+| `cert-manager/cluster-ca` (workload root CA key) | Kubernetes Secret | cert-manager, in the cluster (declared in `k8s/`; never by hand, never copied) |
 | `authentik/authentik-secrets` | Kubernetes Secret | by hand (k8s/README.md, authentik) |
 | `headlamp/headlamp-oidc` | Kubernetes Secret | by hand (Headlamp section) |
 | `open-webui/open-webui-secrets` | Kubernetes Secret | by hand (Open WebUI section) |
