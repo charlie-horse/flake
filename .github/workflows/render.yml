@@ -154,10 +154,12 @@ jobs:
 
       - name: Push artifact
         run: |
-          ref="ghcr.io/$GITHUB_REPOSITORY/manifests@sha256:${GITHUB_SHA::12}"
-          url="oci://$ref"
+          pkg="ghcr.io/$GITHUB_REPOSITORY/manifests"
+          url="oci://$pkg:${GITHUB_SHA::12}"
+          ref="$pkg@sha256:${GITHUB_SHA}"
+
           flux push artifact "$url" --path render -o json \
             --source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
-            --revision="main@sha1:$$GITHUB_SHA"
+            --revision="main@sha256:$GITHUB_SHA"
           flux tag artifact "$url" --tag main
           cosign sign --yes "$ref"
