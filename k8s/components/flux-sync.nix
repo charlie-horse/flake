@@ -40,7 +40,7 @@ in
   resources."source.toolkit.fluxcd.io".v1.GitRepository.${name} = {
     metadata.namespace = namespace;
     spec = {
-      url = "https://github.com/charlie-horse/flake/manifests";
+      url = "https://github.com/charlie-horse/flake";
       ref.branch = "main";
       interval = "5m";
       # Only what the Kustomization reads (gitignore syntax: a parent
@@ -57,7 +57,7 @@ in
   resources."source.toolkit.fluxcd.io".v1.OCIRepository.${name} = {
     metadata.namespace = namespace;
     spec = {
-      url = "oci://ghcr.io/charlie-horse/manifests";
+      url = "oci://ghcr.io/charlie-horse/flake/manifests";
       ref.tag = "main";
       interval = "1m";
       verify = {
