@@ -8,8 +8,11 @@ a [catenix](https://github.com/charlie-horse/catenix) module and rendered to
 | --- | --- |
 | `default.nix` | flake fragment `{ inputs, pkgs, lib }` → `packages.k8s-manifests`, `apps.render`, `apps.check-images`, `components` |
 | `charts.nix` | published Helm charts, pinned by version + NAR hash (`catenix.lib.fetchChart`) |
-| `components/*.nix` | one catenix module per rendered file (`validation.strict = true`) |
-| `rendered/` | generated, committed; what Flux reads (never edit by hand) |
+| `lib.nix` | helpers for the components: `localVolume`, `nodeTolerations`, `fixedServiceIP` |
+| `components/infra/*.nix` | cluster plumbing, one file per component |
+| `components/flux/` | Flux itself: `install.nix` (chart), `sync.nix` (OCIRepository + Kustomization), `receiver.nix` (push webhook) |
+| `components/apps/` | applications; small ones are a file, larger ones a directory split by concern (e.g. `authentik/`: `chart.nix`, `postgres.nix`, `backup.nix`, `blueprints/*.yaml`) |
+| `rendered/` | generated: `<component>/<kinds>.yaml` (never edit by hand) |
 
 Cluster values (pod/service CIDRs, DNS IP, domain, nodes and their `gpu`
 flag) come from `../cluster/definition.nix`, the same file the NixOS
@@ -17,20 +20,19 @@ modules read.
 
 ## Components
 
-| Rendered file | What | Source |
+| Component (`rendered/<component>/`) | What | Source |
 | --- | --- | --- |
-| `00-runtime-classes.yaml` | RuntimeClass `runc` (default handler) and `nvidia` (handler `nvidia`, nodeSelector `nvidia.com/gpu.present=true`); `crun` documented, off | hand-written |
-| `05-rbac.yaml` | ClusterRoleBinding `system:kube-apiserver:kubelet-api-admin` (User `system:kube-apiserver`, the apiserver's kubelet client cert → ClusterRole `system:kubelet-api-admin`; without it `kubectl logs/exec/port-forward` get 403 from the kubelets); ClusterRoleBinding `oidc:cluster-admins` → `cluster-admin` (authentik group, inert until apiserver OIDC is on) | hand-written (what NixOS's disabled addon manager would create) |
-| `07-local-storage.yaml` | StorageClass `local` (no provisioner, WaitForFirstConsumer): static hostPath PVs pinned to a node | hand-written |
-| `10-flannel.yaml` | flannel VXLAN DaemonSet, `Network` = `podCidr`, kube-subnet-mgr, `--public-ip=$(status.hostIP)` (the node's LAN IP); no CNI install init containers (the host ships the plugin + conflist) | flannel chart v0.28.10 |
-| `20-coredns.yaml` | CoreDNS, Service `kube-system/kube-dns` at `dnsServiceIP` (10.96.0.10), zone `clusterDomain` (cluster.local), 2 replicas | coredns chart 1.48.2 (CoreDNS 1.14.7) |
-| `30-nvidia-device-plugin.yaml` | NVIDIA device plugin on `nvidia.com/gpu.present=true` nodes, `runtimeClassName: nvidia`, `DEVICE_ID_STRATEGY=index` (matches the host's index-named CDI spec) | nvidia-device-plugin chart 0.20.1 |
-| `40-flux-system.yaml` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers | fluxcd-community flux2 chart 2.19.1 |
-| `50-flux-sync.yaml` | GitRepository `https://github.com/charlie-horse/flake` (public HTTPS, no secretRef), branch `main`; Kustomization `./k8s/rendered`, prune | hand-written, typed by the flux2 CRDs |
-| `55-cloudflared.yaml` | the single Cloudflare tunnel `cluster`: cloudflared, one replica per node (hostNetwork), nginx sidecar that sets `X-Forwarded-For` from `Cf-Connecting-Ip`; routes auth/k8s/chat | hand-written |
-| `60-authentik.yaml` | authentik (SSO/OIDC): server + worker on amd64 (r440), PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprint for the `kubernetes` OIDC client. Secrets come from a hand-made Secret ([below](#authentik)) | authentik chart 2026.8.5 + hand-written |
-| `65-headlamp.yaml` | Headlamp web UI (namespace `headlamp`, enforce `restricted`): 1 replica on amd64 (r440), Service `headlamp` at fixed ClusterIP 10.96.0.21, OIDC login via authentik's confidential client `headlamp`; its ServiceAccount has no RBAC (users act with their own token). Client secret from a hand-made Secret ([below](#headlamp)) | headlamp chart 0.46.0 |
-| `70-open-webui.yaml` | Open WebUI 0.12.2 (chat for c4130's vLLM at `10.0.0.95:8000`), one replica, data on r440 (hostPath PV), OIDC login via authentik for group `local-ai`; secrets from the hand-made Secret `open-webui/open-webui-secrets` ([below](#open-webui)) | hand-written |
+| `infra/runtime-classes` | RuntimeClass `runc` (default handler) and `nvidia` (handler `nvidia`, nodeSelector `nvidia.com/gpu.present=true`); `crun` documented, off | hand-written |
+| `infra/rbac` | ClusterRoleBinding `system:kube-apiserver:kubelet-api-admin` (User `system:kube-apiserver`, the apiserver's kubelet client cert → ClusterRole `system:kubelet-api-admin`; without it `kubectl logs/exec/port-forward` get 403 from the kubelets); ClusterRoleBinding `oidc:cluster-admins` → `cluster-admin` (authentik group, inert until apiserver OIDC is on) | hand-written (what NixOS's disabled addon manager would create) |
+| `infra/local-storage` | StorageClass `local` (no provisioner, WaitForFirstConsumer): static hostPath PVs pinned to a node | hand-written |
+| `infra/flannel` | flannel VXLAN DaemonSet, `Network` = `podCidr`, kube-subnet-mgr, `--public-ip=$(status.hostIP)` (the node's LAN IP); no CNI install init containers (the host ships the plugin + conflist) | flannel chart v0.28.10 |
+| `infra/coredns` | CoreDNS, Service `kube-system/kube-dns` at `dnsServiceIP` (10.96.0.10), zone `clusterDomain` (cluster.local), 2 replicas | coredns chart 1.48.2 (CoreDNS 1.14.7) |
+| `infra/nvidia-device-plugin` | NVIDIA device plugin on `nvidia.com/gpu.present=true` nodes, `runtimeClassName: nvidia`, `DEVICE_ID_STRATEGY=index` (matches the host's index-named CDI spec) | nvidia-device-plugin chart 0.20.1 |
+| `flux` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers; OCIRepository `flux-system-oci` (the signed GHCR artifact) + Kustomization `flux-system`; Receiver `ghcr` (push webhook) | fluxcd-community flux2 chart 2.19.1 |
+| `apps/cloudflared` | the single Cloudflare tunnel `cluster`: cloudflared, one replica per node (hostNetwork), nginx sidecar that sets `X-Forwarded-For` from `Cf-Connecting-Ip`; routes auth/k8s/chat and the Flux webhook host (`/hook/` only) | hand-written |
+| `apps/authentik` | authentik (SSO/OIDC): one server + one worker per node, PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprints (one file per OIDC client: `kubernetes`, `headlamp`, `open-webui`). Secrets come from a hand-made Secret ([below](#authentik)) | authentik chart 2026.8.5 + hand-written |
+| `apps/headlamp` | Headlamp web UI (namespace `headlamp`, enforce `restricted`): 1 replica on amd64 (r440), Service `headlamp` at fixed ClusterIP 10.96.0.21, OIDC login via authentik's confidential client `headlamp`; its ServiceAccount has no RBAC (users act with their own token). Client secret from a hand-made Secret ([below](#headlamp)) | headlamp chart 0.46.0 |
+| `apps/open-webui` | Open WebUI 0.12.2 (chat for c4130's vLLM at `10.0.0.95:8000`), one replica, data on r440 (hostPath PV), OIDC login via authentik for group `local-ai`; secrets from the hand-made Secret `open-webui/open-webui-secrets` ([below](#open-webui)) | hand-written |
 
 Every image is a multi-arch manifest list (linux/amd64 + linux/arm64);
 `nix run .#k8s-check-images` checks it. The device plugin is pinned to the
@@ -103,17 +105,22 @@ Flux can't run before the pod network and DNS do, so the first apply is
 manual; afterwards Flux owns everything in `k8s/rendered/`, itself included.
 
 ```sh
-kubectl apply --server-side -f k8s/rendered/00-runtime-classes.yaml \
-  -f k8s/rendered/05-rbac.yaml \
-  -f k8s/rendered/10-flannel.yaml -f k8s/rendered/20-coredns.yaml \
-  -f k8s/rendered/30-nvidia-device-plugin.yaml
-kubectl apply --server-side -f k8s/rendered/40-flux-system.yaml
+R=k8s/rendered   # or the output of `nix build .#k8s-manifests`
+kubectl apply --server-side -R -f $R/infra/
+kubectl apply --server-side -f $R/flux/00-namespaces.yaml -f $R/flux/01-customresourcedefinitions.yaml
 kubectl wait --for condition=established --timeout=60s \
-  crd/gitrepositories.source.toolkit.fluxcd.io \
-  crd/kustomizations.kustomize.toolkit.fluxcd.io
-kubectl apply --server-side -f k8s/rendered/50-flux-sync.yaml
+  crd/ocirepositories.source.toolkit.fluxcd.io \
+  crd/kustomizations.kustomize.toolkit.fluxcd.io \
+  crd/receivers.notification.toolkit.fluxcd.io
+kubectl apply --server-side -R -f $R/flux/
 flux get kustomizations --watch   # or: kubectl -n flux-system get ks
 ```
+
+In every component, `00-namespaces.yaml` and
+`01-customresourcedefinitions.yaml` sort first, so `kubectl apply -R`
+creates them before the objects that need them. Flux's custom resources
+also need their CRDs *established*, hence the separate step and the wait.
+The apps need no manual apply: Flux brings them up.
 
 Smoke test: `flux get kustomizations` shows `flux-system` Ready, and
 `kubectl get pods -A -o wide` shows one cloudflared and one authentik
@@ -123,7 +130,7 @@ server per node.
 
 - containerd runtime handlers `runc` (default) and `nvidia` (gpu nodes);
   `crun` only with `clusterNode.crun.enable` (then flip `enableCrun` in
-  `components/runtime-classes.nix` and label those nodes).
+  `components/infra/runtime-classes.nix` and label those nodes).
 - gpu nodes carry the label `nvidia.com/gpu.present=true`.
 - kubelet `--node-ip` = `lanIP` (so `status.hostIP` is the LAN address
   flannel uses), `clusterDNS` = `dnsServiceIP`, `clusterDomain`.
@@ -133,11 +140,11 @@ server per node.
   `--cluster-cidr` = `podCidr`, mask `nodeCidrMaskSize`).
 - udp/8472 open between the nodes' LAN IPs (VXLAN). To run VXLAN over
   Tailscale instead, set `transport = "tailscale"` in
-  `components/flannel.nix`.
+  `components/infra/flannel.nix`.
 
 ## authentik
 
-SSO for the cluster and its apps (`components/authentik.nix`). It runs
+SSO for the cluster and its apps (`components/apps/authentik/`). It runs
 **in** the cluster but the cluster never depends on it: kubelets, the
 control plane and the admin kubeconfig authenticate with x509 certs, Flux
 and pods with service-account tokens. OIDC is only an extra way for people
@@ -217,7 +224,7 @@ creates:
   `cluster-admins` only. See [Headlamp](#headlamp).
 
 On the apiserver, usernames and groups get the `oidc:` prefix, and
-`05-rbac` binds `oidc:cluster-admins` to `cluster-admin`. It is on: the
+`infra/rbac` binds `oidc:cluster-admins` to `cluster-admin`. It is on: the
 `oidc` entry in `cluster/definition.nix` sets the issuer
 `https://auth.neuros.is/application/o/kubernetes/` and the audience
 `kubernetes` on every control plane (`clusterNode.oidc`). To turn it off,
@@ -252,7 +259,7 @@ user's `exec:` in the kubeconfig by hand.
 
 ## Headlamp
 
-Kubernetes web UI (`components/headlamp.nix`), public at
+Kubernetes web UI (`components/apps/headlamp.nix`), public at
 **https://k8s.neuros.is** (`cluster.headlamp.host`) through the cluster's
 Cloudflare tunnel (see [Cloudflare tunnel](#cloudflare-tunnel)), to Service
 `headlamp/headlamp` at its fixed ClusterIP (`cluster.headlamp.serviceIP`,
@@ -287,7 +294,7 @@ callback still points at k8s.neuros.is, so log in there).
 
 All public hostnames go through **one** locally managed tunnel, `cluster`
 (`cluster.tunnel`, id `59a275ca-be31-4f8d-99ce-c536eaf490f8`), run in the
-cluster by `components/cloudflared.nix`:
+cluster by `components/apps/cloudflared/`:
 
 | Hostname | Upstream |
 | --- | --- |
@@ -319,12 +326,12 @@ cluster by `components/cloudflared.nix`:
 - **DNS.** A proxied CNAME per hostname to the tunnel (account cert:
   charlie's `~/.cloudflared/cert.pem` on c4130):
   `cloudflared tunnel route dns --overwrite-dns 59a275ca-be31-4f8d-99ce-c536eaf490f8 <hostname>`.
-- **New hostname.** Add it to `routes` in `components/cloudflared.nix` (the
+- **New hostname.** Add it to `routes` in `components/apps/cloudflared/` (the
   pods roll on config change), then add its DNS route.
 
 ## Open WebUI
 
-Chat front-end for c4130's vLLM (`components/open-webui.nix`), public at
+Chat front-end for c4130's vLLM (`components/apps/open-webui.nix`), public at
 **https://chat.neuros.is** through the cluster's tunnel. It moved here from
 a NixOS service on c4130 on 2026-11-10, at the same version (0.12.2), with
 its data (`webui.db`, uploads) copied to `r440:/var/lib/open-webui/data` (a

@@ -1,13 +1,10 @@
-# Flux v2 controllers and CRDs (fluxcd-community flux2 chart) in
-# flux-system: source-, kustomize-, helm- and notification-controller.
-# The image-automation/-reflector controllers are off (nothing writes to
-# git from the cluster), as is the chart's pre-install `flux check` Job
-# (a Helm hook; Flux here is applied by kubectl and then by itself).
-# All controller images (ghcr.io/fluxcd/*) are multi-arch (amd64, arm64).
-#
-# The GitRepository/Kustomization that make Flux reconcile this repo are
-# 50-flux-sync (flux-sync.nix), a separate file so a fresh
-# `kubectl apply -f k8s/rendered/` creates these CRDs first.
+# Flux v2 controllers and CRDs (fluxcd-community flux2 chart):
+# source-, kustomize-, helm- and notification-controller. The
+# image-automation/-reflector controllers are off (nothing writes to git
+# from the cluster), as is the chart's pre-install `flux check` Job (a Helm
+# hook; Flux here is applied by kubectl, then by itself). Importing the
+# chart also types the Flux custom resources in sync.nix and receiver.nix.
+# All controller images (ghcr.io/fluxcd/*) are multi-arch.
 {
   pkgs,
   catenix,
@@ -17,9 +14,6 @@
   k8sLib,
   ...
 }:
-let
-  namespace = "flux-system";
-in
 {
   imports = [
     (catenix.importChart {
@@ -27,7 +21,7 @@ in
       chart = charts.flux2;
       release = {
         name = "flux2";
-        inherit namespace;
+        namespace = "flux-system";
       };
       values = {
         clusterDomain = cluster.clusterDomain;
@@ -43,6 +37,8 @@ in
           }
         ];
       };
+      # The webhook receiver is reached through the tunnel at a fixed IP
+      # (cluster.fluxWebhook, apps/cloudflared).
       patch = k8sLib.fixedServiceIP {
         service = "webhook-receiver";
         ip = cluster.fluxWebhook.serviceIP;
@@ -50,12 +46,4 @@ in
       noHooks = true;
     })
   ];
-
-  validation.strict = true;
-
-  resources.core.v1.Namespace.${namespace}.metadata.labels = {
-    "app.kubernetes.io/part-of" = "flux";
-    "pod-security.kubernetes.io/warn" = "restricted";
-    "pod-security.kubernetes.io/warn-version" = "latest";
-  };
 }

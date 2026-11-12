@@ -11,7 +11,7 @@
 #
 #   oidc:cluster-admins
 #       Members of the authentik group `cluster-admins` (blueprint in
-#       components/authentik.nix) get cluster-admin when they log in with
+#       apps/authentik/blueprints/kubernetes-oidc.yaml) get cluster-admin when they log in with
 #       OIDC. The apiserver prefixes OIDC groups with `oidc:`
 #       (modules/cluster/control-plane.nix), so no OIDC token can claim a
 #       built-in group such as system:masters. Inert while

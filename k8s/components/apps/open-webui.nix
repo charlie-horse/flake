@@ -3,7 +3,7 @@
 # same version, 0.12.2, so the database schema matches) on 2026-11-10.
 #
 #   https://chat.neuros.is (cluster.openWebui.host) -> cloudflared + nginx
-#     (components/cloudflared.nix) -> Service open-webui at the fixed
+#     (apps/cloudflared) -> Service open-webui at the fixed
 #     ClusterIP cluster.openWebui.serviceIP -> pod :8080
 #   models: vLLM's OpenAI-compatible API on c4130 (LAN, port 8000), so the
 #     served model follows services.vllm-sm70.activeModel as before.
@@ -14,9 +14,9 @@
 # need. r440's disk is slow but Open WebUI's writes are small.
 #
 # Login: the local login form as before, plus "Continue with authentik" =
-# OIDC against authentik's confidential provider `open-webui` (blueprint in
-# components/authentik.nix), which only members of the authentik group
-# `local-ai` may use. New SSO users are created (ENABLE_OAUTH_SIGNUP) with
+# OIDC against authentik's confidential provider `open-webui` (blueprint
+# apps/authentik/blueprints/open-webui.yaml), which only members of the
+# authentik group `local-ai` may use. New SSO users are created (ENABLE_OAUTH_SIGNUP) with
 # the instance's default role, which is "pending" unless an admin changed
 # it, and an existing account with the same e-mail is linked
 # (OAUTH_MERGE_ACCOUNTS_BY_EMAIL). Roles are not taken from authentik, so

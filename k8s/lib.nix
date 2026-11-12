@@ -4,7 +4,7 @@
 {
   # A node-local volume: a hostPath PersistentVolume pinned to `node` and
   # pre-bound (claimRef) to the claim of the same name in `namespace`, plus
-  # that claim. StorageClass `local` (components/local-storage.nix), reclaim
+  # that claim. StorageClass `local` (components/infra/local-storage.nix), reclaim
   # Retain: deleting the claim or the component never deletes the data.
   # Returns a module fragment; put it in `imports`.
   localVolume =
