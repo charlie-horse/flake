@@ -1,4 +1,4 @@
-name: k8s
+name: render
 
 on:
   push:
@@ -58,6 +58,7 @@ jobs:
       - uses: cachix/install-nix-action@v31.11.2
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: DeterminateSystems/magic-nix-cache-action@main
       # Evaluates every output (all NixOS hosts, ISOs, packages). Not
       # `--no-build`: it can't realise import-from-derivation (the catenix
       # chart renders, `helm template`, small), so evaluation fails with
@@ -66,7 +67,7 @@ jobs:
       - run: nix flake check --keep-going -L
   # ------------------------------------------------------------------------
   render:
-    name: Render k8s manifests (catenix)
+    name: Render k8s manifests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
@@ -78,6 +79,7 @@ jobs:
       - uses: cachix/install-nix-action@v31.11.2
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: nix build .#k8s-manifests
         run: nix build -L --out-link result-k8s .#k8s-manifests
@@ -124,9 +126,8 @@ jobs:
           retention-days: 7
 
   # ------------------------------------------------------------------------
-  # The only job with write access: runs on push to main, after every check.
-  publish-rendered:
-    name: Commit k8s/rendered
+  publish:
+    name: Publish k8s/rendered
     if: >-
       needs.render.outputs.changed == 'true'
       && github.ref == 'refs/heads/main'
@@ -134,25 +135,22 @@ jobs:
     needs: [check, render]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions:
-      contents: write
     steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: main
-          fetch-depth: 0
+      - name: Setup Flux CLI
+        uses: fluxcd/flux2/action@main
 
-      - name: Remove old render
-        run: rm -rf k8s/rendered/**
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            flux oci login ghcr.io --username flux --password-stdin
 
       - uses: actions/download-artifact@v8.0.2
         with:
           name: k8s-rendered
           path: k8s/rendered
 
-      - uses: EndBug/add-and-commit@v11.1.1
-        with:
-          add: k8s/rendered/
-          message: "render k8s"
-          pull: true
-          push: true
+      - name: Push artifact
+        run: |
+          flux push artifact \
+            oci://ghcr.io/${{ github.repository }}/manifests:$(git rev-parse --short HEAD) \
+            --path k8s/rendered
