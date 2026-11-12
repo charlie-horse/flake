@@ -48,6 +48,7 @@ let
       "authentik"
       "headlamp"
       "openWebui"
+      "fluxWebhook"
     ]
   );
 
@@ -96,11 +97,17 @@ let
         hostnames;
         default "";
     ${lib.concatStrings (lib.mapAttrsToList (h: u: "    ${h} ${u};\n") routes)}  }
+      map "$host$uri" $path_allowed {
+        default 1;
+        ~^flux\.neuros\.is/hook 1;
+        ~^flux\.neuros\.is/ "";
+      }
 
       server {
         listen 127.0.0.1:${toString proxyPort};
         location / {
           if ($upstream = "") { return 404; }
+          if ($path_allowed = "") { return 404; }
           proxy_pass http://$upstream;
           proxy_http_version 1.1;
           proxy_set_header Upgrade $http_upgrade;
