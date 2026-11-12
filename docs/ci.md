@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | `.github/workflows/checks.yml` | every PR and push to `main` | Checks only: the secrets guard, `nix flake check`, and an eval of each server's toplevel. Never builds or writes. |
 | `.github/workflows/render.yml` | PRs and pushes to `main` that touch a render input | Renders `k8s/`. On `main` it also publishes the render to GHCR (a signed OCI artifact) and pings Flux. |
-| `.github/workflows/update.yml` | schedule / by hand | Flake input updates (see the workflow). |
+| `.github/workflows/update.yml` | Mon + Fri 04:00 UTC, or by hand | `nix flake update` (every input) → flake check + render → a PR from `auto/flake-update` ([below](#updateyml)). |
 
 Every action is pinned by full commit SHA ([below](#pinned-actions)).
 
@@ -120,6 +120,29 @@ publish (main only)   flux push artifact oci://ghcr.io/<repo>/manifests:<sha12>
 
 The GHCR package `charlie-horse/flake/manifests` is public, so Flux pulls it
 without credentials.
+
+## update.yml
+
+Mondays and Fridays at 04:00 UTC (or dispatched by hand):
+
+1. `nix flake update` updates **every** input, `vllm-fork` included. Nothing to do if no
+   input moved.
+2. `nix flake check` and `nix build .#k8s.manifests` run as the same gates a
+   human change needs.
+3. The new `flake.lock` is force-pushed to `auto/flake-update`, and a PR to
+   `main` is opened, or its body refreshed if one is open. The body lists
+   every changed input (before/after rev) and **warns when `vllm-fork`
+   moved**, because that changes c4130's production vLLM: build it on r440
+   and switch c4130 deliberately.
+
+It uses `GITHUB_TOKEN`, so the PR does not start `checks.yml`/`render.yml`
+by itself. Run both from the Actions tab on branch `auto/flake-update`, or
+close and reopen the PR, before merging. Merging deploys the render;
+hosts take the new inputs on their next switch.
+
+It needs the repo setting *Settings → Actions → General → Workflow
+permissions → "Allow GitHub Actions to create and approve pull
+requests"*. Without it the PR step fails, and the run fails visibly.
 
 ## Pinned actions
 

@@ -1,33 +1,123 @@
-name: Update
-permissions:
-  contents: write
+# Flake input updates, as a pull request.
+#
+# `nix flake update` (every input, vllm-fork included), then the same gates
+# a human change gets before it can be merged: `nix flake check` and the k8s
+# render. On success the new flake.lock is force-pushed to the branch
+# auto/flake-update and a PR to main is opened (or its body refreshed). It
+# lists the changed inputs and flags a vllm-fork bump, which changes c4130's
+# production vLLM.
+#
+# Uses GITHUB_TOKEN, so the PR does not trigger checks.yml/render.yml by
+# itself: run them from the Actions tab on branch auto/flake-update ("Run
+# workflow"), or close and reopen the PR, before merging. Needs the repo
+# setting Settings -> Actions -> General -> Workflow permissions -> "Allow
+# GitHub Actions to create and approve pull requests". See docs/ci.md.
+name: update
+
 on:
   schedule:
-    - cron: 0 4 * * Mon,Fri # 00:00 EST
+    - cron: "0 4 * * Mon,Fri" # 04:00 UTC = 23:00 EST (Sun/Thu)
   workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+env:
+  BRANCH: auto/flake-update
 
 jobs:
   update:
-    runs-on: ubuntu-latest
+    name: Update flake inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v27
-      
-      - name: Update flake
-        run: nix flake update
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check flake
-        run: nix flake check
+      - name: nix flake update
+        id: update
+        run: |
+          set -euo pipefail
+          cp flake.lock "$RUNNER_TEMP/flake.lock.old"
+          nix flake update
+          if git diff --quiet -- flake.lock; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No input changed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: nix flake check
+        if: steps.update.outputs.changed == 'true'
+        run: nix flake check --keep-going -L
 
       # The k8s render is not a per-system output, so flake check does not
-      # build it (parts/k8s.nix); this push runs no other workflow
-      # (GITHUB_TOKEN), so check here that the bumped inputs still render.
+      # build it (parts/k8s.nix).
       - name: Render k8s
+        if: steps.update.outputs.changed == 'true'
         run: nix build -L --no-link .#k8s.manifests
 
-      - name: Commit & push
+      - name: Describe the changes
+        if: steps.update.outputs.changed == 'true'
         run: |
-          git config --global user.name 'Github Action: Update'
-          git config --global user.email '<>'
-          git commit -am "Actions: Update flake"
-          git push
+          set -euo pipefail
+          rows=$(jq -r --slurpfile old "$RUNNER_TEMP/flake.lock.old" '
+            ($old[0].nodes) as $o
+            | .nodes | to_entries[]
+            | select(.key != "root")
+            | {k: .key,
+               new: (.value.locked.rev // .value.locked.narHash // ""),
+               old: (if $o[.key] == null then "(new)"
+                     else ($o[.key].locked.rev // $o[.key].locked.narHash // "") end)}
+            | select(.new != .old)
+            | "| `\(.k)` | `\(.old[0:12])` | `\(.new[0:12])` |"' flake.lock)
+          {
+            echo "Automated \`nix flake update\` (every input) from \`${GITHUB_WORKFLOW}\` run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
+            echo
+            echo "Passed before this PR was opened: \`nix flake check\`, \`nix build .#k8s.manifests\`."
+            echo
+            if echo "$rows" | grep -qF "| \`vllm-fork\` |"; then
+              echo "> [!WARNING]"
+              echo "> **vllm-fork moved.** This changes c4130's production vLLM. Build it on r440 and"
+              echo "> switch c4130 deliberately (GC first, outside the GPU window; CLAUDE.md)."
+              echo
+            fi
+            echo "| Input | Before | After |"
+            echo "| --- | --- | --- |"
+            echo "$rows"
+            echo
+            echo "**Before merging:** this PR was opened with \`GITHUB_TOKEN\`, so CI did not start by itself."
+            echo "Run **checks** and **render** on branch \`$BRANCH\` from the Actions tab (Run workflow),"
+            echo "or close and reopen this PR. Merging deploys the render (render.yml) and makes the hosts'"
+            echo "next \`git pull && nixos-rebuild switch\` pick the new inputs up."
+          } > "$RUNNER_TEMP/body.md"
+          cat "$RUNNER_TEMP/body.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Push the branch and open or update the PR
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898733+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git commit -q -am "flake.lock: update inputs"
+          git push --force origin "$BRANCH"
+          title="flake.lock: update inputs ($(date -u +%Y-%m-%d))"
+          pr=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+            echo "Updated PR #$pr" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh pr create --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          fi
