@@ -1,4 +1,9 @@
-{ lib, config, ... }:
+{
+  lib,
+  config,
+  options,
+  ...
+}:
 let
   inherit (lib)
     mkIf
@@ -68,6 +73,13 @@ in
       })
     ];
 
-    services.journald.extraConfig = "SystemMaxUse=500M";
+    # nixos-unstable replaced services.journald.extraConfig with
+    # settings.Journal (setting extraConfig is now an error). Both branches
+    # until flake.lock's nixpkgs-unstable has settings; then keep that one.
+    services.journald =
+      if options.services.journald ? settings then
+        { settings.Journal.SystemMaxUse = "500M"; }
+      else
+        { extraConfig = "SystemMaxUse=500M"; };
   };
 }

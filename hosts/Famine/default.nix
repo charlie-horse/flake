@@ -11,11 +11,10 @@ in
   boot.supportedFilesystems = [ "ntfs" ];
   boot.kernelParams = [ "nvidia_drm.fbdev=1" ];
 
-  qt = {
-    enable = true;
-    platformTheme = "gtk2";
-    style = "gtk2";
-  };
+  # Qt plugin paths for the installed profiles. The theme is set with
+  # QT_QPA_PLATFORMTHEME below: NixOS dropped the "gtk2" platform theme and
+  # style (qtstyleplugins; GTK 2 is end-of-life).
+  qt.enable = true;
 
   services = {
     gnome.gnome-keyring.enable = true;
@@ -62,14 +61,17 @@ in
     gparted
     ledger-live-desktop
     protonup-qt
-    protonvpn-gui
+    # Renamed to proton-vpn (protonvpn-gui is a deprecated alias).
+    (pkgs.proton-vpn or protonvpn-gui)
     parsec-bin
     obs-studio
     imv
     mpv
     gimp
     #kicad
-    cider
+    # cider: removed from nixos-unstable (unmaintained, archived upstream).
+    # Its successor is packaged as cider-2 (unfree, a paid app upstream);
+    # add it here if wanted.
     lutris
     sioyek
     spotify
@@ -90,6 +92,12 @@ in
     "CARGO_HOME" = "${xdg.data}/cargo";
     "NPM_CONFIG_USERCONFIG" = "${xdg.config}/npm/npmrc";
     "GTK2_RC_FILES" = "${xdg.config}/gtk-2.0/gtkrc";
+    # Qt follows the GTK theme (Orchis, picked with lxappearance) through
+    # Qt's own GTK 3 platform theme (libqgtk3, built into qtbase for Qt 5
+    # and 6): GTK palette, fonts, icons and file dialogs. Replaces
+    # qt.platformTheme/qt.style "gtk2", which NixOS removed; its qt module
+    # has no "gtk3" value, so set it directly.
+    "QT_QPA_PLATFORMTHEME" = "gtk3";
   };
   environment.sessionVariables = {
     WLR_NO_HARDWARE_CURSORS = "1";
