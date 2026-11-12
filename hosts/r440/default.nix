@@ -6,7 +6,7 @@
 # controller-manager, scheduler, cri-o, certs as Nix paths, clusterCidr
 # bug) is intentionally NOT here: the shared cluster module (modules/cluster
 # + cluster/definition.nix) replaces it, as it does the cluster-port
-# firewall rules (./legacy-k8s-firewall.nix, not imported).
+# firewall rules.
 #
 # Must NOT go through lib mkHost (that imports every modules/** file:
 # desktop, home-manager, agenix). Build it with nixpkgs.lib.nixosSystem,

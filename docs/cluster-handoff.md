@@ -85,7 +85,7 @@ Every step below is run by a person with sudo.
 | `hosts/{c4130,r440,m2mini}` | Ports of the hosts' own flakes (c4130/r440 from Ada's copies). Their old `k8s.nix` and `tls/` are not carried over. |
 | `modules/cluster/` | Manual `services.kubernetes` (no easyCerts): etcd (same member names and peer URLs), apiserver `Node,RBAC`, controller-manager, scheduler, kubelet, kube-proxy, containerd (`nvidia` handler on c4130), keepalived on all 3 nodes, firewall. Secrets are **string** paths under `/var/lib/kubernetes/secrets`. |
 | `pkgs/cluster-pki` | `cluster-pki` (CAs, leaves, rotation) and `cluster-pki-deploy` (stages a node's files over ssh and prints the `sudo install` lines). See [pki.md](pki.md). |
-| `k8s/` | catenix modules → `k8s/rendered/`: RuntimeClasses, RBAC (`05-rbac`: apiserver → kubelet API, `oidc:cluster-admins`), StorageClass `local`, flannel, CoreDNS, NVIDIA device plugin, Flux (public HTTPS GitRepository, no secret), authentik (SSO; its Secret is made by hand), podinfo. See [k8s/README.md](../k8s/README.md). |
+| `k8s/` | catenix modules → `k8s/rendered/`: RuntimeClasses, RBAC (`05-rbac`: apiserver → kubelet API, `oidc:cluster-admins`), StorageClass `local`, flannel, CoreDNS, NVIDIA device plugin, Flux (public HTTPS GitRepository, no secret), authentik (SSO; its Secret is made by hand). See [k8s/README.md](../k8s/README.md). |
 | `.github/workflows/k8s.yml` | Secrets guard, host evals with IFD off, render check. See [ci.md](ci.md). |
 
 ### Rollout knobs (new in this commit)
@@ -499,7 +499,6 @@ kubectl wait --for condition=established --timeout=60s \
   crd/gitrepositories.source.toolkit.fluxcd.io crd/kustomizations.kustomize.toolkit.fluxcd.io
 kubectl apply --server-side -f k8s/rendered/50-flux-sync.yaml
 kubectl -n flux-system get gitrepository,kustomization   # Ready=True, revision main@sha1:…
-kubectl -n podinfo get pods -o wide                       # one per node, incl. m2mini (arm64)
 ```
 
 Deploy key: **none** while the repo is public (user decision: public HTTPS,

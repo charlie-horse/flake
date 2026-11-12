@@ -43,7 +43,6 @@ in {
         gaming.enable = true;
         steam = true;
         star-citizen.enable = true;
-        #genshin.enable = true;
     };
 
     programs.dconf.enable = true;
