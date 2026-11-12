@@ -42,6 +42,12 @@ in
           }
         ];
       };
+      patch = manifest:
+      if manifest.kind == "Service" && manifest.metadata.name == "webhook-receiver"
+      then lib.recursiveUpdate manifest {
+        metadata.annotations."kustomize.toolkit.fluxcd.io/force" = "enabled"
+        spec.clusterIP = cluster.fluxWebhook.serviceIP;
+      } else manifest;
       noHooks = true;
     })
   ];
