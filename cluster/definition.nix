@@ -1,4 +1,4 @@
-# Cluster definition for the "solaris" cluster (c4130, r440, m2mini).
+# Cluster definition for the "neurosis" cluster (c4130, r440, m2mini).
 #
 # PURE DATA: no functions, no Nix paths, no secrets. Everything that needs
 # the cluster layout reads this file:
@@ -9,7 +9,10 @@
 #   - k8s/ (catenix manifests: CoreDNS IP, pod CIDR for flannel, ...).
 #
 # Shape (keep it stable; add fields, don't rename them):
-#   name                 string  cluster name (CA subject O, kubeconfig names)
+#   name                 string  cluster name: kube-controller-manager
+#                                --cluster-name, and the subject of any CA
+#                                cluster-pki creates (existing CAs keep
+#                                theirs; docs/pki.md)
 #   domain               string  tailnet DNS domain; nodes are <name>.<domain>
 #                                and MagicDNS resolves the bare <name> to the
 #                                node's tailnet IP (etcd/apiserver use that)
@@ -91,7 +94,7 @@
 #                        (k8s/components/open-webui.nix), Service
 #                        open-webui/open-webui
 {
-  name = "solaris";
+  name = "neurosis";
   domain = "leaffish-monster.ts.net";
 
   vip = "10.0.0.200";

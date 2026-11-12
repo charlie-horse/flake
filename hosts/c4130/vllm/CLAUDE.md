@@ -9,7 +9,7 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
 - SSH to c4130 over the tailnet uses Tailscale SSH (auth method 'none'). The tailnet ACLs are reviewed and intended by the owner; don't flag it as a security issue.
 - `sudo` needs charlie's password. Ask the user for it, and pass it on stdin (`sudo -S`), never on a command line. Secrets never go in git or on a command line. `/etc/nixos` is writable by charlie, so `git pull` and building need no sudo; `nixos-rebuild switch` and `journalctl -u vllm` do.
 - etcd and the k8s apiserver also run on this box (3-member etcd with r440 and m2mini). Switch one host at a time and run the etcd health check from `docs/cluster.md` after each; never take two members down together, or etcd loses quorum. `switch` exiting with status 4 means a unit failed (read `systemctl --failed`). Leave etcd alone unless the user asks.
-- The cluster PKI (CA keys) lives only on r440 (`~/.local/share/cluster-pki/solaris`); never copy it elsewhere or into git.
+- The cluster PKI (CA keys) lives only on r440 (`~/.local/share/cluster-pki/neurosis`); never copy it elsewhere or into git.
 
 ## Deploying
 - Every change, including a model entry or a fork re-lock, goes through this repo: branch → CI → merge. Then on c4130: `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#c4130`. Never run `nix flake update` or edit files inside `/etc/nixos` on the host.

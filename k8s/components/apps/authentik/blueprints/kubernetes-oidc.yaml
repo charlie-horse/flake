@@ -3,7 +3,7 @@
 # apiserver trusts this provider's issuer (cluster/definition.nix `oidc`).
 version: 1
 metadata:
-  name: solaris - kubernetes OIDC
+  name: neurosis - kubernetes OIDC
   labels:
     blueprints.goauthentik.io/description: kube-apiserver OIDC client (k8s/components/apps/authentik)
 entries:
@@ -51,7 +51,7 @@ entries:
     identifiers:
       slug: kubernetes
     attrs:
-      name: Kubernetes (solaris)
+      name: Kubernetes (neurosis)
       provider: !KeyOf provider
       policy_engine_mode: any
 

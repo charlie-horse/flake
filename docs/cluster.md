@@ -1,4 +1,4 @@
-# solaris cluster: current state and operations
+# neurosis cluster: current state and operations
 
 Three NixOS 26.05 servers run one Kubernetes cluster (v1.36). The NixOS side
 (etcd, control plane, kubelet, containerd, keepalived, firewall) is
@@ -70,7 +70,7 @@ sudo journalctl -u etcd --since -5min | grep -iE 'x509|tls|handshake'   # empty
 Check or force it (r440, admin kubeconfig):
 
 ```sh
-export KUBECONFIG=~/.local/share/cluster-pki/solaris/admin.kubeconfig
+export KUBECONFIG=~/.local/share/cluster-pki/neurosis/admin.kubeconfig
 nix shell nixpkgs#fluxcd -c flux get sources oci                    # Ready, SourceVerified
 nix shell nixpkgs#fluxcd -c flux reconcile kustomization flux-system --with-source
 ```
@@ -86,7 +86,7 @@ nix build --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s.manife
 
 ## Access
 
-- **Admin (break-glass):** `r440:~/.local/share/cluster-pki/solaris/admin.kubeconfig`
+- **Admin (break-glass):** `r440:~/.local/share/cluster-pki/neurosis/admin.kubeconfig`
   (x509, never copied off r440).
 - **People:** OIDC through authentik (group `cluster-admins` →
   `cluster-admin`): kubectl with kubelogin, or Headlamp at
@@ -138,7 +138,7 @@ clients do).
 Admin console and policy file (once, before the first switch):
 
 1. Services → Advertise → Define a Service: name `kube-api`, endpoint
-   `tcp:6443`, description "solaris Kubernetes API".
+   `tcp:6443`, description "neurosis Kubernetes API".
 2. Policy file: approve tag:node hosts automatically and let the admins
    reach it (adjust `src` to who should use kubectl):
 
@@ -171,24 +171,27 @@ Rollout (after the PR is merged):
 
 1. Policy and service definition (above).
 2. New apiserver leaves on r440 (the SAN list changed):
-   `cd /etc/nixos && git pull && nix run /etc/nixos#cluster-pki -- --out ~/.local/share/cluster-pki/solaris`
+   `cd /etc/nixos && git pull && nix run /etc/nixos#cluster-pki -- --out ~/.local/share/cluster-pki/neurosis`
    (reports 3 apiserver leaves issued), then one node at a time
-   `nix run /etc/nixos#cluster-pki-deploy -- <node> --out ~/.local/share/cluster-pki/solaris`,
+   `nix run /etc/nixos#cluster-pki-deploy -- <node> --out ~/.local/share/cluster-pki/neurosis`,
    paste the printed `sudo install` commands, `sudo systemctl restart kube-apiserver`
-   and wait for `curl -sk https://127.0.0.1:6443/readyz` before the next
-   node. The switch below does not restart the apiserver.
+   and wait for `curl -skf https://127.0.0.1:6443/readyz` (`-f`: a
+   not-ready apiserver still answers, with HTTP 500) before the next node.
+   For r440 itself `cluster-pki-deploy` fails (it cannot ssh to itself):
+   `sudo install` the changed pair straight from the PKI dir instead. The
+   switch below does not restart the apiserver.
 3. Switch the hosts one at a time (Changing a host, above): c4130 GC first
    and outside 22:00–05:55 EST; after each, `systemctl --failed`, the etcd
    check, `systemctl status tailscale-service-kube-api` and
    `tailscale debug prefs` (unchanged apart from AdvertiseServices).
-4. kubeconfigs: `kubectl config set-cluster solaris --server=https://kube-api.leaffish-monster.ts.net:6443`
+4. kubeconfigs: `kubectl config set-cluster neurosis --server=https://kube-api.leaffish-monster.ts.net:6443`
    (the CA stays the same).
 
 ## Secrets that live outside git
 
 | Secret | Where | Made by |
 | --- | --- | --- |
-| Cluster PKI (CA keys + leaves) | `r440:~/.local/share/cluster-pki/solaris` (back it up) | `cluster-pki` (docs/pki.md) |
+| Cluster PKI (CA keys + leaves) | `r440:~/.local/share/cluster-pki/neurosis` (back it up) | `cluster-pki` (docs/pki.md) |
 | Node keys and certs | `/var/lib/kubernetes/secrets/` on each node | `cluster-pki deploy` |
 | `authentik/authentik-secrets` | Kubernetes Secret | by hand (k8s/README.md, authentik) |
 | `headlamp/headlamp-oidc` | Kubernetes Secret | by hand (Headlamp section) |

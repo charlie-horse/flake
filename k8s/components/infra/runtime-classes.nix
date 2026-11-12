@@ -12,13 +12,13 @@
 #   crun    optional, off (`enableCrun` below). Turn it on only together
 #           with `clusterNode.crun.enable = true` on the nodes that should
 #           run it, and give those nodes a label to select (e.g.
-#           cluster.nodes.<n>.labels."runtime.solaris/crun" = "true"),
+#           cluster.nodes.<n>.labels."runtime.neurosis/crun" = "true"),
 #           which crunNodeSelector must then name.
 { lib, cluster, ... }:
 let
   enableCrun = false;
   crunNodeSelector = {
-    "runtime.solaris/crun" = "true";
+    "runtime.neurosis/crun" = "true";
   };
 
   gpuNodes = lib.attrNames (lib.filterAttrs (_: n: n.gpu or false) cluster.nodes);
