@@ -41,6 +41,10 @@ jobs:
     outputs:
       cached: ${{ steps.cache.outputs.cache-hit }}
     steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
       - name: Cache
         id: cache
         uses: actions/cache@v5.1.0
