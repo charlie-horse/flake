@@ -32,7 +32,22 @@ in
         clusterDomain = cluster.clusterDomain;
         imageAutomationController.create = false;
         imageReflectionController.create = false;
+        # Keyless cosign (OCIRepository verify) caches Sigstore's TUF trust
+        # root under $HOME/.sigstore; HOME is / on a read-only root fs. Use
+        # the writable /tmp emptyDir, as upstream Flux's own manifests do.
+        sourceController.extraEnv = [
+          {
+            name = "TUF_ROOT";
+            value = "/tmp/.sigstore";
+          }
+        ];
       };
+      patch = manifest:
+      if manifest.kind == "Service" && manifest.metadata.name == "webhook-receiver"
+      then lib.recursiveUpdate manifest {
+        metadata.annotations."kustomize.toolkit.fluxcd.io/force" = "enabled";
+        spec.clusterIP = cluster.fluxWebhook.serviceIP;
+      } else manifest;
       noHooks = true;
     })
   ];

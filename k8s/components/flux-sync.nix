@@ -15,7 +15,6 @@
 }:
 let
   namespace = "flux-system";
-  name = "flux-system";
 
   chartCrds = lib.filter (m: (m.kind or null) == "CustomResourceDefinition") (
     builtins.fromJSON (
@@ -37,31 +36,43 @@ in
 
   validation.strict = true;
 
-  resources."source.toolkit.fluxcd.io".v1.GitRepository.${name} = {
-    metadata = { inherit namespace; };
+  resources."source.toolkit.fluxcd.io".v1.OCIRepository."flux-system-oci" = {
+    metadata.namespace = namespace;
     spec = {
-      url = "https://github.com/charlie-horse/flake";
-      ref.branch = "main";
-      interval = "5m";
-      # Only what the Kustomization reads (gitignore syntax: a parent
-      # directory must be re-included before its children).
-      ignore = ''
-        /*
-        !/k8s/
-        /k8s/*
-        !/k8s/rendered/
-      '';
+      url = "oci://ghcr.io/charlie-horse/flake/manifests";
+      ref.tag = "main";
+      interval = "1m";
+      verify = {
+        provider = "cosign";
+        matchOIDCIdentity = [
+          {
+            issuer = "^https://token\\.actions\\.githubusercontent\\.com$";
+            subject = "^https://github\\.com/charlie-horse/flake/\\.github/workflows/render\\.yml@refs/heads/main$";
+          }
+        ];
+      };
     };
   };
 
-  resources."kustomize.toolkit.fluxcd.io".v1.Kustomization.${name} = {
+  resources."notification.toolkit.fluxcd.io".v1.Receiver.ghcr = {
     metadata = { inherit namespace; };
     spec = {
+      type = "generic-hmac";
+      secretRef.name = "webhook-token";   # made by hand, never in git
+      resources = [
+        { apiVersion = "source.toolkit.fluxcd.io/v1"; kind = "OCIRepository"; name = "flux-system-oci"; }
+      ];
+    };
+  };
+
+  resources."kustomize.toolkit.fluxcd.io".v1.Kustomization.flux-system = {
+    metadata.namespace = namespace;
+    spec = {
       sourceRef = {
-        kind = "GitRepository";
-        inherit name;
+        kind = "OCIRepository";
+        name = "flux-system-oci";
       };
-      path = "./k8s/rendered";
+      path = "./";
       interval = "10m";
       retryInterval = "2m";
       timeout = "5m";

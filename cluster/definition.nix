@@ -133,6 +133,11 @@
     serviceIP = "10.96.0.22";
   };
 
+  fluxWebhook = {
+    host = "flux.neuros.is";
+    serviceIP = "10.96.0.23";
+  };
+
   # kube-apiserver accepts tokens from authentik's provider `kubernetes`
   # (issuer = per-provider URL, trailing slash included), and the ID tokens
   # Headlamp forwards from the confidential provider `headlamp`. authentik's
