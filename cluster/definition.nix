@@ -93,6 +93,13 @@
 #   openWebui            { host; serviceIP; }  same for Open WebUI
 #                        (k8s/components/open-webui.nix), Service
 #                        open-webui/open-webui
+#   binaryCache          { host; node; port; publicKey; }  r440's Nix
+#                        binary cache (harmonia): public hostname on the
+#                        tunnel, the node serving it, the port of the
+#                        authenticated nginx in front of it on that node's
+#                        lanIP (hosts/r440/cache.nix; the tunnel's proxy
+#                        forwards there), and the signing public key that
+#                        clients trust (modules/system/nix-cache.nix)
 {
   name = "neurosis";
   domain = "leaffish-monster.ts.net";
@@ -150,6 +157,17 @@
   fluxWebhook = {
     host = "flux.neuros.is";
     serviceIP = "10.96.0.23";
+  };
+
+  # r440's Nix binary cache (harmonia). Not a Service: the tunnel's nginx
+  # sidecar forwards to http://<nodes.r440.lanIP>:<port>, where nginx on
+  # r440 asks for HTTP basic auth (hosts/r440/cache.nix). The signing key
+  # stays on r440 (/var/lib/secrets/harmonia.secret); this is its public half.
+  binaryCache = {
+    host = "cache.neuros.is";
+    node = "r440";
+    port = 5080;
+    publicKey = "r440-cache-1:8fh7/X6s7t2jRyhLZZRc6boWitD/RSJt2B9DxmF5Gj8=";
   };
 
   # kube-apiserver accepts tokens from authentik's provider `kubernetes`

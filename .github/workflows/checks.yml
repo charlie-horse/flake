@@ -123,9 +123,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # r440's binary cache, if NIX_CACHE_NETRC is available (not on fork
+      # PRs): .github/actions/nix-cache, docs/ci.md.
+      - id: nix-cache
+        uses: ./.github/actions/nix-cache
+        with:
+          netrc: ${{ secrets.NIX_CACHE_NETRC }}
       - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
       # Evaluates every output (all NixOS hosts, ISOs, packages). The k8s
       # render, which needs import-from-derivation (helm template), is the
       # system-independent output `k8s` and is not evaluated here
@@ -159,9 +166,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - id: nix-cache
+        uses: ./.github/actions/nix-cache
+        with:
+          netrc: ${{ secrets.NIX_CACHE_NETRC }}
       - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
 
       - name: Eval toplevel drvPath (no build)
         env:

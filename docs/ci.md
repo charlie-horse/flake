@@ -112,7 +112,8 @@ publish (main only)   flux push artifact oci://ghcr.io/<repo>/manifests:<sha12>
   `…/.github/workflows/render.yml@refs/heads/main`.
 - **Permissions:** `render` is read-only; `publish` has `packages: write`
   (GHCR) and `id-token: write` (keyless signing), nothing else.
-- **Secrets:** `FLUX_WEBHOOK_TOKEN` (the HMAC key, the same bytes as the
+- **Secrets:** `NIX_CACHE_NETRC` (optional, also used by checks and update:
+  r440's binary cache, [below](#binary-cache-r440-read-only)), `FLUX_WEBHOOK_TOKEN` (the HMAC key, the same bytes as the
   cluster Secret `flux-system/webhook-token`, no trailing newline) and
   `FLUX_WEBHOOK_URL` (`https://<cluster.fluxWebhook.host>` plus the
   Receiver's `status.webhookPath`, which changes when the token does).
@@ -144,6 +145,39 @@ hosts take the new inputs on their next switch.
 It needs the repo setting *Settings → Actions → General → Workflow
 permissions → "Allow GitHub Actions to create and approve pull
 requests"*. Without it the PR step fails, and the run fails visibly.
+
+## Binary cache (r440, read-only)
+
+`flake-check`, `eval-hosts`, `render` and `update` add r440's binary
+cache (https://cache.neuros.is, docs/cluster.md "Binary cache") to Nix
+through the local composite action `.github/actions/nix-cache` and
+install-nix-action's `extra_nix_config`:
+
+```
+extra-substituters = https://cache.neuros.is?priority=50   # after cache.nixos.org (40)
+extra-trusted-public-keys = r440-cache-1:…                 # cluster/definition.nix binaryCache.publicKey
+netrc-file = $RUNNER_TEMP/nix-cache.netrc                  # mode 600, from the secret
+connect-timeout = 5
+fallback = true
+```
+
+- **Secret `NIX_CACHE_NETRC`**: one netrc line,
+  `machine cache.neuros.is login ci password <password>` (the `ci` user of
+  r440's htpasswd). The action writes it with umask 077 and never prints
+  it; GitHub masks it in logs.
+- **Without the secret** (pull requests from forks, Dependabot) the action
+  outputs nothing and the job runs exactly as before, on cache.nixos.org.
+  A wrong or revoked password also only costs a warning: Nix gets 401,
+  disables the cache for 60 s and carries on.
+- **Read-only.** harmonia serves r440's store; CI cannot push to it. The
+  jobs only evaluate and render, so the gain is small (IFD and render
+  inputs r440 happens to hold); the CUDA/torch closures never matter here.
+- Workflows of same-repo branches can read the secret, as with every
+  Actions secret. It grants read access to r440's store, nothing else;
+  revoke it by deleting the `ci` line on r440.
+- The action pins nothing external (it is a bash step), so the table below
+  is unchanged. The URL and key in it mirror `cluster/definition.nix`;
+  change both together.
 
 ## Pinned actions
 

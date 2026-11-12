@@ -9,14 +9,23 @@ rec {
 
   # Public hostname -> upstream (fixed ClusterIPs). Add a service here (and
   # its DNS route, k8s/README.md) to publish it.
-  routes = lib.listToAttrs (
-    map (s: lib.nameValuePair cluster.${s}.host "${cluster.${s}.serviceIP}:80") [
-      "authentik"
-      "headlamp"
-      "openWebui"
-      "fluxWebhook"
-    ]
-  );
+  routes =
+    lib.listToAttrs (
+      map (s: lib.nameValuePair cluster.${s}.host "${cluster.${s}.serviceIP}:80") [
+        "authentik"
+        "headlamp"
+        "openWebui"
+        "fluxWebhook"
+      ]
+    )
+    # r440's Nix binary cache: not in the cluster, but nginx (basic auth)
+    # on r440's LAN address (hosts/r440/cache.nix), which the firewall
+    # opens to the nodes' LAN IPs, i.e. to this hostNetwork pod on any node.
+    // {
+      ${cluster.binaryCache.host} = "${
+        cluster.nodes.${cluster.binaryCache.node}.lanIP
+      }:${toString cluster.binaryCache.port}";
+    };
 
   # cloudflared sends every hostname to the nginx sidecar. JSON is YAML.
   cloudflared = builtins.toJSON {

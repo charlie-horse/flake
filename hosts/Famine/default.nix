@@ -1,4 +1,9 @@
-{ pkgs, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 let
   inherit (config.custom)
     theme
@@ -45,6 +50,15 @@ in
     gaming.enable = true;
     steam = true;
     star-citizen.enable = true;
+
+    # r440's binary cache, https://cache.neuros.is (modules/system/
+    # nix-cache.nix), after cache.nixos.org. The netrc is the agenix secret
+    # nix-cache-netrc (modules/age/secrets.nix); until that is committed,
+    # the default path does not exist and Nix uses cache.nixos.org alone.
+    nixCache = {
+      enable = true;
+      netrcFile = lib.mkIf (config.age.secrets ? nix-cache-netrc) config.age.secrets.nix-cache-netrc.path;
+    };
   };
 
   programs.dconf.enable = true;

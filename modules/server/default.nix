@@ -4,7 +4,12 @@
 {
   # Tailscale prefs and autoconnect; per-host values (routes, tags) are
   # server.tailscale.* in each host's configuration.nix.
-  imports = [ ./tailscale.nix ];
+  imports = [
+    ./tailscale.nix
+    # r440's binary cache as a substituter (custom.nixCache.*, per host).
+    # Shared with the desktops, which get modules/system wholesale.
+    ../system/nix-cache.nix
+  ];
 
   environment.systemPackages = [
     # /etc/nixos is a checkout of this flake on the servers.

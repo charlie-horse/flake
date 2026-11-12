@@ -12,6 +12,8 @@
     # tailscaled's WireGuard port, for direct (non-relayed) connections.
     allowedUDPPorts = [ 41641 ];
     # The 25G link to c4130: ssh (remote builds) and the harmonia cache.
+    # The cache's authenticated nginx port (5080) is opened per source in
+    # ./cache.nix.
     interfaces.bond0.allowedTCPPorts = [
       22
       5000
