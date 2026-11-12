@@ -38,7 +38,7 @@ in
   validation.strict = true;
 
   resources."source.toolkit.fluxcd.io".v1.GitRepository.${name} = {
-    metadata = { inherit namespace; };
+    metadata.namespace = namespace;
     spec = {
       url = "https://github.com/charlie-horse/flake";
       ref.branch = "main";
@@ -54,14 +54,23 @@ in
     };
   };
 
+  resources."source.toolkit.fluxcd.io".v1.OCIRepository.${name} = {
+    metadata.namespace = namespace;
+    spec = {
+      url = "oci://ghcr.io/charlie-horse/manifests";
+      ref.tag = "main";
+      interval = "1m";
+    };
+  };
+
   resources."kustomize.toolkit.fluxcd.io".v1.Kustomization.${name} = {
-    metadata = { inherit namespace; };
+    metadata.namespace = namespace;
     spec = {
       sourceRef = {
-        kind = "GitRepository";
+        kind = "OCIRepository";
         inherit name;
       };
-      path = "./k8s/rendered";
+      path = "./";
       interval = "10m";
       retryInterval = "2m";
       timeout = "5m";
