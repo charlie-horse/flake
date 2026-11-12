@@ -37,23 +37,6 @@ in
 
   validation.strict = true;
 
-  resources."source.toolkit.fluxcd.io".v1.GitRepository.${name} = {
-    metadata.namespace = namespace;
-    spec = {
-      url = "https://github.com/charlie-horse/flake";
-      ref.branch = "main";
-      interval = "5m";
-      # Only what the Kustomization reads (gitignore syntax: a parent
-      # directory must be re-included before its children).
-      ignore = ''
-        /*
-        !/k8s/
-        /k8s/*
-        !/k8s/rendered/
-      '';
-    };
-  };
-
   resources."source.toolkit.fluxcd.io".v1.OCIRepository.${name} = {
     metadata.namespace = namespace;
     spec = {
