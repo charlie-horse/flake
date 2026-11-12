@@ -1,9 +1,0 @@
-# Generated from k8s/components (catenix); do not edit, change the Nix
-# source. Component: apps/cloudflared, kind: Namespace
-apiVersion: v1
-kind: Namespace
-metadata:
-  labels:
-    pod-security.kubernetes.io/enforce: privileged
-    pod-security.kubernetes.io/warn: baseline
-  name: cloudflared

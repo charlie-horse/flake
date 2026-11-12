@@ -49,13 +49,13 @@ that update.yml re-locks vllm-fork to `latest` daily.
 - **flannel health port is 8475, not the chart's 8081.** flanneld runs in the
   host network and 8081 is the LMCache dashboard on c4130
   (`k8s/components/flannel.nix`, `healthzPort`).
-- Rendering `k8s/rendered` on r440: Nix's git fetcher fails on
+- Rendering k8s on r440: Nix's git fetcher fails on
   `catenix/kubernetes-src` there, so clone the tag with the git CLI and
   override it:
   ```sh
   git clone --depth 1 --branch v1.37.0 https://github.com/kubernetes/kubernetes /tmp/k8s-src
   rm -rf /tmp/k8s-src/.git
-  nix run --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s-render
+  nix build --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s.manifests
   ```
 
 Every step below is run by a person with sudo.
@@ -403,6 +403,12 @@ kubectl get --raw '/readyz?verbose' | tail -1       # readyz check passed
 kubectl auth can-i '*' '*'                          # yes
 ```
 
+> **Since 2026-11-12** the render is no longer committed: `k8s/rendered/…`
+> below is the 2026-10-31 layout. To run these steps today, build it
+> (`nix build .#k8s.manifests`, see above for r440) and use the files under
+> `./result/infra/<component>/`; the full bootstrap is in
+> [k8s/README.md](../k8s/README.md#bootstrap-fresh-cluster-operator-with-an-admin-kubeconfig).
+
 **3c.** RBAC that NixOS's (disabled) addon manager would have created:
 
 ```sh
@@ -489,9 +495,14 @@ Rollback: set the node back to `stage = "controlPlane"` and switch.
 
 ### Step 5: Flux bootstrap
 
-Decide the GPU question above first: Flux applies **everything** in
-`k8s/rendered/`, including the device plugin. Flux reads branch `main`, so
-merge (and let CI render) first.
+Decide the GPU question above first: Flux applies **everything** in the
+render, including the device plugin.
+
+> **Since 2026-11-12** Flux reads a cosign-signed OCI artifact
+> (OCIRepository `flux-system-oci`, published by render.yml on `main`), not
+> a GitRepository, and the render is not committed. Use the bootstrap in
+> [k8s/README.md](../k8s/README.md#bootstrap-fresh-cluster-operator-with-an-admin-kubeconfig);
+> the commands below are the original 2026-10-31 bootstrap.
 
 ```sh
 kubectl apply --server-side -f k8s/rendered/40-flux-system.yaml
