@@ -9,12 +9,12 @@
 # 50-flux-sync (flux-sync.nix), a separate file so a fresh
 # `kubectl apply -f k8s/rendered/` creates these CRDs first.
 {
-  lib,
   pkgs,
   catenix,
   charts,
   cluster,
   kubeVersion,
+  k8sLib,
   ...
 }:
 let
@@ -43,12 +43,10 @@ in
           }
         ];
       };
-      patch = manifest:
-      if manifest.kind == "Service" && manifest.metadata.name == "webhook-receiver"
-      then lib.recursiveUpdate manifest {
-        metadata.annotations."kustomize.toolkit.fluxcd.io/force" = "enabled";
-        spec.clusterIP = cluster.fluxWebhook.serviceIP;
-      } else manifest;
+      patch = k8sLib.fixedServiceIP {
+        service = "webhook-receiver";
+        ip = cluster.fluxWebhook.serviceIP;
+      };
       noHooks = true;
     })
   ];

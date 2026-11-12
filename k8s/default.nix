@@ -90,6 +90,7 @@ let
       specialArgs = {
         inherit pkgs cluster kubeVersion;
         catenix = catenix.lib;
+        k8sLib = import ./lib.nix { inherit lib cluster; };
         charts = import ./charts.nix { inherit pkgs catenix; };
       };
     };

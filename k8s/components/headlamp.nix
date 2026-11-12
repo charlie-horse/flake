@@ -40,12 +40,12 @@
 # ever changes). From inside the tailnet/LAN without the tunnel:
 #   kubectl -n headlamp port-forward svc/headlamp 4466:80
 {
-  lib,
   pkgs,
   catenix,
   charts,
   cluster,
   kubeVersion,
+  k8sLib,
   ...
 }:
 let
@@ -61,15 +61,10 @@ in
         name = "headlamp";
         inherit namespace;
       };
-      patch =
-        manifest:
-        if manifest.kind == "Service" && manifest.metadata.name == "headlamp" then
-          lib.recursiveUpdate manifest {
-            metadata.annotations."kustomize.toolkit.fluxcd.io/force" = "enabled";
-            spec.clusterIP = cluster.headlamp.serviceIP;
-          }
-        else
-          manifest;
+      patch = k8sLib.fixedServiceIP {
+        service = "headlamp";
+        ip = cluster.headlamp.serviceIP;
+      };
       values = {
         fullnameOverride = "headlamp";
         replicaCount = 1;
