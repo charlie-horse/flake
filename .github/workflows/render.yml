@@ -136,8 +136,10 @@ jobs:
   publish:
     name: Publish k8s/rendered
     if: >-
-      (inputs.reused-run-id != '' && needs.render.result == 'skipped')
-      || (needs.render.outputs.changed == 'true'
+      always()
+      && (inputs.reused-run-id != '' && needs.render.result == 'skipped')
+      || (needs.render.result == 'success'
+          && needs.render.outputs.changed == 'true'
           && ((github.ref == 'refs/heads/main' && github.event_name == 'push')
               || github.event_name == 'workflow_dispatch'))
     needs: [render]
