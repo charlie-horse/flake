@@ -599,8 +599,8 @@
       },
       "original": {
         "owner": "charlie-horse",
+        "ref": "latest",
         "repo": "vllm-sm70",
-        "rev": "cef0f9ef9c94ec21ba18d68b280c4d1dde856166",
         "type": "github"
       }
     },
