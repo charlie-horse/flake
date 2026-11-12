@@ -60,6 +60,15 @@ in
       url = "oci://ghcr.io/charlie-horse/manifests";
       ref.tag = "main";
       interval = "1m";
+      verify = {
+        provider = "cosign";
+        matchOIDCIdentity = [
+          {
+            issuer = "^https://token\\.actions\\.githubusercontent\\.com$";
+            subject = "^https://github\\.com/charlie-horse/flake/\\.github/workflows/k8s\\.yml@refs/heads/main$";
+          }
+        ];
+      };
     };
   };
 
