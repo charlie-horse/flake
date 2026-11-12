@@ -63,7 +63,9 @@ in
               cmp-nvim-lsp
               lspkind-nvim
               nvim-lspconfig
-              rust-tools-nvim
+              # rust-tools-nvim was removed from nixpkgs (abandoned). The
+              # config never loaded it: rust_analyzer is set up through
+              # lspconfig (config/dev/lsp.lua).
             ]
           else
             [ ]
@@ -87,19 +89,20 @@ in
           lua-language-server
           #java-language-server
         ])
-        ++ (with pkgs.nodePackages; [
+        # Formerly pkgs.nodePackages.*, which nixos-unstable removed; these
+        # are top-level packages in both the old and the new nixpkgs.
+        ++ (with pkgs; [
           vim-language-server
           bash-language-server
           yaml-language-server
           svelte-language-server
           typescript-language-server
           vscode-langservers-extracted
-          dockerfile-language-server-nodejs
+          # Renamed from dockerfile-language-server-nodejs.
+          (pkgs.dockerfile-language-server or dockerfile-language-server-nodejs)
         ])
         ++ (with (pkgs.callPackage ./customBins.nix { }); [
-          #omnisharp-roslyn
           prisma-language-server
-          cssmodules-language-server
           tailwindcss-language-server
         ])
       else

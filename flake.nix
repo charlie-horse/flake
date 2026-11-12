@@ -5,10 +5,10 @@
     #   nixpkgs           nixos-26.05: the servers (c4130, r440, m2mini),
     #                     the per-system packages/apps and the flake-parts
     #                     skeleton.
-    #   nixpkgs-unstable  nixos-unstable: ONLY the desktops (Famine,
-    #                     Pestilence), their ISOs and the flake-level `lib`
-    #                     that mkHost passes them. Every desktop-side
-    #                     input follows it.
+    #   nixpkgs-unstable  nixos-unstable: ONLY the desktop (Famine; the
+    #                     archived Pestilence is not an output), its ISO and
+    #                     the flake-level `lib` that mkHost passes it. Every
+    #                     desktop-side input follows it.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -16,7 +16,7 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
 
-    # ---- Desktops (mkHost: Famine, Pestilence) -------------------------
+    # ---- Desktops (mkHost: Famine; Pestilence is archived) -------------
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs-unstable";
 

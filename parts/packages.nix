@@ -16,15 +16,15 @@
     in
     {
       # `nix fmt`: RFC-style nixfmt over the tracked .nix files (checks.yml
-      # runs it with --check). Generated files are excluded there.
+      # runs it with --check, excluding only hosts/Pestilence/servarr.nix).
       formatter = pkgs.nixfmt;
 
       packages = {
         cluster-pki = pki;
       }
-      # Installer ISOs for the desktop hosts (lib/system/mkHost.nix).
-      // (config.flake.lib.system.${system}.mkHostIso "Famine").${system}
-      // (config.flake.lib.system.${system}.mkHostIso "Pestilence").${system};
+      # Installer ISO for the desktop host (lib/system/mkHost.nix).
+      # Pestilence is archived, so it has none (parts/hosts.nix).
+      // (config.flake.lib.system.${system}.mkHostIso "Famine").${system};
 
       # nix run .#cluster-pki             -> ./pki-out (CAs + leaves)
       # nix run .#cluster-pki-deploy -- <node>  (stage + print sudo cmds)

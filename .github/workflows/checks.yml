@@ -214,13 +214,13 @@ jobs:
       - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      # The flake's formatter (parts/packages.nix). Excluded: generated
-      # files (rewritten by their updaters), and hosts/Pestilence/servarr.nix,
-      # whose plaintext rpc-password line the secrets guard flags on any edit,
-      # reformatting included; format it when that secret moves out of git.
+      # The flake's formatter (parts/packages.nix). Excluded:
+      # hosts/Pestilence/servarr.nix, whose plaintext rpc-password line the
+      # secrets guard flags on any edit, reformatting included; format it
+      # when that secret moves out of git.
       - name: nix fmt -- --check
         run: |
           set -euo pipefail
           git ls-files -z '*.nix' \
-            | grep -zvE '^(modules/programs/neovim/(cssmodules-lsp/node-(env|packages)|omnisharp-roslyn/deps)|hosts/Pestilence/servarr)\.nix$' \
+            | grep -zvE '^hosts/Pestilence/servarr\.nix$' \
             | xargs -0 nix fmt -- --check
