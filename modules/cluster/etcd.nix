@@ -17,7 +17,7 @@ let
   # "trust" phase: the legacy member cert (tls/etcd/peer/etcd.pem, issuer
   # "ETCD CA 1", EKU server+client, SAN <n>/localhost/127.0.0.1) was both
   # server and peer cert; it is copied out of /etc/nixos into secretsDir
-  # (docs/cluster-handoff.md step 1), so no Nix path is involved.
+  # (docs/history/cluster-handoff-2026-10.md step 1), so no Nix path is involved.
   legacy = cfg.leaf "legacy-etcd-peer";
   server = if final then cfg.leaf "etcd-server" else legacy;
   peer = if final then cfg.leaf "etcd-peer" else legacy;

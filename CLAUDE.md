@@ -1,6 +1,6 @@
 # c4130 vLLM inference host
 
-c4130 is one of the three NixOS 26.05 servers (c4130, r440, m2mini) that run the solaris cluster. Its config is `hosts/c4130/` in this repo. On every server, `/etc/nixos` is a git checkout of `main` (owned charlie:root, mode 0755) and the only checkout; `~/src/flake` is gone. The vLLM setup is `hosts/c4130/vllm/`, which consumes the vLLM fork's flake (input `vllm-fork`). **`hosts/c4130/vllm/CLAUDE.md` is the canonical vLLM/LMCache doc**; the cluster runbook is `docs/cluster-handoff.md`, the PKI is in `docs/pki.md`.
+c4130 is one of the three NixOS 26.05 servers (c4130, r440, m2mini) that run the solaris cluster. Its config is `hosts/c4130/` in this repo. On every server, `/etc/nixos` is a git checkout of `main` (owned charlie:root, mode 0755) and the only checkout; `~/src/flake` is gone. The vLLM setup is `hosts/c4130/vllm/`, which consumes the vLLM fork's flake (input `vllm-fork`). **`hosts/c4130/vllm/CLAUDE.md` is the canonical vLLM/LMCache doc**; the cluster runbook is `docs/cluster.md` (history: `docs/history/`), the PKI is in `docs/pki.md`.
 
 ## Access from a cloud session
 - Only SSH to the hosts when the user has allowed it for the task.
@@ -8,13 +8,14 @@ c4130 is one of the three NixOS 26.05 servers (c4130, r440, m2mini) that run the
 - SSH goes through Tailscale SSH as `charlie`: `ssh -o ProxyCommand="tailscale --socket=… nc %h %p" charlie@c4130` (install `openssh-client` with apt).
 - `sudo` needs charlie's password. Ask the user for it, and pass it on stdin (`sudo -S`), never on a command line. Secrets never go in git or on a command line.
 - `/etc/nixos` is writable by charlie, so `git pull` and building need no sudo; `nixos-rebuild switch` and `journalctl -u vllm` do.
-- etcd and the k8s apiserver also run on this box (3-member etcd with r440 and m2mini). Switch one host at a time and run the etcd health check from `docs/cluster-handoff.md` after each. `switch` exiting with status 4 means a unit failed; read `systemctl --failed`. Leave etcd alone unless the user asks.
+- etcd and the k8s apiserver also run on this box (3-member etcd with r440 and m2mini). Switch one host at a time and run the etcd health check from `docs/cluster.md` after each. `switch` exiting with status 4 means a unit failed; read `systemctl --failed`. Leave etcd alone unless the user asks.
 - The cluster PKI (CA keys) lives only on r440 (`~/.local/share/cluster-pki/solaris`); never copy it elsewhere or into git.
 
 ## Deploying
 - Change or re-lock in this repo on a branch → CI → merge. Then on the host: `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#<host>` (m2mini adds `--override-input m2mini-vendorfw path:/boot/vendorfw`).
 - Never run `nix flake update` or edit files inside `/etc/nixos` on a host.
-- **c4130 runs main** (`8a54e1f`, fork `cf9492a`) since 2026-11-04 16:06 EST, as system-42. Its root disk is ~41% full (207 GB free on 2026-11-05). GC old generations before any c4130 switch (Charlie's rule); with the disk at 41% it's quick, and after a switch that replaces the checkpoint, GC the old 23 GB path.
+- **GC old generations before any c4130 switch** (Charlie's rule): `sudo nix-env -p /nix/var/nix/profiles/system --delete-generations +2 && sudo nix-collect-garbage`. After a switch that replaces the Flint checkpoint, GC the old 23 GB path. What each host runs: `nix-store -qd /run/current-system` and `git -C /etc/nixos log -1` (don't record it here; it goes stale). Status 2026-11-12: c4130 root disk at 60%.
+- Switch c4130 outside the GPU window (vLLM is stopped 22:00–05:55 EST by `gpu-window-*` timers; a switch inside it starts vLLM again).
 - Builds happen on r440 only: c4130 has `max-jobs = 0`; r440 builds 2 jobs × 8 cores, with nix-daemon capped at 36G and zram swap.
 
 ## Hardware

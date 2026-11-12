@@ -155,7 +155,7 @@ nix build .#k8s.checkImages && ./result/bin/k8s-check-images
 New files must be `git add`ed before Nix can see them. On r440, Nix's git
 fetcher fails on `catenix/kubernetes-src`; add
 `--override-input catenix/kubernetes-src path:/tmp/k8s-src` after cloning
-the `v1.37.0` tag there (docs/cluster-handoff.md).
+the `v1.37.0` tag there (docs/cluster.md).
 
 The catenix CI proposal that used to live here is
 [docs/catenix-ci-proposal.md](catenix-ci-proposal.md).

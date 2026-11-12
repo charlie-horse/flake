@@ -48,7 +48,9 @@
 #                        evictionHard / image GC thresholds per node
 #     rollout            { stage; etcdPhase; }  where this node is in the
 #                        cut-over from the legacy cluster (docs/
-#                        cluster-handoff.md). Flip these per step:
+#                        history/cluster-handoff-2026-10.md). The cut-over is done: every
+#                        node is at stage "full", etcdPhase "final".
+#                        Flip these per step:
 #       stage      "etcd"          only etcd (+ firewall) runs
 #                  "controlPlane"  + apiserver/controller-manager/scheduler
 #                                  + keepalived (the VIP)
@@ -98,11 +100,8 @@
   dnsServiceIP = "10.96.0.10";
   clusterDomain = "cluster.local";
 
-  # STOPGAP: etcd still holds the legacy `kubernetes` Service at 192.0.0.1
-  # (ClusterIP is immutable), so in-cluster clients get
-  # KUBERNETES_SERVICE_HOST=192.0.0.1 until the Service-CIDR cut-over step
-  # in docs/cluster-handoff.md (step 3d) recreates it at 10.96.0.1. Drop
-  # this after that step and re-issue the apiserver leaves.
+  # Extra SANs on every apiserver leaf (none since the Service-CIDR
+  # cut-over; re-issue the leaves with cluster-pki after changing this).
   apiserverExtraSANs = [ ];
 
   # The single Cloudflare tunnel (locally managed: the ingress rules live in

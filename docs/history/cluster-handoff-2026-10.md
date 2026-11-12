@@ -1,3 +1,8 @@
+> **History.** This is the October–November 2026 cut-over log and runbook
+> for the solaris cluster, kept as written (only commands that would no
+> longer run were redirected). For the current state and procedures see
+> [docs/cluster.md](../cluster.md).
+
 # Cluster hand-off: solaris (c4130, r440, m2mini)
 
 **Status (2026-10-31): steps 0–5 are done on the live cluster. Step 6 (GC
@@ -48,7 +53,7 @@ that update.yml re-locks vllm-fork to `latest` daily.
   `r440:~/.local/share/cluster-pki/solaris` — back it up; it holds the CA keys.
 - **flannel health port is 8475, not the chart's 8081.** flanneld runs in the
   host network and 8081 is the LMCache dashboard on c4130
-  (`k8s/components/flannel.nix`, `healthzPort`).
+  (`k8s/components/infra/flannel.nix`, `healthzPort`).
 - Rendering k8s on r440: Nix's git fetcher fails on
   `catenix/kubernetes-src` there, so clone the tag with the git CLI and
   override it:
