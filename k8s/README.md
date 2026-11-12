@@ -7,17 +7,23 @@ applies ([Deployment](#deployment)).
 
 | File | Contents |
 | --- | --- |
-| `default.nix` | `{ inputs, pkgs, lib }` → `manifests` (the rendered tree), `checkImages`, `components`; the flake output `k8s` (`parts/k8s.nix`) |
+| `default.nix` | the registry: `components` and `deferred` (component name → module), `kubeVersion`, `cluster` (from `../cluster/definition.nix`). `{ inputs, pkgs, lib }` → `manifests` (the rendered tree), `checkImages`, `components`; the flake output `k8s` (`parts/k8s.nix`) |
+| `render.nix` | the render mechanics `default.nix` hands the registry to: evaluates each component (module arguments `cluster`, `kubeVersion`, `deferred`, `catenix`, `k8sLib`, `charts`, `pkgs`), lays out the tree (file names, `00-`/`01-` prefixes, the `deferred/` fence), builds `manifests` and `checkImages` |
 | `charts.nix` | published Helm charts, pinned by version + NAR hash (`catenix.lib.fetchChart`) |
-| `lib.nix` | helpers for the components: `localVolume`, `nodeTolerations`, `fixedServiceIP` |
+| `lib.nix` | helpers for the components (module argument `k8sLib`): `localVolume`, `nodeTolerations`, `fixedServiceIP` |
 | `components/infra/` | cluster plumbing, one file per component (a directory when split by concern, e.g. `cert-manager/`) |
 | `components/flux/` | Flux itself: `install.nix` (chart), `sync.nix` (OCIRepository + Kustomization `flux-system`), `stages.nix` (a Kustomization per deferred component), `receiver.nix` (push webhook) |
 | `components/apps/` | applications; small ones are a file, larger ones a directory split by concern (e.g. `authentik/`: `chart.nix`, `postgres.nix`, `backup.nix`, `blueprints/*.yaml`) |
-| (render) | `nix build .#k8s.manifests`: `<component>/<plural kind>.yaml`, namespaces and CRDs as `00-`/`01-` files; deferred components under `deferred/<component>/` ([Deferred components](#deferred-components)). Built by CI, never committed. |
+| (render) | `nix build .#k8s.manifests`: `<component>/<plural kind>.yaml`, namespaces and CRDs as `00-`/`01-` files; deferred components under `deferred/<component>/` ([Deferred components](#deferred-components)); rules in `render.nix`. Built by CI, never committed. |
 
 Cluster values (pod/service CIDRs, DNS IP, domain, nodes and their `gpu`
 flag) come from `../cluster/definition.nix`, the same file the NixOS
 modules read.
+
+To add a component, write its module under `components/` and register it
+with one line in `components` in `default.nix` (or in `deferred.modules`,
+[below](#deferred-components)); the name is its directory in the render.
+`render.nix` names no component and needs no change.
 
 ## Components
 
@@ -89,7 +95,8 @@ dry runs included) would therefore tie the whole cluster's deployment to
 that webhook: with it down, nothing would be applied, including a fix for
 the webhook itself.
 
-Such objects go in a *deferred* component (`deferred` in `default.nix`):
+Such objects go in a *deferred* component (`deferred.modules` in
+`default.nix`; `render.nix` places it and writes the fence):
 
 - it renders under `deferred/<component>/`; `deferred/kustomization.yaml`
   lists no resources, and Flux's generator takes a directory holding a
