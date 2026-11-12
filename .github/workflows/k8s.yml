@@ -234,6 +234,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
       - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
@@ -296,7 +297,8 @@ jobs:
   publish-rendered:
     name: Commit k8s/rendered
     if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/main'
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
       && needs.k8s-manifests.outputs.changed == 'true'
     needs: [secrets-guard, flake-check, eval-hosts, k8s-manifests]
     runs-on: ubuntu-24.04
