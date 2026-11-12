@@ -4,6 +4,13 @@
 # (blueprints.configMaps in chart.nix), which applies each file on change and
 # hourly.
 #
+# Flows are found by slug. The default flows were renamed in the authentik
+# UI on 2026-11-11 (default-provider-authorization-implicit-consent ->
+# authz-implicit, default-provider-invalidation-flow -> app-logout, ...): if
+# a slug changes again, change it here too, or the blueprints fail with
+# "authorization_flow: This field may not be null" (the providers keep
+# working, but the blueprints stop reconciling).
+#
 # @NAME@ placeholders are filled in from cluster/definition.nix. Evaluation
 # fails if one is left over, so a typo can't reach authentik.
 { lib, cluster, ... }:
