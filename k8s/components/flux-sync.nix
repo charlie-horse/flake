@@ -40,7 +40,7 @@ in
   resources."source.toolkit.fluxcd.io".v1.GitRepository.${name} = {
     metadata.namespace = namespace;
     spec = {
-      url = "https://github.com/charlie-horse/flake";
+      url = "https://github.com/charlie-horse/flake/manifests";
       ref.branch = "main";
       interval = "5m";
       # Only what the Kustomization reads (gitignore syntax: a parent
@@ -65,7 +65,7 @@ in
         matchOIDCIdentity = [
           {
             issuer = "^https://token\\.actions\\.githubusercontent\\.com$";
-            subject = "^https://github\\.com/charlie-horse/flake/\\.github/workflows/k8s\\.yml@refs/heads/main$";
+            subject = "^https://github\\.com/charlie-horse/flake/\\.github/workflows/render\\.yml@refs/heads/main$";
           }
         ];
       };
