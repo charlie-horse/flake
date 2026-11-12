@@ -10,7 +10,7 @@
 # own ID token to the apiserver, which accepts that issuer with audience
 # `headlamp` (cluster.oidc.extraIssuers, modules/cluster/control-plane.nix)
 # and maps it to oidc:<user> / oidc:<group>; RBAC binds oidc:cluster-admins
-# (k8s/components/rbac.nix). The pod's own ServiceAccount has NO RBAC: the
+# (k8s/components/infra/rbac.nix). The pod's own ServiceAccount has NO RBAC: the
 # chart's default cluster-admin ClusterRoleBinding is disabled, and
 # unsafeUseServiceAccountToken stays off. (The token is still mounted:
 # in-cluster mode reads the apiserver address and CA from it.)
@@ -33,7 +33,7 @@
 # privilege escalation).
 #
 # No Ingress. Public at https://k8s.neuros.is (cluster.headlamp.host): the
-# cluster's Cloudflare tunnel (components/cloudflared.nix, one replica per
+# cluster's Cloudflare tunnel (apps/cloudflared, one replica per
 # node, nginx sidecar keeps the Host header) forwards to Service headlamp at
 # the fixed ClusterIP cluster.headlamp.serviceIP (port 80). ClusterIP is immutable, so that
 # Service carries Flux's force annotation (recreated, not patched, if the IP

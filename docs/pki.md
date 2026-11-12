@@ -123,7 +123,7 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
   [cluster-handoff.md](cluster-handoff.md) step 3).
 - **Subjects** and the RBAC that uses them:
   - `system:kube-apiserver` (the apiserver's kubelet client) is bound to
-    `system:kubelet-api-admin` by `k8s/rendered/05-rbac.yaml` (catenix,
+    `system:kubelet-api-admin` by `k8s/components/infra/rbac.nix` (catenix,
     `k8s/components/rbac.nix`). NixOS would create this binding through
     the addon manager, which is disabled here, so it must be applied with
     the admin cert during bootstrap; until then `kubectl logs/exec` get 403.
