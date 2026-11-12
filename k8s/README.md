@@ -2,17 +2,18 @@
 
 Every object in the cluster that is not a NixOS service is declared here as
 a [catenix](https://github.com/charlie-horse/catenix) module and rendered to
-`k8s/rendered/`, which Flux applies from git.
+a tree of YAML files that CI publishes as a signed OCI artifact and Flux
+applies ([Deployment](#deployment)).
 
 | File | Contents |
 | --- | --- |
-| `default.nix` | flake fragment `{ inputs, pkgs, lib }` → `packages.k8s-manifests`, `apps.render`, `apps.check-images`, `components` |
+| `default.nix` | `{ inputs, pkgs, lib }` → `manifests` (the rendered tree), `checkImages`, `components`; the flake output `k8s` (`parts/k8s.nix`) |
 | `charts.nix` | published Helm charts, pinned by version + NAR hash (`catenix.lib.fetchChart`) |
 | `lib.nix` | helpers for the components: `localVolume`, `nodeTolerations`, `fixedServiceIP` |
 | `components/infra/*.nix` | cluster plumbing, one file per component |
 | `components/flux/` | Flux itself: `install.nix` (chart), `sync.nix` (OCIRepository + Kustomization), `receiver.nix` (push webhook) |
 | `components/apps/` | applications; small ones are a file, larger ones a directory split by concern (e.g. `authentik/`: `chart.nix`, `postgres.nix`, `backup.nix`, `blueprints/*.yaml`) |
-| `rendered/` | generated: `<component>/<kinds>.yaml` (never edit by hand) |
+| (render) | `nix build .#k8s.manifests`: `<component>/<plural kind>.yaml`, namespaces and CRDs as `00-`/`01-` files. Built by CI, never committed. |
 
 Cluster values (pod/service CIDRs, DNS IP, domain, nodes and their `gpu`
 flag) come from `../cluster/definition.nix`, the same file the NixOS
@@ -20,7 +21,7 @@ modules read.
 
 ## Components
 
-| Component (`rendered/<component>/`) | What | Source |
+| Component (`<component>/` in the render) | What | Source |
 | --- | --- | --- |
 | `infra/runtime-classes` | RuntimeClass `runc` (default handler) and `nvidia` (handler `nvidia`, nodeSelector `nvidia.com/gpu.present=true`); `crun` documented, off | hand-written |
 | `infra/rbac` | ClusterRoleBinding `system:kube-apiserver:kubelet-api-admin` (User `system:kube-apiserver`, the apiserver's kubelet client cert → ClusterRole `system:kubelet-api-admin`; without it `kubectl logs/exec/port-forward` get 403 from the kubelets); ClusterRoleBinding `oidc:cluster-admins` → `cluster-admin` (authentik group, inert until apiserver OIDC is on) | hand-written (what NixOS's disabled addon manager would create) |
@@ -35,77 +36,54 @@ modules read.
 | `apps/open-webui` | Open WebUI 0.12.2 (chat for c4130's vLLM at `10.0.0.95:8000`), one replica, data on r440 (hostPath PV), OIDC login via authentik for group `local-ai`; secrets from the hand-made Secret `open-webui/open-webui-secrets` ([below](#open-webui)) | hand-written |
 
 Every image is a multi-arch manifest list (linux/amd64 + linux/arm64);
-`nix run .#k8s-check-images` checks it. The device plugin is pinned to the
+`nix build .#k8s.checkImages && ./result/bin/k8s-check-images` checks
+it (CI runs it on every render, advisory). The device plugin is pinned to the
 gpu node by its nodeSelector (its image happens to be multi-arch too).
 
-## Wiring (parts/packages.nix)
+## Flake output (parts/k8s.nix)
 
-The flake is built with flake-parts; `flake.nix` imports
-`./parts/packages.nix`, whose `perSystem` imports this directory with the
-nodes' 26.05 nixpkgs (the flake's `nixpkgs` input):
-
-```nix
-# parts/packages.nix (abridged)
-perSystem = { system, ... }: let
-  pkgs = inputs.nixpkgs.legacyPackages.${system};
-  k8s = import ../k8s {
-    inherit inputs;
-    inherit pkgs;
-    lib = inputs.nixpkgs.lib;
-  };
-in {
-  # only when system == "x86_64-linux":
-  packages.k8s-manifests = k8s.packages.k8s-manifests;
-  apps.k8s-render = k8s.apps.render;
-  apps.k8s-check-images = k8s.apps.check-images;
-};
-```
-
-So the outputs are `packages.x86_64-linux.k8s-manifests`,
-`apps.x86_64-linux.k8s-render` and `apps.x86_64-linux.k8s-check-images`
-(nothing for aarch64-linux).
-
-`inputs.catenix` (in `flake.nix`) is the catenix flake
-(`github:charlie-horse/catenix`);
-`catenix.inputs.nixpkgs.follows = "nixpkgs"` avoids an extra nixpkgs.
-Rendering is import-from-derivation (catenix runs `helm template` in a
-derivation), so evaluating `k8s-manifests` builds the chart renders; it is
-small (no compilers) and never part of a NixOS system closure.
-
-## Refreshing `k8s/rendered/`
+The render is the system-independent flake output `k8s`, built with the
+nodes' 26.05 nixpkgs on x86_64-linux (YAML is the same for every system):
 
 ```sh
-nix run .#k8s-render              # rewrite k8s/rendered/ from k8s/
-nix run .#k8s-render -- --check   # exit 1 if k8s/rendered/ is stale
-nix run .#k8s-check-images        # every image has amd64 + arm64
+nix build .#k8s.manifests                                  # -> ./result
+nix build .#k8s.checkImages && ./result/bin/k8s-check-images
+nix eval .#k8s.components.\"apps/authentik\".config.build.manifests --json
 ```
 
-CI (x86_64-linux runner with Nix) on every push to `main` that touches
-`k8s/**`, `cluster/**`, `parts/**`, `flake.nix` or `flake.lock` (full list
-in `.github/workflows/k8s.yml`):
+It is deliberately **not** under `packages.<system>`: rendering is
+import-from-derivation (catenix runs `helm template` in a derivation and
+reads the result back), and `nix flake check` should not build it. The NixOS
+configurations never touch `k8s/`. `inputs.catenix` follows the flake's
+`nixpkgs`.
 
-1. `nix run .#k8s-render`
-2. `nix run .#k8s-check-images`
-3. if `git status --porcelain k8s/rendered` is non-empty, commit
-   `k8s/rendered` ("k8s: re-render") and push to `main`.
+## Deployment
 
-On pull requests CI runs `nix run .#k8s-render -- --check` instead, so a PR
-either carries a fresh render or gets one on merge. Flux only ever reads
-`main`, so nothing reaches the cluster before it is merged and rendered.
+`.github/workflows/render.yml`, on every push to `main` that touches a render
+input (`k8s/`, `cluster/`, `parts/`, `flake.*`):
+
+1. `nix build .#k8s.manifests` from that commit, fail on key material, check
+   the images (advisory);
+2. `flux push artifact` to `oci://ghcr.io/charlie-horse/flake/manifests`
+   (tags `<sha12>` and `main`), `cosign sign` (keyless, the workflow's
+   GitHub OIDC identity);
+3. POST to Flux's Receiver, so the cluster fetches it at once.
+
+Flux (`components/flux/sync.nix`) applies only artifacts signed by
+`render.yml` on `main`. Pull requests get step 1 only. Every push to `main`
+publishes (a revert included); dispatching `render.yml` on `main`
+republishes. Nothing reaches the cluster before it is merged.
 
 Validation: catenix type-checks every object against the Kubernetes v1.37
-OpenAPI spec and the charts' CRDs at evaluation time (`validation.strict`),
-and the render was checked with
-`kubeconform -strict -kubernetes-version 1.36.3` (CRDs themselves have no
-kubeconform schema and are skipped there; catenix types them).
+OpenAPI spec and the charts' CRDs at evaluation time (`validation.strict`).
 
 ## Bootstrap (fresh cluster, operator with an admin kubeconfig)
 
 Flux can't run before the pod network and DNS do, so the first apply is
-manual; afterwards Flux owns everything in `k8s/rendered/`, itself included.
+manual; afterwards Flux owns everything in the render, itself included.
 
 ```sh
-R=k8s/rendered   # or the output of `nix build .#k8s-manifests`
+nix build .#k8s.manifests && R=./result
 kubectl apply --server-side -R -f $R/infra/
 kubectl apply --server-side -f $R/flux/00-namespaces.yaml -f $R/flux/01-customresourcedefinitions.yaml
 kubectl wait --for condition=established --timeout=60s \

@@ -1,50 +1,31 @@
 # In-cluster resources, rendered with catenix
-# (github:charlie-horse/catenix): every object Flux or `kubectl apply`
-# puts in the cluster is declared under ./components as a catenix module
+# (github:charlie-horse/catenix): every object Flux puts in the cluster is
+# declared under ./components as a catenix module
 # (`resources.<group|core>.<version>.<Kind>.<name>`), type-checked against
-# the Kubernetes API (catenix's pinned v1.37 spec) and the CRDs of the
-# charts it imports, with `validation.strict` on.
+# the Kubernetes API (catenix's pinned v1.37 spec) and the CRDs of the charts
+# it imports, with `validation.strict` on.
 #
-# Flake fragment: a function of { inputs, pkgs, lib } returning
+# A function of { inputs, pkgs, lib } returning
 #
-#   packages.k8s-manifests   the rendered tree, one multi-document YAML file
-#                            per component (what k8s/rendered/ holds)
-#   apps.render              copies that tree into ./k8s/rendered of the
-#                            current checkout (`--check`: only compare,
-#                            exit 1 when k8s/rendered is stale)
-#   apps.check-images        lists every image in the tree and checks that
-#                            each is a manifest list with linux/amd64 and
-#                            linux/arm64 (network; not a sandboxed check)
-#   components               the evaluated catenix configurations, by
-#                            component name (for `nix eval` / debugging)
+#   manifests     the rendered tree: <component>/<plural kind>.yaml
+#   checkImages   a script: every image in the tree must be a manifest list
+#                 with linux/amd64 and linux/arm64 (network; not sandboxed)
+#   components    the evaluated catenix configurations (for `nix eval`)
 #
-# Wiring in flake.nix (x86_64-linux; `inputs.catenix` is the catenix flake,
-# ideally with `inputs.catenix.inputs.nixpkgs.follows = "nixpkgs"`, the
-# 26.05 one):
+# parts/k8s.nix exposes it as the system-independent flake output `k8s`
+# (built with x86_64-linux pkgs; YAML is the same for every system):
 #
-#   let
-#     k8s = import ./k8s {
-#       inherit inputs;
-#       pkgs = inputs.nixpkgs.legacyPackages.x86_64-linux;
-#       lib = inputs.nixpkgs.lib;
-#     };
-#   in {
-#     packages.x86_64-linux.k8s-manifests = k8s.packages.k8s-manifests;
-#     apps.x86_64-linux.k8s-render = k8s.apps.render;
-#     apps.x86_64-linux.k8s-check-images = k8s.apps.check-images;
-#   }
+#   nix build .#k8s.manifests                      # -> ./result
+#   nix build .#k8s.checkImages && ./result/bin/k8s-check-images
 #
-# Rendering is import-from-derivation (catenix runs `helm template` in a
-# derivation and reads the result back), so evaluating these outputs builds
-# the chart renders; the NixOS configurations never touch this file.
+# It is deliberately not a per-system package: rendering is
+# import-from-derivation (catenix runs `helm template` in a derivation and
+# reads the result back), and `nix flake check` should never build it. The
+# NixOS configurations never touch this directory.
 #
-# Refreshing k8s/rendered/ (Flux reads it from git, branch main):
-#
-#   nix run .#k8s-render            # rewrite k8s/rendered/ from ./k8s
-#   nix run .#k8s-render -- --check # CI: fail when k8s/rendered/ is stale
-#
-# CI runs `nix run .#k8s-render` on every push to main and commits
-# k8s/rendered/ when it changed; see k8s/README.md.
+# Deployment: .github/workflows/render.yml builds the manifests on every push
+# to main, pushes them to GHCR as a cosign-signed OCI artifact and pings
+# Flux's webhook (k8s/README.md, docs/ci.md).
 {
   inputs,
   pkgs,
@@ -161,32 +142,6 @@ let
     '') (lib.concatLists (lib.mapAttrsToList componentFiles evaluated))
   );
 
-  render = pkgs.writeShellApplication {
-    name = "k8s-render";
-    runtimeInputs = [
-      pkgs.coreutils
-      pkgs.diffutils
-      pkgs.git
-    ];
-    text = ''
-      root=$(git rev-parse --show-toplevel)
-      dest="$root/k8s/rendered"
-      if [ "''${1:-}" = "--check" ]; then
-        if diff -r ${manifests} "$dest"; then
-          echo "k8s/rendered is up to date"
-        else
-          echo "k8s/rendered is stale: run nix run .#k8s-render" >&2
-          exit 1
-        fi
-        exit 0
-      fi
-      rm -rf "$dest"
-      mkdir -p "$dest"
-      cp -r --no-preserve=mode ${manifests}/. "$dest/"
-      echo "rendered ${manifests} into $dest"
-    '';
-  };
-
   checkImages = pkgs.writeShellApplication {
     name = "k8s-check-images";
     runtimeInputs = [
@@ -223,19 +178,6 @@ let
   };
 in
 {
-  packages.k8s-manifests = manifests;
-
-  apps.render = {
-    type = "app";
-    program = lib.getExe render;
-    meta.description = "Render k8s/ (catenix) into k8s/rendered";
-  };
-
-  apps.check-images = {
-    type = "app";
-    program = lib.getExe checkImages;
-    meta.description = "Check that every rendered image is amd64+arm64";
-  };
-
+  inherit manifests checkImages;
   components = evaluated;
 }

@@ -64,13 +64,15 @@
     };
 
     # flake-parts: ./parts/hosts.nix holds `lib` and nixosConfigurations,
-    # ./parts/packages.nix the per-system packages and apps.
+    # ./parts/packages.nix the per-system packages and apps, ./parts/k8s.nix
+    # the system-independent k8s render (`k8s`).
     outputs = inputs@{ flake-parts, ... }:
         flake-parts.lib.mkFlake { inherit inputs; } {
             systems = [ "x86_64-linux" "aarch64-linux" ];
             imports = [
                 ./parts/hosts.nix
                 ./parts/packages.nix
+                ./parts/k8s.nix
             ];
         };
 }

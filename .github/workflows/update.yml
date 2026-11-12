@@ -19,6 +19,12 @@ jobs:
       - name: Check flake
         run: nix flake check
 
+      # The k8s render is not a per-system output, so flake check does not
+      # build it (parts/k8s.nix); this push runs no other workflow
+      # (GITHUB_TOKEN), so check here that the bumped inputs still render.
+      - name: Render k8s
+        run: nix build -L --no-link .#k8s.manifests
+
       - name: Commit & push
         run: |
           git config --global user.name 'Github Action: Update'
