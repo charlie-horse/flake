@@ -11,27 +11,41 @@
 # trusted on nodes with trustTailscale = true (default); otherwise only the
 # node's cluster ports above are opened on it (c4130). Pods (podCidr) may reach the local apiserver
 # and kubelet (in-cluster clients, metrics-server).
-{ config, lib, cluster, ... }:
+{
+  config,
+  lib,
+  cluster,
+  ...
+}:
 let
-  inherit (lib) mkOption types mkIf concatStrings concatStringsSep;
+  inherit (lib)
+    mkOption
+    types
+    mkIf
+    concatStrings
+    concatStringsSep
+    ;
   cfg = config.clusterNode;
   node = cfg.node;
   has = r: lib.elem r cfg.activeRoles;
   vipHolder = cfg.keepalived.enable;
   apiserverHere = has "controlPlane" || vipHolder;
 
-  tcpPorts = lib.optionals (has "etcd") [ 2379 2380 ]
+  tcpPorts =
+    lib.optionals (has "etcd") [
+      2379
+      2380
+    ]
     ++ lib.optional apiserverHere cluster.apiserverPort
     ++ lib.optional (has "worker") 10250;
   udpPorts = lib.optional (has "worker") 8472;
-  podTcpPorts = lib.optional apiserverHere cluster.apiserverPort
-    ++ lib.optional (has "worker") 10250;
+  podTcpPorts = lib.optional apiserverHere cluster.apiserverPort ++ lib.optional (has "worker") 10250;
 
-  nodeSources = lib.unique
-    (lib.mapAttrsToList (_: n: n.lanIP) cluster.nodes ++ [ cluster.vip ]);
+  nodeSources = lib.unique (lib.mapAttrsToList (_: n: n.lanIP) cluster.nodes ++ [ cluster.vip ]);
 
   ports = ps: concatStringsSep "," (map toString ps);
-  accept = proto: dports: src:
+  accept =
+    proto: dports: src:
     lib.optionalString (dports != [ ]) ''
       iptables -A nixos-fw -p ${proto} -s ${src} -m multiport --dports ${ports dports} -j nixos-fw-accept
     '';
@@ -58,15 +72,16 @@ in
         allowedUDPPorts = udpPorts;
       };
       extraCommands = concatStrings (
-        map (src: accept "tcp" tcpPorts src + accept "udp" udpPorts src)
-          nodeSources
+        map (src: accept "tcp" tcpPorts src + accept "udp" udpPorts src) nodeSources
         ++ [ (accept "tcp" podTcpPorts cluster.podCidr) ]
-        ++ map (accept "tcp" [ cluster.apiserverPort ])
-          (lib.optionals apiserverHere cfg.firewall.apiserverAllowedSources)
-        ++ lib.optionals vipHolder (map (src: ''
-          iptables -A nixos-fw -p vrrp -s ${src} -j nixos-fw-accept
-        '') (lib.remove node.lanIP
-          (lib.mapAttrsToList (_: n: n.lanIP) cluster.nodes)))
+        ++ map (accept "tcp" [ cluster.apiserverPort ]) (
+          lib.optionals apiserverHere cfg.firewall.apiserverAllowedSources
+        )
+        ++ lib.optionals vipHolder (
+          map (src: ''
+            iptables -A nixos-fw -p vrrp -s ${src} -j nixos-fw-accept
+          '') (lib.remove node.lanIP (lib.mapAttrsToList (_: n: n.lanIP) cluster.nodes))
+        )
       );
     };
   };

@@ -2,7 +2,13 @@
 # the "controlPlane" role. Every controlPlane node runs all three; the
 # controller-manager and scheduler use leader election, and talk to their
 # local apiserver. Authorization is Node,RBAC (no AlwaysAllow).
-{ config, lib, pkgs, cluster, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  cluster,
+  ...
+}:
 let
   inherit (lib) mkOption types;
   cfg = config.clusterNode;
@@ -12,25 +18,24 @@ let
   local = "https://127.0.0.1:${port}";
   secret = cfg.secret;
   leaf = cfg.leaf;
-  etcdClient = if cfg.etcd.phase == "final"
-    then "etcd-client-apiserver" else "legacy-etcd-client-apiserver";
+  etcdClient =
+    if cfg.etcd.phase == "final" then "etcd-client-apiserver" else "legacy-etcd-client-apiserver";
 
-  etcdNodes = lib.filter (n: lib.elem "etcd" cluster.nodes.${n}.roles)
-    (lib.attrNames cluster.nodes);
+  etcdNodes = lib.filter (n: lib.elem "etcd" cluster.nodes.${n}.roles) (lib.attrNames cluster.nodes);
   # Local member first, then the others.
-  etcdServers = map (n: "https://${n}:2379")
-    (lib.optional (lib.elem cfg.name etcdNodes) cfg.name
-      ++ lib.remove cfg.name etcdNodes);
+  etcdServers = map (n: "https://${n}:2379") (
+    lib.optional (lib.elem cfg.name etcdNodes) cfg.name ++ lib.remove cfg.name etcdNodes
+  );
 
-  kubeconfig = name: component:
+  kubeconfig =
+    name: component:
     k8s.lib.mkKubeConfig name {
       server = local;
       caFile = secret "ca.pem";
       certFile = (leaf component).cert;
       keyFile = (leaf component).key;
     };
-  controllerManagerKubeconfig =
-    kubeconfig "kube-controller-manager" "controller-manager";
+  controllerManagerKubeconfig = kubeconfig "kube-controller-manager" "controller-manager";
   schedulerKubeconfig = kubeconfig "kube-scheduler" "scheduler";
 
   # OIDC (on when cluster/definition.nix has `oidc`): authentik's provider
@@ -46,12 +51,14 @@ let
   # (kubernetes for kubectl, headlamp for Headlamp) is its own issuer. The
   # claim mappings are the same for all of them.
   oidc = cfg.oidc;
-  jwtAuthenticator = { issuerUrl, audiences }:
+  jwtAuthenticator =
+    { issuerUrl, audiences }:
     {
       issuer = {
         url = issuerUrl;
         inherit audiences;
-      } // lib.optionalAttrs (oidc.certificateAuthority != null) {
+      }
+      // lib.optionalAttrs (oidc.certificateAuthority != null) {
         inherit (oidc) certificateAuthority;
       };
       claimMappings = {
@@ -72,19 +79,20 @@ let
       claimValidationRules = [
         {
           message = "token is expired";
-          expression =
-            "claims.exp > (has(claims.nbf) ? claims.nbf : claims.iat)";
+          expression = "claims.exp > (has(claims.nbf) ? claims.nbf : claims.iat)";
         }
       ];
     };
-  authenticationConfig = (pkgs.formats.yaml { }).generate
-    "authentication-config.yaml" {
-      apiVersion = "apiserver.config.k8s.io/v1";
-      kind = "AuthenticationConfiguration";
-      jwt = map jwtAuthenticator ([
+  authenticationConfig = (pkgs.formats.yaml { }).generate "authentication-config.yaml" {
+    apiVersion = "apiserver.config.k8s.io/v1";
+    kind = "AuthenticationConfiguration";
+    jwt = map jwtAuthenticator (
+      [
         { inherit (oidc) issuerUrl audiences; }
-      ] ++ oidc.extraIssuers);
-    };
+      ]
+      ++ oidc.extraIssuers
+    );
+  };
 in
 {
   options.clusterNode.oidc = {
@@ -116,18 +124,20 @@ in
       description = "Accepted token audiences (OIDC client ids).";
     };
     extraIssuers = mkOption {
-      type = types.listOf (types.submodule {
-        options = {
-          issuerUrl = mkOption {
-            type = types.str;
-            description = "Issuer URL, byte for byte the tokens' `iss`.";
+      type = types.listOf (
+        types.submodule {
+          options = {
+            issuerUrl = mkOption {
+              type = types.str;
+              description = "Issuer URL, byte for byte the tokens' `iss`.";
+            };
+            audiences = mkOption {
+              type = types.listOf types.str;
+              description = "Accepted audiences (client ids) for this issuer.";
+            };
           };
-          audiences = mkOption {
-            type = types.listOf types.str;
-            description = "Accepted audiences (client ids) for this issuer.";
-          };
-        };
-      });
+        }
+      );
       default = cluster.oidc.extraIssuers or [ ];
       defaultText = "cluster.oidc.extraIssuers or [ ]";
       description = ''
@@ -162,7 +172,10 @@ in
       allowPrivileged = true;
       securePort = cluster.apiserverPort;
       serviceClusterIpRange = cluster.serviceCidr;
-      authorizationMode = [ "Node" "RBAC" ];
+      authorizationMode = [
+        "Node"
+        "RBAC"
+      ];
       # The kubelets' InternalIP is their LAN IP (--node-ip), which their
       # serving certs carry as a SAN; hostname (MagicDNS) as fallback.
       preferredAddressTypes = "InternalIP,Hostname,InternalDNS,ExternalDNS";
@@ -191,17 +204,19 @@ in
         keyFile = (leaf etcdClient).key;
       };
 
-      extraOpts = lib.concatStringsSep " " ([
-        # Aggregation layer (metrics-server etc.): front-proxy CA + headers.
-        "--requestheader-client-ca-file=${secret "front-proxy-ca.pem"}"
-        "--requestheader-allowed-names=front-proxy-client"
-        "--requestheader-username-headers=X-Remote-User"
-        "--requestheader-group-headers=X-Remote-Group"
-        "--requestheader-extra-headers-prefix=X-Remote-Extra-"
-        # One "kubernetes" Endpoints entry per apiserver, kept by lease.
-        "--endpoint-reconciler-type=lease"
-      ] ++ lib.optional oidc.enable
-        "--authentication-config=${authenticationConfig}");
+      extraOpts = lib.concatStringsSep " " (
+        [
+          # Aggregation layer (metrics-server etc.): front-proxy CA + headers.
+          "--requestheader-client-ca-file=${secret "front-proxy-ca.pem"}"
+          "--requestheader-allowed-names=front-proxy-client"
+          "--requestheader-username-headers=X-Remote-User"
+          "--requestheader-group-headers=X-Remote-Group"
+          "--requestheader-extra-headers-prefix=X-Remote-Extra-"
+          # One "kubernetes" Endpoints entry per apiserver, kept by lease.
+          "--endpoint-reconciler-type=lease"
+        ]
+        ++ lib.optional oidc.enable "--authentication-config=${authenticationConfig}"
+      );
     };
 
     services.kubernetes.controllerManager = {

@@ -12,7 +12,12 @@
   ...
 }:
 let
-  inherit (import ./settings.nix) namespace secretName blueprintsConfigMap db;
+  inherit (import ./settings.nix)
+    namespace
+    secretName
+    blueprintsConfigMap
+    db
+    ;
 
   # Scheduling, sizing and hardening shared by server and worker. The image
   # runs as `authentik` (uid 1000), so both meet `restricted`.
@@ -55,15 +60,14 @@ let
   # healthchecks. Ordinary pods get .2 and up, so they cannot forge client
   # IPs (authentik's default trusts all of 10/8). -Proto must stay trusted
   # from the proxies, or the issuer would be http://.
-  trustedProxies =
-    [
-      "10.244.0.0/31"
-      "10.244.1.0/31"
-      "10.244.2.0/31"
-      "127.0.0.1/32"
-      "::1/128"
-    ]
-    ++ map (n: "${n.lanIP}/32") (lib.attrValues cluster.nodes);
+  trustedProxies = [
+    "10.244.0.0/31"
+    "10.244.1.0/31"
+    "10.244.2.0/31"
+    "127.0.0.1/32"
+    "::1/128"
+  ]
+  ++ map (n: "${n.lanIP}/32") (lib.attrValues cluster.nodes);
 in
 {
   imports = [

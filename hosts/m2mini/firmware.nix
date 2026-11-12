@@ -21,24 +21,25 @@
 # the configuration still evaluates and builds, just without the blobs.
 { lib, config, ... }:
 let
-    inherit (lib) mkOption types;
-    dir = config.m2mini.vendorFirmware;
-    hasFirmware = dir != null && builtins.pathExists "${dir}/firmware.cpio";
-in {
-    options.m2mini.vendorFirmware = mkOption {
-        type = types.nullOr types.path;
-        default = null;
-        description = ''
-            Directory holding the Asahi `firmware.cpio` (normally the
-            /boot/vendorfw copy, passed as a flake input). null, or a
-            directory without firmware.cpio, disables the extraction.
-        '';
-    };
+  inherit (lib) mkOption types;
+  dir = config.m2mini.vendorFirmware;
+  hasFirmware = dir != null && builtins.pathExists "${dir}/firmware.cpio";
+in
+{
+  options.m2mini.vendorFirmware = mkOption {
+    type = types.nullOr types.path;
+    default = null;
+    description = ''
+      Directory holding the Asahi `firmware.cpio` (normally the
+      /boot/vendorfw copy, passed as a flake input). null, or a
+      directory without firmware.cpio, disables the extraction.
+    '';
+  };
 
-    config.hardware.asahi = {
-        # Always set: the module's default probes /boot/vendorfw, which is
-        # forbidden in pure evaluation.
-        peripheralFirmwareDirectory = if hasFirmware then dir else null;
-        extractPeripheralFirmware = hasFirmware;
-    };
+  config.hardware.asahi = {
+    # Always set: the module's default probes /boot/vendorfw, which is
+    # forbidden in pure evaluation.
+    peripheralFirmwareDirectory = if hasFirmware then dir else null;
+    extractPeripheralFirmware = hasFirmware;
+  };
 }

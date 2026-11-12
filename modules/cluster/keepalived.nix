@@ -14,7 +14,13 @@
 #
 # /readyz is readable anonymously (system:public-info-viewer), so the check
 # needs no client cert or key.
-{ config, lib, pkgs, cluster, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  cluster,
+  ...
+}:
 let
   inherit (lib) mkOption types mkIf;
   cfg = config.clusterNode;
@@ -22,8 +28,7 @@ let
   port = toString cluster.apiserverPort;
   isControlPlane = lib.elem "controlPlane" cfg.activeRoles;
   others = lib.filterAttrs (n: _: n != cfg.name) cluster.nodes;
-  controlPlanes = lib.filterAttrs
-    (_: n: lib.elem "controlPlane" n.roles) cluster.nodes;
+  controlPlanes = lib.filterAttrs (_: n: lib.elem "controlPlane" n.roles) cluster.nodes;
 in
 {
   options.clusterNode.keepalived.enable = mkOption {
@@ -101,9 +106,12 @@ in
           http-check expect status 200
           balance roundrobin
           default-server inter 2s fall 3 rise 2 check check-ssl verify none
-      '' + lib.concatStrings (lib.mapAttrsToList (n: v: ''
+      ''
+      + lib.concatStrings (
+        lib.mapAttrsToList (n: v: ''
           server ${n} ${v.lanIP}:${port}
-      '') controlPlanes);
+        '') controlPlanes
+      );
     };
   };
 }

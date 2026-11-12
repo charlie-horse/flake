@@ -12,9 +12,21 @@
 # plugins in /opt/cni/bin (NixOS kubelet module) and the conflist below in
 # /etc/cni/net.d (read-only, from the store), so the DaemonSet must NOT run
 # flannel's install-cni / install-cni-plugin init containers.
-{ config, lib, pkgs, cluster, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  cluster,
+  ...
+}:
 let
-  inherit (lib) mkOption types mkIf mkMerge mkForce;
+  inherit (lib)
+    mkOption
+    types
+    mkIf
+    mkMerge
+    mkForce
+    ;
   cfg = config.clusterNode;
   node = cfg.node;
   secret = cfg.secret;
@@ -23,33 +35,33 @@ let
   isContainerd = node.cri == "containerd";
   isCrio = node.cri == "cri-o";
 
-  cniConfigDir = pkgs.writeTextDir "10-flannel.conflist" (builtins.toJSON {
-    name = "cbr0";
-    cniVersion = "0.3.1";
-    plugins = [
-      {
-        type = "flannel";
-        delegate = {
-          hairpinMode = true;
-          isDefaultGateway = true;
-        };
-      }
-      {
-        type = "portmap";
-        capabilities.portMappings = true;
-      }
-    ];
-  });
+  cniConfigDir = pkgs.writeTextDir "10-flannel.conflist" (
+    builtins.toJSON {
+      name = "cbr0";
+      cniVersion = "0.3.1";
+      plugins = [
+        {
+          type = "flannel";
+          delegate = {
+            hairpinMode = true;
+            isDefaultGateway = true;
+          };
+        }
+        {
+          type = "portmap";
+          capabilities.portMappings = true;
+        }
+      ];
+    }
+  );
 
-  nodeLabels = node.labels
-    // lib.optionalAttrs node.gpu { "nvidia.com/gpu.present" = "true"; };
-  nodeLabelsFlag = lib.optionalString (nodeLabels != { })
-    ("--node-labels=" + lib.concatStringsSep ","
-      (lib.mapAttrsToList (k: v: "${k}=${v}") nodeLabels));
+  nodeLabels = node.labels // lib.optionalAttrs node.gpu { "nvidia.com/gpu.present" = "true"; };
+  nodeLabelsFlag = lib.optionalString (nodeLabels != { }) (
+    "--node-labels=" + lib.concatStringsSep "," (lib.mapAttrsToList (k: v: "${k}=${v}") nodeLabels)
+  );
 
   nvidiaToolkit = config.hardware.nvidia-container-toolkit.package;
-  nvidiaRuntime =
-    "${lib.getOutput "tools" nvidiaToolkit}/bin/nvidia-container-runtime";
+  nvidiaRuntime = "${lib.getOutput "tools" nvidiaToolkit}/bin/nvidia-container-runtime";
 in
 {
   options.clusterNode.crun.enable = mkOption {
@@ -106,7 +118,10 @@ in
       # net.ipv4.ip_forward and net.bridge.bridge-nf-call-ip{,6}tables to 1.
       # Those sysctls are unique options: hosts must NOT set them as well
       # (a second plain definition, even of the same value, is an error).
-      boot.kernelModules = [ "br_netfilter" "overlay" ];
+      boot.kernelModules = [
+        "br_netfilter"
+        "overlay"
+      ];
     }
 
     (mkIf isContainerd {
@@ -117,7 +132,10 @@ in
         # image seeded by the kubelet).
         settings.plugins."io.containerd.grpc.v1.cri" = {
           enable_cdi = true;
-          cdi_spec_dirs = [ "/etc/cdi" "/var/run/cdi" ];
+          cdi_spec_dirs = [
+            "/etc/cdi"
+            "/var/run/cdi"
+          ];
           containerd = {
             default_runtime_name = "runc";
             runtimes = mkMerge [
@@ -143,8 +161,7 @@ in
           };
         };
       };
-      services.kubernetes.kubelet.containerRuntimeEndpoint =
-        "unix:///run/containerd/containerd.sock";
+      services.kubernetes.kubelet.containerRuntimeEndpoint = "unix:///run/containerd/containerd.sock";
     })
 
     (mkIf isCrio {
@@ -153,8 +170,7 @@ in
       # flannel + portmap live in /opt/cni/bin (linked by the kubelet);
       # cri-o's own bridge/loopback examples would shadow flannel and clash
       # with the kubelet's /etc/cni/net.d.
-      virtualisation.cri-o.settings.crio.network.plugin_dirs =
-        mkForce [ "/opt/cni/bin" ];
+      virtualisation.cri-o.settings.crio.network.plugin_dirs = mkForce [ "/opt/cni/bin" ];
       environment.etc."cni/net.d/10-crio-bridge.conflist".enable = false;
       environment.etc."cni/net.d/99-loopback.conflist".enable = false;
       services.kubernetes.kubelet = {

@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 {
   # md RAID (local_store, see hardware-configuration.nix): since nixos-26.05
   # mdmonitor exits 1 without MAILADDR or PROGRAM. There is no MTA here, so
@@ -10,7 +15,10 @@
     ''}
   '';
 
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
   nixpkgs.config.allowUnfree = true;
 
@@ -21,9 +29,9 @@
   # Cluster ports (etcd 2379/2380, apiserver 6443, kubelet, flannel VXLAN
   # 8472/udp) are opened by modules/cluster, to the cluster nodes only.
   networking.firewall.allowedTCPPorts = [
-	22
-  	80
-	443
+    22
+    80
+    443
   ];
   # net.ipv4.ip_forward = 1 comes from the kubelet module (modules/cluster);
   # a second definition here would be an eval error.
@@ -31,11 +39,11 @@
 
   services.tailscale.enable = true;
   services.openssh.enable = true;
-  systemd.services.tailscaled.serviceConfig.Environment = [ 
-    "TS_DEBUG_FIREWALL_MODE=nftables" 
+  systemd.services.tailscaled.serviceConfig.Environment = [
+    "TS_DEBUG_FIREWALL_MODE=nftables"
   ];
 
-  users.groups.video = {};
+  users.groups.video = { };
   users.users.charlie = {
     isNormalUser = true;
     extraGroups = [ "wheel" ]; # Enable ‘sudo’ for the user.
@@ -72,4 +80,3 @@
   system.stateVersion = "26.05"; # Did you read the comment?
 
 }
-

@@ -69,38 +69,48 @@ in
         fullnameOverride = "headlamp";
         replicaCount = 1;
 
-        initContainers = [{
-          command = [
-            "/bin/sh" "-c" "mkdir -p /build/plugins && cp -r /plugins/* /build/plugins/"
-          ];
-          image = "ghcr.io/headlamp-k8s/headlamp-plugin-flux:v0.7.0";
-          imagePullPolicy = "Always";
-          name = "headlamp-plugin-flux";
-          securityContext = {
-            runAsNonRoot = true;
-            privileged = false;
-            runAsUser = 100;
-            runAsGroup = 101;
-            allowPrivilegeEscalation = false;
-            capabilities.drop = [ "ALL" ];
-            seccompProfile.type = "RuntimeDefault";
-          };
+        initContainers = [
+          {
+            command = [
+              "/bin/sh"
+              "-c"
+              "mkdir -p /build/plugins && cp -r /plugins/* /build/plugins/"
+            ];
+            image = "ghcr.io/headlamp-k8s/headlamp-plugin-flux:v0.7.0";
+            imagePullPolicy = "Always";
+            name = "headlamp-plugin-flux";
+            securityContext = {
+              runAsNonRoot = true;
+              privileged = false;
+              runAsUser = 100;
+              runAsGroup = 101;
+              allowPrivilegeEscalation = false;
+              capabilities.drop = [ "ALL" ];
+              seccompProfile.type = "RuntimeDefault";
+            };
 
-          volumeMounts = [{
+            volumeMounts = [
+              {
+                mountPath = "/build/plugins";
+                name = "headlamp-plugins";
+              }
+            ];
+          }
+        ];
+
+        volumes = [
+          {
+            name = "headlamp-plugins";
+            emptyDir = { };
+          }
+        ];
+
+        volumeMounts = [
+          {
             mountPath = "/build/plugins";
             name = "headlamp-plugins";
-          }];
-        }];
-
-        volumes = [{
-          name = "headlamp-plugins";
-          emptyDir = {};
-        }];
-
-        volumeMounts = [{
-          mountPath = "/build/plugins";
-          name = "headlamp-plugins";
-        }];
+          }
+        ];
 
         config = {
           pluginsDir = "/build/plugins";

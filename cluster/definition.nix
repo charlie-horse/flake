@@ -161,7 +161,11 @@
       lanIP = "10.0.0.95";
       lanInterface = "eno1";
       tailnetIP = "100.74.71.16";
-      roles = [ "etcd" "controlPlane" "worker" ];
+      roles = [
+        "etcd"
+        "controlPlane"
+        "worker"
+      ];
       gpu = true;
       cri = "containerd";
       keepalivedPriority = 150;
@@ -207,7 +211,11 @@
       lanIP = "10.0.0.239";
       lanInterface = "eno1";
       tailnetIP = "100.81.238.37";
-      roles = [ "etcd" "controlPlane" "worker" ];
+      roles = [
+        "etcd"
+        "controlPlane"
+        "worker"
+      ];
       gpu = false;
       cri = "containerd";
       keepalivedPriority = 100;
@@ -225,7 +233,10 @@
       lanIP = "10.0.0.147";
       lanInterface = "end0";
       tailnetIP = "100.71.194.116";
-      roles = [ "etcd" "worker" ];
+      roles = [
+        "etcd"
+        "worker"
+      ];
       gpu = false;
       cri = "containerd";
       keepalivedPriority = 50;
