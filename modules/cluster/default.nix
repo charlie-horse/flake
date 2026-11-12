@@ -1,4 +1,4 @@
-# Host side of the "solaris" Kubernetes cluster (manual services.kubernetes,
+# Host side of the "neurosis" Kubernetes cluster (manual services.kubernetes,
 # no easyCerts, no roles, no addons: CoreDNS, flannel, the NVIDIA device
 # plugin, RuntimeClasses and Flux are rendered with catenix under k8s/).
 #

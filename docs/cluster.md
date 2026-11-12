@@ -1,4 +1,4 @@
-# solaris cluster: current state and operations
+# neurosis cluster: current state and operations
 
 Three NixOS 26.05 servers run one Kubernetes cluster (v1.36). The NixOS side
 (etcd, control plane, kubelet, containerd, keepalived, firewall) is
@@ -70,7 +70,7 @@ sudo journalctl -u etcd --since -5min | grep -iE 'x509|tls|handshake'   # empty
 Check or force it (r440, admin kubeconfig):
 
 ```sh
-export KUBECONFIG=~/.local/share/cluster-pki/solaris/admin.kubeconfig
+export KUBECONFIG=~/.local/share/cluster-pki/neurosis/admin.kubeconfig
 nix shell nixpkgs#fluxcd -c flux get sources oci                    # Ready, SourceVerified
 nix shell nixpkgs#fluxcd -c flux reconcile kustomization flux-system --with-source
 ```
@@ -86,7 +86,7 @@ nix build --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s.manife
 
 ## Access
 
-- **Admin (break-glass):** `r440:~/.local/share/cluster-pki/solaris/admin.kubeconfig`
+- **Admin (break-glass):** `r440:~/.local/share/cluster-pki/neurosis/admin.kubeconfig`
   (x509, never copied off r440).
 - **People:** OIDC through authentik (group `cluster-admins` →
   `cluster-admin`): kubectl with kubelogin, or Headlamp at
@@ -188,7 +188,7 @@ Rollout (after the PR is merged):
 
 | Secret | Where | Made by |
 | --- | --- | --- |
-| Cluster PKI (CA keys + leaves) | `r440:~/.local/share/cluster-pki/solaris` (back it up) | `cluster-pki` (docs/pki.md) |
+| Cluster PKI (CA keys + leaves) | `r440:~/.local/share/cluster-pki/neurosis` (back it up) | `cluster-pki` (docs/pki.md) |
 | Node keys and certs | `/var/lib/kubernetes/secrets/` on each node | `cluster-pki deploy` |
 | `authentik/authentik-secrets` | Kubernetes Secret | by hand (k8s/README.md, authentik) |
 | `headlamp/headlamp-oidc` | Kubernetes Secret | by hand (Headlamp section) |

@@ -142,8 +142,18 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
 ### On the operator machine: `./pki-out/` (gitignored, mode 0700)
 
 The operator machine is r440, whose `/etc/nixos` is the checkout of this
-repo. The live PKI there is `--out ~/.local/share/cluster-pki/solaris`
+repo. The live PKI there is `--out ~/.local/share/cluster-pki/neurosis`
 (outside the checkout), run as `nix run /etc/nixos#cluster-pki -- --out …`.
+
+**CA subjects and the cluster name.** cluster-pki puts `cluster.name` into
+a CA's subject (`O=<name>, OU=cluster-pki, CN=<name> <ca> CA <date>`) only
+when it creates that CA. The current CAs date from before the cluster was
+renamed from solaris to neurosis, so they still read
+`O=solaris, OU=cluster-pki, CN=solaris {k8s,etcd,front-proxy} CA 2026-10-31`,
+and leaves they sign (renewals included) show that issuer. This is
+expected: leaf subjects and SANs never contain the name, so nothing is
+re-issued because of it. The next `--rotate-ca <ca> --phase begin` creates
+a `neurosis <ca> CA <date>`.
 
 ```
 pki-out/

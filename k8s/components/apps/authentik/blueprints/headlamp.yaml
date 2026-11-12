@@ -7,7 +7,7 @@
 # blueprints.nix.
 version: 1
 metadata:
-  name: solaris - headlamp OIDC
+  name: neurosis - headlamp OIDC
   labels:
     blueprints.goauthentik.io/description: Headlamp OIDC client (k8s/components/apps/authentik)
 entries:
@@ -54,7 +54,7 @@ entries:
     identifiers:
       slug: headlamp
     attrs:
-      name: Headlamp (solaris)
+      name: Headlamp (neurosis)
       provider: !KeyOf provider
       meta_launch_url: https://@HEADLAMP_HOST@/
       policy_engine_mode: any

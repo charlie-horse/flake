@@ -48,7 +48,7 @@ in
         metadata = {
           inherit labels;
           # Roll the pods when the routes or nginx config change.
-          annotations."solaris/config-hash" = builtins.hashString "sha256" (files.cloudflared + files.nginx);
+          annotations."cluster/config-hash" = builtins.hashString "sha256" (files.cloudflared + files.nginx);
         };
         spec = {
           hostNetwork = true;

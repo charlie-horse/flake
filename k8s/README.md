@@ -127,7 +127,7 @@ SSO for the cluster and its apps (`components/apps/authentik/`). It runs
 control plane and the admin kubeconfig authenticate with x509 certs, Flux
 and pods with service-account tokens. OIDC is only an extra way for people
 to log in. If authentik is down, only those logins fail; the admin cert
-(`r440:~/.local/share/cluster-pki/solaris/admin.kubeconfig`) is the
+(`r440:~/.local/share/cluster-pki/neurosis/admin.kubeconfig`) is the
 break-glass.
 
 | Piece | Where | Data |
@@ -150,7 +150,7 @@ with the operator kubeconfig. The values are generated in place and never
 appear on a command line:
 
 ```sh
-export KUBECONFIG=~/.local/share/cluster-pki/solaris/admin.kubeconfig
+export KUBECONFIG=~/.local/share/cluster-pki/neurosis/admin.kubeconfig
 nix shell nixpkgs#kubectl nixpkgs#openssl -c bash -ec '
   umask 077
   {
@@ -217,7 +217,7 @@ machine:
 
 ```sh
 kubectl krew install oidc-login   # or nixpkgs#kubelogin-oidc
-kubectl config set-credentials solaris-oidc \
+kubectl config set-credentials neurosis-oidc \
   --exec-api-version=client.authentication.k8s.io/v1 \
   --exec-interactive-mode=IfAvailable \
   --exec-command=kubectl --exec-arg=oidc-login --exec-arg=get-token \
@@ -225,7 +225,7 @@ kubectl config set-credentials solaris-oidc \
   --exec-arg=--oidc-client-id=kubernetes \
   --exec-arg=--oidc-extra-scope=profile --exec-arg=--oidc-extra-scope=email \
   --exec-arg=--oidc-extra-scope=offline_access
-kubectl --user=solaris-oidc auth whoami   # oidc:<username>, groups oidc:cluster-admins
+kubectl --user=neurosis-oidc auth whoami   # oidc:<username>, groups oidc:cluster-admins
 ```
 
 kubelogin serves its login page on `http://localhost:8000` (or `:18000` if
@@ -258,7 +258,7 @@ Copy the client secret from authentik (Applications → Providers →
 `headlamp`), then on r440 with the operator kubeconfig paste it on stdin:
 
 ```sh
-export KUBECONFIG=~/.local/share/cluster-pki/solaris/admin.kubeconfig
+export KUBECONFIG=~/.local/share/cluster-pki/neurosis/admin.kubeconfig
 nix shell nixpkgs#kubectl -c kubectl -n headlamp create secret generic \
   headlamp-oidc --from-env-file=/dev/stdin
 # type: OIDC_CLIENT_SECRET=<secret>   then Enter, Ctrl-D

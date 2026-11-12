@@ -4,7 +4,7 @@
 # never into git. @OPEN_WEBUI_HOST@ is filled in by blueprints.nix.
 version: 1
 metadata:
-  name: solaris - open-webui OIDC
+  name: neurosis - open-webui OIDC
   labels:
     blueprints.goauthentik.io/description: Open WebUI OIDC client (k8s/components/apps/authentik)
 entries:
