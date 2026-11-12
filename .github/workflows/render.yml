@@ -4,39 +4,20 @@ on:
   push:
     branches: [main]
     paths:
-      - "hosts/c4130/**"
-      - "hosts/r440/**"
-      - "hosts/m2mini/**"
-      - "modules/cluster/**"
-      - "cluster/**"
       - "k8s/**"
-      - "pkgs/**"
-      - "lib/**"
-      - "parts/**"
-      - "flake.nix"
-      - "flake.lock"
-      - ".github/workflows/k8s.yml"
+      - ".github/workflows/render.yml"
   pull_request:
     branches: [main]
     paths:
-      - "hosts/c4130/**"
-      - "hosts/r440/**"
-      - "hosts/m2mini/**"
-      - "modules/cluster/**"
-      - "cluster/**"
       - "k8s/**"
-      - "pkgs/**"
-      - "lib/**"
-      - "parts/**"
-      - "flake.nix"
-      - "flake.lock"
-      - ".github/workflows/k8s.yml"
+      - ".github/workflows/render.yml"
   workflow_dispatch:
     inputs:
-      reused-run-id:
-        required: false
-        type: number
-        description: The run ID of a previous manifest build.
+      publish-cached-anyways:
+        required: true
+        default: false
+        type: boolean
+        description: Should existing manifests be redeployed?
 
 permissions:
   contents: read
@@ -76,73 +57,57 @@ jobs:
     name: Render k8s manifests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    if: ${{ inputs.reused-run-id == '' }}
+    if: ${{ inputs.publish-cached-anyways == false }}
     outputs:
-      changed: ${{ steps.diff.outputs.changed }}
+      cached: ${{ steps.cache.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
+      - name: Cache
+        id: cache
+        uses: actions/cache@v5.1.0
+        with:
+          # A list of files, directories, and wildcard patterns to cache and restore
+          path: manifests
+          # An explicit key for restoring and saving the cache
+          key: manifest-build-${{ hashFiles(
+            'k8s/**',
+            '.github/workflows/render.yml') }}
+          enableCrossOsArchive: true
+    
       - uses: cachix/install-nix-action@v31.11.2
+        id: install-nix
+        if: steps.cache.outputs.cache-hit == 'false'
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: nix build .#k8s-manifests
-        run: nix build -L --out-link result-k8s .#k8s-manifests
-
-      - name: Check for private keys
-        run: |
-          if grep -rlE -- '-----BEGIN ([A-Z]+ )?PRIVATE KEY-----|client-key-data[:]' result-k8s/;
-          then
-            echo "::error::rendered manifests contain key material"
-            exit 1
-          fi
-
-      - name: Compare with k8s/rendered
-        id: diff
-        run: |
-          set -euo pipefail
-          rm -rf k8s/rendered/**
-          cp -r --no-preserve=mode result-k8s/. k8s/rendered/
-          git add -N k8s/rendered
-          
-          if git diff --quiet -- k8s/rendered; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "k8s/rendered is up to date" >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            {
-              echo "### k8s/rendered changes"
-              echo
-              echo '```'
-              git diff --stat -- k8s/rendered
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-            if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-              echo "::notice::k8s/rendered differs; it is re-rendered and" \
-                "committed on merge to main."
-            fi
-          fi
+        id: build
+        if: steps.install-nix.outcome == 'success'
+        run: nix build -L --out-link manifests .#k8s-manifests
 
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: k8s-rendered
-          path: k8s/rendered/
+          name: manifests
+          path: manifests
           if-no-files-found: error
           retention-days: 7
 
   # ------------------------------------------------------------------------
   publish:
-    name: Publish k8s/rendered
+    name: Publish manifests
     if: >-
       always()
-      && (inputs.reused-run-id != '' && needs.render.result == 'skipped')
+      && (needs.render.result == 'skipped'
+          && inputs.publish-cached-anyways)
       || (needs.render.result == 'success'
-          && needs.render.outputs.changed == 'true'
-          && ((github.ref == 'refs/heads/main' && github.event_name == 'push')
-              || github.event_name == 'workflow_dispatch'))
+          && needs.render.outputs.cached == false
+          && (github.event_name == 'workflow_dispatch'
+              || (github.ref == 'refs/heads/main'
+                  && github.event_name == 'push')))
     needs: [render]
     permissions:
       packages: write
@@ -163,16 +128,14 @@ jobs:
 
       - uses: actions/download-artifact@v8.0.2
         with:
-          name: k8s-rendered
-          path: render
-          run-id: ${{ inputs.reused-run-id || github.run_id  }}
-          github-token: ${{ github.token }}
+          name: manifests
+          path: manifests
 
       - name: Push artifact
         run: |
           url="oci://ghcr.io/$GITHUB_REPOSITORY/manifests:${GITHUB_SHA::12}"
 
-          out=$(flux push artifact "$url" --path render -o json \
+          out=$(flux push artifact "$url" --path manifests -o json \
             --source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --revision="main@sha1:$GITHUB_SHA")
           echo "$out"
