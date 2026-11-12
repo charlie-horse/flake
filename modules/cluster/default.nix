@@ -18,7 +18,7 @@
 # cut-over: "etcd" -> etcd only, "controlPlane" -> + control plane and
 # keepalived, "full" -> everything. clusterNode.etcd.phase picks the etcd
 # leaves ("trust": legacy leaves + new bundle, "final": new leaves). See
-# docs/cluster-handoff.md for the order.
+# docs/history/cluster-handoff-2026-10.md for the order.
 #
 # Secrets: every key and cert is a STRING path under cluster.secretsDir
 # (/var/lib/kubernetes/secrets), put there by `cluster-pki deploy`
@@ -68,7 +68,7 @@ in
       default = cfg.node.rollout.stage or "full";
       defaultText = "cluster.nodes.<name>.rollout.stage or \"full\"";
       description = ''
-        Cut-over stage (docs/cluster-handoff.md): which of the node's roles
+        Cut-over stage (docs/history/cluster-handoff-2026-10.md): which of the node's roles
         actually run. "etcd": etcd only; "controlPlane": + apiserver,
         controller-manager, scheduler and keepalived; "full": every role.
       '';

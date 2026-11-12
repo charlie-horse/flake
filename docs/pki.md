@@ -120,7 +120,7 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
   `kubernetes.default.svc`, `kubernetes.default.svc.<clusterDomain>`, and
   `apiserverExtraSANs` (today `192.0.0.1`, the legacy `kubernetes` Service
   IP, as a stopgap until the Service-CIDR cut-over in
-  [cluster-handoff.md](cluster-handoff.md) step 3).
+  [cluster-handoff](history/cluster-handoff-2026-10.md) step 3).
 - **Subjects** and the RBAC that uses them:
   - `system:kube-apiserver` (the apiserver's kubelet client) is bound to
     `system:kubelet-api-admin` by `k8s/components/infra/rbac.nix` (catenix,
@@ -129,7 +129,7 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
     the admin cert during bootstrap; until then `kubectl logs/exec` get 403.
   - `flannel-client` and `system:kube-addon-manager` are **unused**: flannel
     runs as a DaemonSet with its own ServiceAccount and there is no addon
-    manager. Nothing binds them (see the TODO in cluster-handoff.md).
+    manager. Nothing binds them (see the TODO in history/cluster-handoff-2026-10.md).
   - `system:node:<n>` is what the Node authorizer expects.
 - **`etcd-server-<n>` also has client auth**, so `etcdctl` on a member can
   use it for health checks.
@@ -260,7 +260,7 @@ all.
 
   Step 3 is `--phase finish`, which drops the legacy CA from the bundle.
   The exact commands per node are in
-  [cluster-handoff.md](cluster-handoff.md) step 2.
+  [cluster-handoff](history/cluster-handoff-2026-10.md) step 2.
 
   Switching a node straight from the legacy config to `"final"` is a hard
   cut-over: the legacy members trust only `ETCD CA 1` and reject its new
@@ -279,7 +279,7 @@ all.
   `192.0.0.1`; ClusterIP is immutable and the apiserver only reconciles
   the Service's ports, so new flags alone don't move it. Until the
   cut-over step (delete the Service, migrate the ServiceCIDR; exact
-  commands in [cluster-handoff.md](cluster-handoff.md) step 3d) pods get
+  commands in [cluster-handoff](history/cluster-handoff-2026-10.md) step 3d) pods get
   `KUBERNETES_SERVICE_HOST=192.0.0.1`, which is why the apiserver leaves
   carry `192.0.0.1` as a stopgap SAN (`apiserverExtraSANs`). Run that step
   before flannel/CoreDNS/Flux are applied, then drop the SAN and re-issue.
