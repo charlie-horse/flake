@@ -91,6 +91,98 @@ nix build --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s.manife
 - **People:** OIDC through authentik (group `cluster-admins` →
   `cluster-admin`): kubectl with kubelogin, or Headlamp at
   `https://k8s.neuros.is` (k8s/README.md).
+- **API address:** `https://10.0.0.200:6443` on the LAN (keepalived VIP), or
+  `https://kube-api.leaffish-monster.ts.net:6443` from anywhere on the
+  tailnet (Tailscale Service, below).
+
+## Tailscale
+
+All three servers' Tailscale prefs are in Nix:
+`modules/server/tailscale.nix` (shared flags, the live values they mirror,
+how a reinstall logs in) and `server.tailscale.*` in each host's
+`configuration.nix` (routes, tags). `tailscaled-set` runs `tailscale set`
+with those flags on every start, so a hand-made `tailscale set` is undone
+by the next boot or switch: change the Nix instead. Tailscale SSH is the
+only way into the hosts; never turn `ssh` off.
+
+Live prefs (2026-11-12, all 1.104.4, all `tag:node` on the control plane):
+
+| Host | AdvertiseRoutes | AdvertiseTags | SSH, accept-dns, accept-routes, netfilter, SNAT, stateful filtering |
+| --- | --- | --- | --- |
+| c4130 | exit node + 10.0.1.0/24 | `tag:node` | on, on, off, on, on, off |
+| r440 | exit node + 10.0.1.0/24 | none (tag from the admin console) | same |
+| m2mini | exit node + 10.0.0.0/16 | none (tag from the admin console) | same |
+
+Reinstall: put a tagged (`tag:node`), pre-approved auth key in
+`/var/lib/tailscale/authkey` (root, 0600, typed or pasted, never on a
+command line), switch, then delete the file. Without the file
+`tailscaled-autoconnect` is skipped.
+
+### Tailscale Service for the API (`svc:kube-api`)
+
+Every control plane hosts the Tailscale Service `svc:kube-api`
+(`cluster.apiserverTailscaleService`, `modules/cluster/tailscale-service.nix`):
+TCP 6443 on the service's own TailVIP → `127.0.0.1:6443` on the node.
+Clients use `kube-api.leaffish-monster.ts.net:6443`; Tailscale spreads them
+over the hosts that advertise it. The unit is bound to `kube-apiserver`:
+stopping the apiserver drains the node (`tailscale serve drain`), starting
+it advertises the node again. TLS passes through to the apiserver, so its
+leaves carry the name (`apiserverExtraSANs`). No firewall change: tailscaled
+connects to the apiserver over `lo`. The apiserver sees such clients as
+127.0.0.1.
+
+Requirements: Tailscale ≥ 1.86 on the hosts (1.104.4), tagged hosts (all
+three are `tag:node`); clients ≥ 1.94 need no `--accept-routes` (older Linux
+clients do).
+
+Admin console and policy file (once, before the first switch):
+
+1. Services → Advertise → Define a Service: name `kube-api`, endpoint
+   `tcp:6443`, description "solaris Kubernetes API".
+2. Policy file: approve tag:node hosts automatically and let the admins
+   reach it (adjust `src` to who should use kubectl):
+
+   ```jsonc
+   "tagOwners": {
+     "tag:node": ["autogroup:admin"],          // already there
+   },
+   "autoApprovers": {
+     "services": {
+       "svc:kube-api": ["tag:node"],
+     },
+   },
+   "grants": [
+     { "src": ["autogroup:admin"], "dst": ["svc:kube-api"], "ip": ["tcp:6443"] },
+   ],
+   ```
+
+   Without `autoApprovers`, approve each host by hand on the service's page
+   (Service hosts → Approve).
+
+Check (read-only), on a node and from a client:
+
+```sh
+tailscale serve status --json        # Services."svc:kube-api".TCP."6443"
+tailscale debug prefs | jq .AdvertiseServices   # ["svc:kube-api"]
+kubectl --server=https://kube-api.leaffish-monster.ts.net:6443 get --raw /readyz
+```
+
+Rollout (after the PR is merged):
+
+1. Policy and service definition (above).
+2. New apiserver leaves on r440 (the SAN list changed):
+   `cd /etc/nixos && git pull && nix run /etc/nixos#cluster-pki -- --out ~/.local/share/cluster-pki/solaris`
+   (reports 3 apiserver leaves issued), then one node at a time
+   `nix run /etc/nixos#cluster-pki-deploy -- <node> --out ~/.local/share/cluster-pki/solaris`,
+   paste the printed `sudo install` commands, `sudo systemctl restart kube-apiserver`
+   and wait for `curl -sk https://127.0.0.1:6443/readyz` before the next
+   node. The switch below does not restart the apiserver.
+3. Switch the hosts one at a time (Changing a host, above): c4130 GC first
+   and outside 22:00–05:55 EST; after each, `systemctl --failed`, the etcd
+   check, `systemctl status tailscale-service-kube-api` and
+   `tailscale debug prefs` (unchanged apart from AdvertiseServices).
+4. kubeconfigs: `kubectl config set-cluster solaris --server=https://kube-api.leaffish-monster.ts.net:6443`
+   (the CA stays the same).
 
 ## Secrets that live outside git
 

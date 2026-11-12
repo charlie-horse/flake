@@ -47,13 +47,10 @@
   ];
 
   services.openssh.enable = true;
-  services.tailscale.enable = true;
-  # net.ipv4.ip_forward = 1 comes from the kubelet module (modules/cluster);
-  # a second definition here would be an eval error.
-  boot.kernel.sysctl."net.ipv6.conf.all.forwarding" = 1;
-  systemd.services.tailscaled.serviceConfig.Environment = [
-    "TS_DEBUG_FIREWALL_MODE=nftables"
-  ];
+  # Tailscale (modules/server/tailscale.nix, which also turns on IP
+  # forwarding). Live prefs 2026-11-12: exit node + 10.0.1.0/24; tag:node
+  # was set in the admin console, so no tag is advertised.
+  server.tailscale.advertiseRoutes = [ "10.0.1.0/24" ];
 
   # This option defines the first version of NixOS you have installed on this particular machine,
   # and is used to maintain compatibility with application data (e.g. databases) created on older NixOS versions.
