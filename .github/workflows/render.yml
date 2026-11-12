@@ -137,9 +137,9 @@ jobs:
           URL: ${{ secrets.FLUX_WEBHOOK_URL }}
         run: |
           body="{\"revision\":\"main@sha1:$GITHUB_SHA\"}"
-          sig=$(printf '%s' "$body"
-          | openssl dgst -sha256 -hmac "$TOKEN" -r
-          | cut -d' ' -f1)
+          sig=$(printf '%s' "$body" |
+            openssl dgst -sha256 -hmac "$TOKEN" -r |
+            cut -d' ' -f1)
 
           curl -fsS -X POST "$URL" \
             -H "Content-Type: application/json" \
