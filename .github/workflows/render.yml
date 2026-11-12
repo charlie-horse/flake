@@ -37,7 +37,6 @@ jobs:
     name: Render k8s manifests
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    if: ${{ inputs.publish-cached-anyways == false }}
     outputs:
       cached: ${{ steps.cache.outputs.cache-hit }}
     steps:
