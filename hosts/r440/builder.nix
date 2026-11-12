@@ -1,7 +1,6 @@
-# r440 as a Nix remote builder and binary cache for c4130, over the direct
-# 2x25G link (bond0, 10.25.0.0/30). The cache is ./cache.nix: harmonia on
-# the link address (./firewall.nix opens 5000 on bond0 only), nginx with
-# basic auth behind https://cache.neuros.is; sshd listens everywhere.
+# r440 as a Nix remote builder for c4130, over the direct 2x25G link
+# (bond0, 10.25.0.0/30); sshd listens everywhere. The binary cache is
+# ./cache.nix (https://cache.neuros.is for every host, c4130 included).
 { lib, ... }:
 let
   # c4130 root's builder key: /root/.ssh/nixremote.pub on c4130 (see the
@@ -75,6 +74,5 @@ in
   nix.daemonCPUSchedPolicy = "batch";
   nix.daemonIOSchedClass = "idle";
 
-  # The binary cache (harmonia, and nginx with basic auth for everyone
-  # else) is ./cache.nix.
+  # The binary cache (harmonia behind nginx with basic auth) is ./cache.nix.
 }

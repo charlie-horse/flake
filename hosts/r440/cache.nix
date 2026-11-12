@@ -5,8 +5,10 @@
 #
 #   https://cache.neuros.is -> Cloudflare -> cloudflared (any node,
 #     hostNetwork) -> its nginx sidecar -> http://10.0.0.239:5080
-#     -> nginx here (basic auth) -> harmonia (unix socket)
-#   c4130 -> bond0 -> harmonia 10.25.0.2:5000 (no auth; legacy direct path)
+#     -> nginx here (basic auth) -> harmonia (unix socket, its only listener)
+#
+# c4130 too: it no longer substitutes over bond0 (builds still go there,
+# over ssh), so harmonia has no TCP listener and bond0 no port 5000.
 #
 # The :5080 listener's only consumer is the tunnel. nginx listens on every
 # address, port cluster.binaryCache.port; the firewall admits that port only
@@ -57,18 +59,12 @@ in
     # The default for clients that set none; ours set ?priority=
     # (modules/system/nix-cache.nix).
     settings.priority = 30;
-    settings.bind = "10.25.0.2:5000";
+    # The only listener (the module turns it into the socket unit's
+    # ListenStream). No TCP: c4130 substitutes through the tunnel too.
+    settings.bind = "unix:${socket}";
   };
   systemd.sockets.harmonia.socketConfig = {
-    # Every listener harmonia gets (it takes all inherited fds): c4130's
-    # direct path and nginx's socket.
-    ListenStream = lib.mkForce [
-      config.services.harmonia.cache.settings.bind
-      socket
-    ];
-    # Bind even before bond0 has its address.
-    FreeBind = true;
-    # The unix socket: nginx only.
+    # nginx only.
     SocketUser = "root";
     SocketGroup = config.services.nginx.group;
     SocketMode = "0660";

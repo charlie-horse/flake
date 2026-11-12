@@ -1,11 +1,10 @@
-# Builds go to r440 over the direct 2x25G link (bond0, 10.25.0.0/30), and
-# r440's harmonia cache is the first substituter. Keeps compiles (nvcc,
-# nodejs) off this box's RAM, which vLLM + LMCache hold.
+# Builds go to r440 over the direct 2x25G link (bond0, 10.25.0.0/30).
+# Keeps compiles (nvcc, nodejs) off this box's RAM, which vLLM + LMCache
+# hold. Substitution from r440's cache goes through https://cache.neuros.is
+# (custom.nixCache below), not the link.
 { config, ... }:
 let
   r440 = "10.25.0.2";
-  # `nix key convert-secret-to-public` output on r440 (see the switch steps).
-  r440CacheKey = "r440-cache-1:8fh7/X6s7t2jRyhLZZRc6boWitD/RSJt2B9DxmF5Gj8=";
 in
 {
   # --- Direct link -----------------------------------------------------
@@ -70,9 +69,12 @@ in
     # down, build with `--option max-jobs 4` (and expect the RAM use).
     max-jobs = 0;
     builders-use-substitutes = true;
-    substituters = [ "http://${r440}:5000?priority=30" ];
-    trusted-public-keys = [ r440CacheKey ];
   };
+  # Substitutes from r440 through https://cache.neuros.is like every other
+  # host (modules/system/nix-cache.nix; netrc /var/lib/nix-cache/netrc,
+  # made by hand), no longer over the link. To go back to the direct path,
+  # revert this commit (it also restores harmonia's 10.25.0.2:5000).
+  custom.nixCache.enable = true;
   # Root's own ssh (e.g. `nix store ping --store ssh-ng://nixremote@10.25.0.2`)
   # needs r440's host key too; the daemon uses publicHostKey above.
   programs.ssh.knownHosts.r440-builder = {

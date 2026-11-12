@@ -23,8 +23,8 @@ Tailscale (MagicDNS names) and the LAN (10.0.0.0/16).
 
 - **Hosts (NixOS):** vLLM + LMCache on c4130 (`hosts/c4130/vllm/`, see its
   CLAUDE.md), GPU-window timers on c4130 (vLLM stopped 22:00–05:55 EST),
-  the Nix builder and binary cache on r440 (harmonia, plus nginx with basic
-  auth for everything but c4130's link; [Binary cache](#binary-cache)).
+  the Nix builder and binary cache on r440 (harmonia behind nginx with basic
+  auth, https://cache.neuros.is for every host; [Binary cache](#binary-cache)).
 - **Cluster (`k8s/README.md` has the full table):** flannel, CoreDNS, the
   NVIDIA device plugin, Flux; cert-manager (controller, cainjector, two
   webhook replicas; r440 and m2mini) with the workload CA, ClusterIssuer
@@ -210,17 +210,25 @@ half in `cluster/definition.nix`, `binaryCache.publicKey`), published as
 client -> https://cache.neuros.is -> Cloudflare -> cloudflared (any node, hostNetwork)
        -> its nginx sidecar -> http://10.0.0.239:5080 -> nginx on r440 (basic auth)
        -> harmonia (unix socket /run/harmonia-cache.sock)
-c4130  -> http://10.25.0.2:5000 (bond0) -> harmonia, no auth (hosts/c4130/builder.nix)
 ```
 
 | Client | netrc (`machine cache.neuros.is login <user> password <pw>`) |
 | --- | --- |
+| c4130 | `/var/lib/nix-cache/netrc` (root, 0600), by hand |
 | m2mini | `/var/lib/nix-cache/netrc` (root, 0600), by hand |
 | Famine | agenix `nix-cache-netrc` → `/run/agenix/nix-cache-netrc` |
 | GitHub Actions | secret `NIX_CACHE_NETRC` → `$RUNNER_TEMP` (docs/ci.md) |
 
-r440 itself does not use it (it is the cache). c4130 keeps its direct
-substituter over bond0 (priority 30, no auth, not this module).
+r440 itself does not use it (it is the cache). Builds still go to r440
+over bond0 (ssh, `nix.buildMachines` on c4130); only substitution moved.
+**Cost for c4130:** paths it substitutes from r440 (the CUDA/torch/vLLM
+closures, tens of GB) now go c4130 → Cloudflare → r440 at internet speed,
+twice over the home uplink, instead of over the 25G link. Paths built
+*for* c4130 on r440 are still copied back over ssh/bond0 (remote build),
+so this hits mostly closures r440 already holds but c4130 lacks (e.g.
+after a GC). To go back, revert the commit "c4130: substitute from
+cache.neuros.is" (it restores harmonia's `10.25.0.2:5000` and bond0 port
+5000 too).
 
 cache.nixos.org (40) stays on every host and comes first: r440 is asked
 only for what cache.nixos.org lacks (unfree CUDA builds, our own
@@ -240,7 +248,7 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
   on all three nodes, so harmonia would have to be reachable without auth
   from all of them, i.e. from every pod (pod traffic to the LAN is
   masqueraded to the node IP), and the htpasswd would also be a Kubernetes
-  Secret. On r440, harmonia listens only on the socket and bond0, and the secret is
+  Secret. On r440, harmonia listens only on the socket, and the secret is
   one file on the host that serves the store.
 - **Reachability.** nginx listens on `:5080` on every address; its only
   consumer is the tunnel. The firewall opens 5080 to the nodes' LAN IPs
@@ -278,14 +286,18 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
 1. Merge the PR. Flux rolls the cloudflared pods (the route has no DNS yet,
    so nothing reaches it). No host uses the cache until it is switched.
 2. **r440:** `git pull`, switch, `systemctl --failed`, the etcd check. The
-   switch restarts `harmonia.socket` and starts nginx, which answers 500
-   until step 3.
+   switch moves harmonia from `10.25.0.2:5000` to the unix socket and
+   starts nginx, which answers 500 until step 3. From here until c4130's
+   switch (step 8), c4130's old substituter is refused: its builds still
+   go to r440 over ssh and it still has cache.nixos.org, but every query
+   to the dead URL is retried first. Do steps 3–8 in one sitting and don't
+   deploy c4130 from an older checkout meanwhile.
 3. **htpasswd on r440** (one random password per client; typed nowhere,
    never on a command line):
 
    ```sh
    cd ~ && umask 077
-   users="ci famine m2mini"
+   users="ci famine c4130 m2mini"
    for u in $users; do openssl rand -hex 32 > "nix-cache-$u.pw"; done
    for u in $users; do printf '%s:' "$u"; openssl passwd -6 -stdin < "nix-cache-$u.pw"; done \
      | sudo install -m 0640 -o root -g nginx /dev/stdin /var/lib/nix-cache/htpasswd
@@ -312,19 +324,21 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
 5. **GitHub secret** `NIX_CACHE_NETRC` = the content of `nix-cache-ci.netrc`
    (Settings → Secrets and variables → Actions, or
    `gh secret set NIX_CACHE_NETRC --repo charlie-horse/flake < nix-cache-ci.netrc`).
-6. **Server netrc** (m2mini; no agenix on the servers). As charlie:
+6. **Server netrc** (c4130, m2mini; no agenix on the servers). On each, as
+   charlie:
 
    ```sh
    sudo install -d -m 0700 /var/lib/nix-cache
    sudo sh -c 'umask 077; cat > /var/lib/nix-cache/netrc'   # paste the host's line, Enter, ^D
    ```
 
-   The line is in `r440:~/nix-cache-m2mini.netrc`. A host whose file is
+   The line is in `r440:~/nix-cache-<host>.netrc`. A host whose file is
    missing still works (cache.nixos.org only, with a warning).
 7. **m2mini:** switch (with its `--override-input`), `systemctl --failed`,
    the etcd check, then
    `sudo nix store info --store https://cache.neuros.is --option netrc-file /var/lib/nix-cache/netrc`.
-8. **c4130:** nothing changes (it stays on bond0).
+8. **c4130:** GC first, outside 22:00–05:55 EST, switch, `systemctl
+   --failed`, the etcd check; then the same `nix store info` check.
 9. **Famine:** in `modules/age/secrets`, `agenix -e nix-cache-netrc.age`
    (the recipients are in `secrets.nix`), paste the line from
    `nix-cache-famine.netrc`, commit the `.age` file (a PR), switch Famine.
@@ -349,7 +363,7 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
 | Cloudflare account cert (DNS routes) | `c4130:~charlie/.cloudflared/cert.pem` | `cloudflared tunnel login` |
 | harmonia signing key `r440-cache-1` | `r440:/var/lib/secrets/harmonia.secret` (root, 0600) | `nix key generate-secret` on r440 (exists) |
 | Binary cache users (htpasswd) | `r440:/var/lib/nix-cache/htpasswd` (root:nginx, 0640) | by hand ([Binary cache](#binary-cache)) |
-| Binary cache netrc, m2mini | `m2mini:/var/lib/nix-cache/netrc` (root, 0600) | by hand (same) |
+| Binary cache netrc, servers | `/var/lib/nix-cache/netrc` on c4130 and m2mini (root, 0600) | by hand (same) |
 | Binary cache netrc, Famine | agenix `modules/age/secrets/nix-cache-netrc.age` → `/run/agenix/nix-cache-netrc` | `agenix -e` (same; encrypted, so in git) |
 | `NIX_CACHE_NETRC` | GitHub Actions secret | by hand (docs/ci.md) |
 

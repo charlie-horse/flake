@@ -1,7 +1,6 @@
 # r440: Dell R440 (x86_64, NixOS 26.05). etcd member, control plane,
-# Nix remote builder + harmonia cache for c4130 over bond0 (10.25.0.2/30);
-# the same cache with basic auth as https://cache.neuros.is
-# (./cache.nix).
+# Nix remote builder for c4130 over bond0 (10.25.0.2/30); harmonia binary
+# cache with basic auth as https://cache.neuros.is (./cache.nix).
 #
 # Ported from r440's standalone flake (/etc/nixos, via
 # ~/flint-nix/builder/etc-nixos). Its old k8s.nix (etcd, apiserver,
