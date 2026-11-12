@@ -7,11 +7,11 @@ metadata:
   namespace: flux-system
 spec:
   interval: 10m
-  path: ./k8s/rendered
+  path: ./
   prune: true
   retryInterval: 2m
   sourceRef:
-    kind: GitRepository
+    kind: OCIRepository
     name: flux-system
   timeout: 5m
   wait: false
@@ -31,3 +31,14 @@ spec:
   ref:
     branch: main
   url: https://github.com/charlie-horse/flake
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: flux-system
+  namespace: flux-system
+spec:
+  interval: 1m
+  ref:
+    tag: main
+  url: oci://ghcr.io/charlie-horse/manifests
