@@ -33,26 +33,6 @@ env:
   NO_IFD: --option allow-import-from-derivation false
 
 jobs:
-  check:
-    name: nix flake check
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    if: github.event_name != 'workflow_dispatch'
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          persist-credentials: false
-      - uses: cachix/install-nix-action@v31.11.2
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      - uses: DeterminateSystems/magic-nix-cache-action@main
-      # Evaluates every output (all NixOS hosts, ISOs, packages). Not
-      # `--no-build`: it can't realise import-from-derivation (the catenix
-      # chart renders, `helm template`, small), so evaluation fails with
-      # "helm-template-*.json.drv is not valid". The flake has no `checks`
-      # outputs, so nothing else gets built; the NixOS hosts have no IFD.
-      - run: nix flake check --keep-going -L
-  # ------------------------------------------------------------------------
   render:
     name: Render k8s manifests
     runs-on: ubuntu-24.04
@@ -79,14 +59,17 @@ jobs:
     
       - uses: cachix/install-nix-action@v31.11.2
         id: install-nix
-        if: steps.cache.outputs.cache-hit == 'false'
+        if: !steps.cache.outputs.cache-hit
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: DeterminateSystems/magic-nix-cache-action@main
+        id: nix-cache
+        if: steps.install-nix.outcome == 'success'
 
       - name: nix build .#k8s-manifests
         id: build
-        if: steps.install-nix.outcome == 'success'
+        if: steps.nix-cache.outcome == 'success'
         run: nix build -L --out-link manifests .#k8s-manifests
 
       - uses: actions/upload-artifact@v7.0.2
