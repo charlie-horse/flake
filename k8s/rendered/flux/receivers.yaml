@@ -1,0 +1,15 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: flux, kind: Receiver
+apiVersion: notification.toolkit.fluxcd.io/v1
+kind: Receiver
+metadata:
+  name: ghcr
+  namespace: flux-system
+spec:
+  resources:
+  - apiVersion: source.toolkit.fluxcd.io/v1
+    kind: OCIRepository
+    name: flux-system-oci
+  secretRef:
+    name: webhook-token
+  type: generic-hmac

@@ -1,0 +1,70 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: flux, kind: Service
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/instance: flux-system
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: flux
+    app.kubernetes.io/version: 2.9.5
+    control-plane: controller
+    helm.sh/chart: flux2-2.19.1
+  name: notification-controller
+  namespace: flux-system
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  selector:
+    app: notification-controller
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/instance: flux-system
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: flux
+    app.kubernetes.io/version: 2.9.5
+    control-plane: controller
+    helm.sh/chart: flux2-2.19.1
+  name: source-controller
+  namespace: flux-system
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  selector:
+    app: source-controller
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+  labels:
+    app.kubernetes.io/instance: flux-system
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: flux
+    app.kubernetes.io/version: 2.9.5
+    control-plane: controller
+    helm.sh/chart: flux2-2.19.1
+  name: webhook-receiver
+  namespace: flux-system
+spec:
+  clusterIP: 10.96.0.23
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 9292
+  selector:
+    app: notification-controller
+  type: ClusterIP

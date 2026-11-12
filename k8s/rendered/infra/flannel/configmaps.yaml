@@ -1,0 +1,38 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: infra/flannel, kind: ConfigMap
+apiVersion: v1
+data:
+  cni-conf.json: |
+    {
+      "name": "cbr0",
+      "cniVersion": "1.0.0",
+      "plugins": [
+        {
+          "type": "flannel",
+          "delegate": {
+            "hairpinMode": true,
+            "isDefaultGateway": true
+          }
+        },
+        {
+          "type": "portmap",
+          "capabilities": {
+            "portMappings": true
+          }
+        }
+      ]
+    }
+  net-conf.json: |
+    {
+      "Network": "10.244.0.0/16",
+      "Backend": {
+        "Type": "vxlan"
+      }
+    }
+kind: ConfigMap
+metadata:
+  labels:
+    app: flannel
+    tier: node
+  name: kube-flannel-cfg
+  namespace: kube-flannel

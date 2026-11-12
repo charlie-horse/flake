@@ -1,0 +1,55 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: apps/authentik, kind: CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: authentik-backup
+  namespace: authentik
+spec:
+  concurrencyPolicy: Forbid
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          containers:
+          - command:
+            - /bin/sh
+            - -ec
+            - |
+              f=/backup/authentik-$(date +%Y%m%dT%H%M%S).dump
+              pg_dump -h authentik-postgresql -U authentik -d authentik -Fc -f "$f.part"
+              mv "$f.part" "$f"
+              ls -1t /backup/authentik-*.dump | tail -n +15 | xargs -r rm --
+              ls -l /backup
+            env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  key: AUTHENTIK_POSTGRESQL__PASSWORD
+                  name: authentik-secrets
+            image: docker.io/library/postgres:17.11-trixie
+            name: pg-dump
+            resources:
+              limits:
+                memory: 512Mi
+              requests:
+                cpu: 10m
+                memory: 64Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+            volumeMounts:
+            - mountPath: /backup
+              name: backup
+          restartPolicy: OnFailure
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          volumes:
+          - name: backup
+            persistentVolumeClaim:
+              claimName: authentik-backup
+  schedule: 17 3 * * *
+  successfulJobsHistoryLimit: 3
+  timeZone: America/New_York

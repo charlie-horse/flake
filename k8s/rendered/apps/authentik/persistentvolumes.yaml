@@ -1,0 +1,55 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: apps/authentik, kind: PersistentVolume
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: authentik-backup
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 20Gi
+  claimRef:
+    name: authentik-backup
+    namespace: authentik
+  hostPath:
+    path: /var/lib/authentik/backup
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - r440
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: authentik-postgresql
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 10Gi
+  claimRef:
+    name: authentik-postgresql
+    namespace: authentik
+  hostPath:
+    path: /var/lib/authentik/postgres
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - m2mini
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local
+  volumeMode: Filesystem

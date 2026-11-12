@@ -1,0 +1,80 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: apps/cloudflared, kind: ConfigMap
+apiVersion: v1
+data:
+  config.yaml: '{"credentials-file":"/etc/cloudflared/credentials/credentials.json","ingress":[{"hostname":"auth.neuros.is","service":"http://127.0.0.1:9190"},{"hostname":"chat.neuros.is","service":"http://127.0.0.1:9190"},{"hostname":"flux.neuros.is","service":"http://127.0.0.1:9190"},{"hostname":"k8s.neuros.is","service":"http://127.0.0.1:9190"},{"service":"http_status:404"}],"metrics":"127.0.0.1:20250","no-autoupdate":true,"tunnel":"59a275ca-be31-4f8d-99ce-c536eaf490f8"}'
+  nginx.conf: |
+    # nginx sidecar of the cloudflared pods (apps/cloudflared): every public
+    # hostname arrives here from cloudflared and is proxied to its ClusterIP.
+    # The upper-case @…@ markers are filled in by files.nix.
+    worker_processes 2;
+    pid /tmp/nginx.pid;
+    error_log /dev/stderr warn;
+    events { worker_connections 1024; }
+    http {
+      access_log off;
+      client_body_temp_path /tmp/client_temp;
+      proxy_temp_path /tmp/proxy_temp;
+      fastcgi_temp_path /tmp/fastcgi_temp;
+      uwsgi_temp_path /tmp/uwsgi_temp;
+      scgi_temp_path /tmp/scgi_temp;
+
+      # The visitor's IP as Cloudflare's edge saw it (a client cannot set it);
+      # loopback if absent, i.e. not through Cloudflare.
+      map $http_cf_connecting_ip $client_ip {
+        ""      $remote_addr;
+        default $http_cf_connecting_ip;
+      }
+      map $http_x_forwarded_proto $forwarded_proto {
+        ""      https;
+        default $http_x_forwarded_proto;
+      }
+      map $http_upgrade $connection_upgrade {
+        default upgrade;
+        ""      close;
+      }
+
+      # Public hostname -> upstream ClusterIP:port.
+      map $host $upstream {
+        hostnames;
+        default "";
+        auth.neuros.is 10.96.0.20:80;
+        chat.neuros.is 10.96.0.22:80;
+        flux.neuros.is 10.96.0.23:80;
+        k8s.neuros.is 10.96.0.21:80;
+      }
+
+      # The Flux webhook host serves its /hook/ paths only.
+      map "$host$uri" $path_allowed {
+        default 1;
+        ~^flux\.neuros\.is/hook/ 1;
+        ~^flux\.neuros\.is/ "";
+      }
+
+      server {
+        listen 127.0.0.1:9190;
+        location / {
+          if ($upstream = "") { return 404; }
+          if ($path_allowed = "") { return 404; }
+          proxy_pass http://$upstream;
+          proxy_http_version 1.1;
+          proxy_set_header Upgrade $http_upgrade;
+          proxy_set_header Connection $connection_upgrade;
+          proxy_set_header Host $host;
+          proxy_set_header X-Forwarded-For $client_ip;
+          proxy_set_header X-Real-IP $client_ip;
+          proxy_set_header X-Forwarded-Proto $forwarded_proto;
+          proxy_set_header X-Forwarded-Host $host;
+          # Long-lived: chat completions stream, websockets.
+          proxy_read_timeout 3600s;
+          proxy_send_timeout 3600s;
+          proxy_buffering off;
+          proxy_request_buffering off;
+          client_max_body_size 256m;
+        }
+      }
+    }
+kind: ConfigMap
+metadata:
+  name: cloudflared
+  namespace: cloudflared

@@ -1,0 +1,287 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: apps/authentik, kind: Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: authentik
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: authentik
+    app.kubernetes.io/part-of: authentik
+    app.kubernetes.io/version: 2026.8.5
+    helm.sh/chart: authentik-2026.8.5
+  name: authentik-server
+  namespace: authentik
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: server
+      app.kubernetes.io/instance: authentik
+      app.kubernetes.io/name: authentik
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        checksum/secret: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+      labels:
+        app.kubernetes.io/component: server
+        app.kubernetes.io/instance: authentik
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: authentik
+        app.kubernetes.io/part-of: authentik
+        app.kubernetes.io/version: 2026.8.5
+        helm.sh/chart: authentik-2026.8.5
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: server
+                  app.kubernetes.io/instance: authentik
+                  app.kubernetes.io/name: authentik
+              topologyKey: topology.kubernetes.io/zone
+            weight: 100
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: server
+                app.kubernetes.io/instance: authentik
+                app.kubernetes.io/name: authentik
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - server
+        env:
+        - name: AUTHENTIK_ERROR_REPORTING__ENABLED
+          value: "false"
+        - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
+          value: 10.244.0.0/31,10.244.1.0/31,10.244.2.0/31,127.0.0.1/32,::1/128,10.0.0.95/32,10.0.0.147/32,10.0.0.239/32
+        - name: AUTHENTIK_LOG_LEVEL
+          value: info
+        - name: AUTHENTIK_POSTGRESQL__HOST
+          value: authentik-postgresql
+        - name: AUTHENTIK_POSTGRESQL__NAME
+          value: authentik
+        - name: AUTHENTIK_POSTGRESQL__USER
+          value: authentik
+        envFrom:
+        - secretRef:
+            name: authentik-secrets
+        image: ghcr.io/goauthentik/server:2026.8.5
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /-/health/live/
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        name: server
+        ports:
+        - containerPort: 9000
+          name: http
+          protocol: TCP
+        - containerPort: 9443
+          name: https
+          protocol: TCP
+        - containerPort: 9300
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /-/health/ready/
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 100m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        startupProbe:
+          failureThreshold: 60
+          httpGet:
+            path: /-/health/live/
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+      enableServiceLinks: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Equal
+        value: vllm
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/component: worker
+    app.kubernetes.io/instance: authentik
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: authentik
+    app.kubernetes.io/part-of: authentik
+    app.kubernetes.io/version: 2026.8.5
+    helm.sh/chart: authentik-2026.8.5
+  name: authentik-worker
+  namespace: authentik
+spec:
+  replicas: 3
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: worker
+      app.kubernetes.io/instance: authentik
+      app.kubernetes.io/name: authentik
+  strategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        checksum/secret: 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b
+      labels:
+        app.kubernetes.io/component: worker
+        app.kubernetes.io/instance: authentik
+        app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/name: authentik
+        app.kubernetes.io/part-of: authentik
+        app.kubernetes.io/version: 2026.8.5
+        helm.sh/chart: authentik-2026.8.5
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: worker
+                  app.kubernetes.io/instance: authentik
+                  app.kubernetes.io/name: authentik
+              topologyKey: topology.kubernetes.io/zone
+            weight: 100
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: worker
+                app.kubernetes.io/instance: authentik
+                app.kubernetes.io/name: authentik
+            topologyKey: kubernetes.io/hostname
+      containers:
+      - args:
+        - worker
+        env:
+        - name: AUTHENTIK_ERROR_REPORTING__ENABLED
+          value: "false"
+        - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
+          value: 10.244.0.0/31,10.244.1.0/31,10.244.2.0/31,127.0.0.1/32,::1/128,10.0.0.95/32,10.0.0.147/32,10.0.0.239/32
+        - name: AUTHENTIK_LOG_LEVEL
+          value: info
+        - name: AUTHENTIK_POSTGRESQL__HOST
+          value: authentik-postgresql
+        - name: AUTHENTIK_POSTGRESQL__NAME
+          value: authentik
+        - name: AUTHENTIK_POSTGRESQL__USER
+          value: authentik
+        envFrom:
+        - secretRef:
+            name: authentik-secrets
+        image: ghcr.io/goauthentik/server:2026.8.5
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          exec:
+            command:
+            - ak
+            - healthcheck
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        name: worker
+        ports:
+        - containerPort: 9000
+          name: http
+          protocol: TCP
+        - containerPort: 9300
+          name: metrics
+          protocol: TCP
+        readinessProbe:
+          exec:
+            command:
+            - ak
+            - healthcheck
+          failureThreshold: 3
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        resources:
+          limits:
+            memory: 1536Mi
+          requests:
+            cpu: 100m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        startupProbe:
+          exec:
+            command:
+            - ak
+            - healthcheck
+          failureThreshold: 60
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        volumeMounts:
+        - mountPath: /blueprints/mounted/cm-authentik-blueprints
+          name: blueprints-cm-authentik-blueprints
+      enableServiceLinks: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: authentik
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: nvidia.com/gpu
+        operator: Equal
+        value: vllm
+      volumes:
+      - configMap:
+          name: authentik-blueprints
+        name: blueprints-cm-authentik-blueprints

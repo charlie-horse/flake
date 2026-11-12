@@ -1,0 +1,8 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: infra/flannel, kind: Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    pod-security.kubernetes.io/enforce: privileged
+  name: kube-flannel

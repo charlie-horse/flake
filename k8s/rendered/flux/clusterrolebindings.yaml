@@ -1,0 +1,60 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: flux, kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/instance: flux-system
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: flux
+    app.kubernetes.io/version: 2.9.5
+    helm.sh/chart: flux2-2.19.1
+  name: cluster-reconciler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: kustomize-controller
+  namespace: flux-system
+- kind: ServiceAccount
+  name: helm-controller
+  namespace: flux-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/instance: flux-system
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: flux
+    app.kubernetes.io/version: 2.9.5
+    helm.sh/chart: flux2-2.19.1
+  name: crd-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: crd-controller
+subjects:
+- kind: ServiceAccount
+  name: kustomize-controller
+  namespace: flux-system
+- kind: ServiceAccount
+  name: helm-controller
+  namespace: flux-system
+- kind: ServiceAccount
+  name: source-controller
+  namespace: flux-system
+- kind: ServiceAccount
+  name: notification-controller
+  namespace: flux-system
+- kind: ServiceAccount
+  name: image-reflector-controller
+  namespace: flux-system
+- kind: ServiceAccount
+  name: image-automation-controller
+  namespace: flux-system
+- kind: ServiceAccount
+  name: source-watcher-controller
+  namespace: flux-system

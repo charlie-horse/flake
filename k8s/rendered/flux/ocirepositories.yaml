@@ -1,0 +1,17 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: flux, kind: OCIRepository
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: flux-system-oci
+  namespace: flux-system
+spec:
+  interval: 24h
+  ref:
+    tag: main
+  url: oci://ghcr.io/charlie-horse/flake/manifests
+  verify:
+    matchOIDCIdentity:
+    - issuer: ^https://token\.actions\.githubusercontent\.com$
+      subject: ^https://github\.com/charlie-horse/flake/\.github/workflows/render\.yml@refs/heads/main$
+    provider: cosign

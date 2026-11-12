@@ -1,0 +1,28 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: apps/open-webui, kind: PersistentVolume
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: open-webui
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity:
+    storage: 10Gi
+  claimRef:
+    name: open-webui
+    namespace: open-webui
+  hostPath:
+    path: /var/lib/open-webui/data
+    type: DirectoryOrCreate
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - r440
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local
+  volumeMode: Filesystem

@@ -1,0 +1,52 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: apps/authentik, kind: Service
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/instance: authentik
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/part-of: authentik
+  name: authentik-postgresql
+  namespace: authentik
+spec:
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: postgresql
+  selector:
+    app.kubernetes.io/instance: authentik
+    app.kubernetes.io/name: postgresql
+    app.kubernetes.io/part-of: authentik
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+  labels:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: authentik
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: authentik
+    app.kubernetes.io/part-of: authentik
+    app.kubernetes.io/version: 2026.8.5
+    helm.sh/chart: authentik-2026.8.5
+  name: authentik-server
+  namespace: authentik
+spec:
+  clusterIP: 10.96.0.20
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 9000
+  - name: https
+    port: 443
+    protocol: TCP
+    targetPort: 9443
+  selector:
+    app.kubernetes.io/component: server
+    app.kubernetes.io/instance: authentik
+    app.kubernetes.io/name: authentik
+  type: ClusterIP

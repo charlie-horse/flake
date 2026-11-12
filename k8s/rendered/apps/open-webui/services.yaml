@@ -1,0 +1,17 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: apps/open-webui, kind: Service
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: open-webui
+  name: open-webui
+  namespace: open-webui
+spec:
+  clusterIP: 10.96.0.22
+  ports:
+  - name: http
+    port: 80
+    targetPort: http
+  selector:
+    app.kubernetes.io/name: open-webui

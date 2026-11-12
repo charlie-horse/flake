@@ -1,0 +1,26 @@
+# Generated from k8s/components (catenix); do not edit, change the Nix
+# source. Component: apps/headlamp, kind: Service
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
+  labels:
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: headlamp
+    app.kubernetes.io/version: 0.46.0
+    helm.sh/chart: headlamp-0.46.0
+  name: headlamp
+  namespace: headlamp
+spec:
+  clusterIP: 10.96.0.21
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: http
+  selector:
+    app.kubernetes.io/instance: headlamp
+    app.kubernetes.io/name: headlamp
+  type: ClusterIP
