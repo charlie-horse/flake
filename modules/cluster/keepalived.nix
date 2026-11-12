@@ -8,9 +8,10 @@
 # holder serves the VIP itself, and the /readyz check now decides who holds
 # it (a not-ready apiserver drops its node to FAULT and the VIP moves).
 #
-# Nodes without a local apiserver (m2mini) run HAProxy on :6443 instead,
-# forwarding to the controlPlane nodes' LAN IPs with a /readyz health check;
-# the same local /readyz check then tests "some apiserver is ready via me".
+# A node without a local apiserver (none today: every node is a
+# controlPlane) would run HAProxy on :6443 instead, forwarding to the
+# controlPlane nodes' LAN IPs with a /readyz health check; the same local
+# /readyz check then tests "some apiserver is ready via me".
 #
 # /readyz is readable anonymously (system:public-info-viewer), so the check
 # needs no client cert or key.
@@ -82,7 +83,7 @@ in
     };
     users.groups.keepalived_script = { };
 
-    # m2mini & co: TCP proxy to the ready apiservers.
+    # Nodes without an apiserver: TCP proxy to the ready apiservers.
     services.haproxy = mkIf (!isControlPlane) {
       enable = true;
       config = ''
