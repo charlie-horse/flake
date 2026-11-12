@@ -43,6 +43,7 @@
   catenix,
   charts,
   cluster,
+  k8sLib,
   kubeVersion,
   ...
 }:
@@ -63,51 +64,6 @@ let
       "app.kubernetes.io/part-of" = "authentik";
     };
   };
-
-  # hostPath PV pinned to one node and pre-bound to one claim.
-  localVolume =
-    {
-      name,
-      node,
-      path,
-      size,
-    }:
-    {
-      resources.core.v1.PersistentVolume.${name}.spec = {
-        capacity.storage = size;
-        accessModes = [ "ReadWriteOnce" ];
-        persistentVolumeReclaimPolicy = "Retain";
-        storageClassName = "local";
-        volumeMode = "Filesystem";
-        hostPath = {
-          inherit path;
-          type = "DirectoryOrCreate";
-        };
-        claimRef = {
-          inherit namespace name;
-        };
-        nodeAffinity.required.nodeSelectorTerms = [
-          {
-            matchExpressions = [
-              {
-                key = "kubernetes.io/hostname";
-                operator = "In";
-                values = [ node ];
-              }
-            ];
-          }
-        ];
-      };
-      resources.core.v1.PersistentVolumeClaim.${name} = {
-        metadata = { inherit namespace; };
-        spec = {
-          accessModes = [ "ReadWriteOnce" ];
-          storageClassName = "local";
-          volumeName = name;
-          resources.requests.storage = size;
-        };
-      };
-    };
 
   dbPassword = {
     secretKeyRef = {
@@ -495,15 +451,7 @@ let
       };
     };
     # Every node's taints (c4130: nvidia.com/gpu=vllm), so one lands on each.
-    tolerations = lib.unique (
-      lib.concatMap (
-        n:
-        lib.mapAttrsToList (_: t: {
-          inherit (t) key value effect;
-          operator = "Equal";
-        }) (n.taints or { })
-      ) (lib.attrValues cluster.nodes)
-    );
+    tolerations = k8sLib.nodeTolerations;
     securityContext = {
       runAsNonRoot = true;
       seccompProfile.type = "RuntimeDefault";
@@ -530,15 +478,10 @@ in
         name = "authentik";
         inherit namespace;
       };
-      patch =
-        manifest:
-        if manifest.kind == "Service" && manifest.metadata.name == "authentik-server" then
-          lib.recursiveUpdate manifest {
-            metadata.annotations."kustomize.toolkit.fluxcd.io/force" = "enabled";
-            spec.clusterIP = cluster.authentik.serviceIP;
-          }
-        else
-          manifest;
+      patch = k8sLib.fixedServiceIP {
+        service = "authentik-server";
+        ip = cluster.authentik.serviceIP;
+      };
       values = {
         global.env = lib.mapAttrsToList (name: value: { inherit name value; }) {
           AUTHENTIK_POSTGRESQL__HOST = db.name;
@@ -576,13 +519,15 @@ in
         worker = common;
       };
     })
-    (localVolume {
+    (k8sLib.localVolume {
+      inherit namespace;
       name = db.name;
       node = "m2mini";
       path = "/var/lib/authentik/postgres";
       size = "10Gi";
     })
-    (localVolume {
+    (k8sLib.localVolume {
+      inherit namespace;
       name = backupName;
       node = "r440";
       path = "/var/lib/authentik/backup";

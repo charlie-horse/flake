@@ -33,7 +33,7 @@
 # once by hand (k8s/README.md, "Cloudflare tunnel"). DNS: each hostname is a
 # proxied CNAME to <tunnel id>.cfargotunnel.com:
 #   cloudflared tunnel route dns --overwrite-dns <tunnel id> <hostname>
-{ lib, cluster, ... }:
+{ lib, cluster, k8sLib, ... }:
 let
   namespace = "cloudflared";
   name = "cloudflared";
@@ -130,17 +130,7 @@ let
 
   # Tolerate every taint a node carries (c4130: nvidia.com/gpu=vllm), so
   # there is a connector on every node.
-  tolerations = lib.unique (
-    lib.concatMap (
-      n:
-      lib.mapAttrsToList (_: t: {
-        key = t.key;
-        operator = "Equal";
-        value = t.value;
-        effect = t.effect;
-      }) (n.taints or { })
-    ) (lib.attrValues cluster.nodes)
-  );
+  tolerations = k8sLib.nodeTolerations;
 
   containerSecurity = {
     allowPrivilegeEscalation = false;
