@@ -133,6 +133,8 @@ jobs:
       && ((github.ref == 'refs/heads/main' && github.event_name == 'push')
       || github.event_name == 'workflow_dispatch')
     needs: [render]
+    permissions:
+      packages: write
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
