@@ -38,8 +38,9 @@
 # desktopU2f are exclusive.
 #
 # hardwareFactor: prerequisite: a SECOND FIDO2 key registered (u2f-keys
-# must hold two credentials); with one key, losing it means no sudo and no
-# console login on every host that has this on.
+# must hold two credentials and rsshKeys two sk- keys; both asserted); with
+# one key, losing it means no sudo and no console login on every host that
+# has this on. login's pam_unix loses `nullok` while it is on.
 #
 #   sudo, polkit-1:
 #     auth sufficient /…/libpam_rssh.so …  # hw-rssh: forwarded ssh:admin key
@@ -406,6 +407,9 @@ in
         (genAttrs hw.loginServices (svc: {
           rules.auth = {
             hw-u2f = u2fRule "required" (config.security.pam.services.${svc}.rules.auth.unix.order - 1);
+            # admin has a password and root is locked; never accept an
+            # empty one at the console.
+            unix.settings.nullok = mkForce false;
           }
           // forceOff builtinBypassRules;
         }))
@@ -417,10 +421,6 @@ in
         # custom.auth.hardwareFactor: pam_rssh needs the forwarded agent's socket.
         Defaults env_keep+=SSH_AUTH_SOCK
       '';
-
-      warnings =
-        optional (length hw.rsshKeys < 2)
-          "custom.auth.hardwareFactor: only ${toString (length hw.rsshKeys)} sk- key for pam_rssh; add the second FIDO2 key's ssh resident key to admin's authorized keys (modules/system/admin.nix) so sudo over SSH survives losing one key.";
 
       assertions = [
         {
@@ -438,8 +438,17 @@ in
               pamu2fcfg -n -o ${hwOrigin} -i ${hwOrigin}'';
         }
         {
-          assertion = hw.rsshKeys != [ ];
-          message = "custom.auth.hardwareFactor: rsshKeys is empty (by default admin's sk- keys in users.users.admin.openssh.authorizedKeys.keys, modules/system/admin.nix).";
+          # Second-key prerequisite, rssh side: sudo over SSH must survive
+          # losing one key. Only sk- keys count (a plain key needs no touch).
+          assertion = length (filter (hasPrefix "sk-") hw.rsshKeys) >= 2;
+          message = ''
+            custom.auth.hardwareFactor: rsshKeys holds ${toString (length (filter (hasPrefix "sk-") hw.rsshKeys))} sk- key(s); at least TWO are
+            required (one per FIDO2 key). By default rsshKeys is admin's sk-
+            keys in users.users.admin.openssh.authorizedKeys.keys
+            (modules/system/admin.nix): make an `ssh:admin` resident key on
+            the second key and add its public key there (docs/auth.md,
+            "Registering the keys"):
+              ssh-keygen -t ed25519-sk -O resident -O application=ssh:admin'';
         }
         {
           # The u2f mapping and the agent keys are admin's; another wheel

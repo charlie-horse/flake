@@ -78,7 +78,7 @@ auth required /nix/store/…-linux-pam-1.7.2/lib/security/pam_deny.so # deny (or
 
 ```
 auth required /nix/store/…-pam_u2f-1.4.0/lib/security/pam_u2f.so appid=pam://neurosis authfile=/nix/store/…-auth-u2f-keys cue origin=pam://neurosis userpresence=1 # hw-u2f (order 11699)
-auth sufficient /nix/store/…-linux-pam-1.7.2/lib/security/pam_unix.so likeauth nullok try_first_pass # unix (order 11700)
+auth sufficient /nix/store/…-linux-pam-1.7.2/lib/security/pam_unix.so likeauth try_first_pass # unix (order 11700)
 auth required /nix/store/…-linux-pam-1.7.2/lib/security/pam_deny.so # deny (order 12500)
 ```
 
@@ -96,6 +96,13 @@ asked for and never helps):
 | ok | (not run) | rssh `sufficient` ends the stack | **allow** |
 | fails | ok | rssh ignored; u2f `sufficient` | **allow** |
 | fails | fails | both ignored; pam_deny | deny |
+
+With the factor on, login's pam_unix also loses NixOS's default `nullok`
+(an empty password is never accepted at the console); off, it is unchanged.
+
+**polkit-1** stays in `sudoServices` wherever polkit runs (m2mini). Over
+SSH, polkit's agent helper usually does not see `SSH_AUTH_SOCK`, so
+`pkexec`/`run0` there needs a key plugged into the host; use sudo over SSH.
 
 **login** (local console):
 
@@ -134,8 +141,8 @@ Evaluation fails if any of these guards is broken:
 - **u2f mapping**: it must be one `admin:` line with at least **two**
   credentials (the second-key prerequisite). The repo's placeholder has
   none.
-- **rssh keys**: rsshKeys must not be empty. Fewer than two gives a
-  warning.
+- **rssh keys**: rsshKeys must hold at least **two** `sk-` keys, one per
+  FIDO2 key (the second-key prerequisite, rssh side).
 - **Stack shape**: sudo/polkit must end in `hw-rssh` (sufficient),
   `hw-u2f` (sufficient), `deny`. login must end in `hw-u2f` (required),
   `unix` (sufficient), `deny`. Every rule before them must be `required`,
@@ -169,7 +176,8 @@ well.
 
 **Prerequisite: two FIDO2 keys.** The YubiKey 5 (serial 19830800) plus a
 second one, kept apart. Evaluation refuses `hardwareFactor.enable` until
-the mapping holds two credentials.
+the u2f mapping holds two credentials AND rsshKeys holds two `sk-` keys
+(both steps below, for both keys).
 
 1. **u2f**: `origin` and `appid` are fixed (`pam://neurosis`), so one
    registration works on every host. On any machine with the key plugged
@@ -185,7 +193,7 @@ the mapping holds two credentials.
    the second (`:<KH2>,<PK2>,es256,+presence`). If pamu2fcfg finds no
    device as a normal user, run it with sudo.
 
-2. **rssh**: make an `ssh:admin` resident key on the second key
+2. **rssh** (required): make an `ssh:admin` resident key on the second key
    (`ssh-keygen -t ed25519-sk -O resident -O application=ssh:admin`). Add
    its public key to `adminAuthorizedKeys` in `modules/system/admin.nix`.
    rsshKeys follows that list, and the same key then also logs in over SSH.
