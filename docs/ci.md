@@ -84,7 +84,8 @@ The guard scans only the diff: the PR's merge-base to head, or on a push
   sops` (the same set the render's `checkSecret` allows; k8s/README.md,
   "Secrets"), the first four in the clear (Flux reads them), `data` and
   `stringData` encrypted. Any other file under `secrets/` (a subdirectory,
-  a non-`.yaml` file) fails.
+  a non-`.yaml` file) fails, as does any file under `k8s/secrets/` without
+  the `.sops.yaml` suffix (the k8s render rejects those too).
   Recipients: `.sops.yaml`.
 
 A second step checks **every** sops file in the tree (not only the diff,

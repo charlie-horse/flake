@@ -118,18 +118,26 @@ jobs:
           #    type data stringData sops (the same set as checkSecret in
           #    k8s/render.nix; k8s/README.md, "Secrets"), the first four in
           #    the clear (Flux needs them), data/stringData encrypted.
-          #    Anything else under secrets/ is refused. Only the file and
-          #    the key path are printed, never a value.
+          #    Anything else under secrets/ or k8s/secrets/ (no .sops.yaml
+          #    suffix) is refused; k8s/render.nix rejects the same files at
+          #    render time. Only the file and the key path are printed,
+          #    never a value.
           while IFS= read -r -d '' f; do
             case "$f" in
               secrets/*/*) mode=bad ;;
               secrets/*.yaml) mode=strict ;;
               secrets/*) mode=bad ;;
               k8s/*.sops.yaml) mode=k8s ;;
+              k8s/secrets/*) mode=badk8s ;;
               *) continue ;;
             esac
             if [ "$mode" = bad ]; then
               echo "::error file=$f::only sops-encrypted secrets/<name>.yaml files belong in secrets/"
+              status=1
+              continue
+            fi
+            if [ "$mode" = badk8s ]; then
+              echo "::error file=$f::only sops-encrypted k8s/secrets/<namespace>/<name>.sops.yaml files belong in k8s/secrets/"
               status=1
               continue
             fi
