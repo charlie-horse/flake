@@ -218,7 +218,7 @@ openssl x509 -in "$OUT/root.pem" -noout -text | sed -n '/Issuer/,/Subject:/p;/X5
 cat <<EOF
 
 Done. Nothing in $REPO was changed. Next, on a branch of the repo:
-  cluster/pki/: root.pem attest-9c.pem attest-f9.pem fingerprints.txt   (public)
+  cluster/pki/: root.pem (commit as root-ca.pem), attest-9c.pem, attest-f9.pem, fingerprints.txt   (public)
   $SECRET_PATH  <- $OUT/cluster-ca.sops.yaml
   r440: copy k8s.pem etcd.pem front-proxy.pem, run cluster-pki --ca-import.
 Unplug the YubiKey.
