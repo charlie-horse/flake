@@ -15,6 +15,7 @@
     # Host-specific admin bits (m2mini: dialout, fish) are in the host.
     ../system/sops.nix
     ../system/admin.nix
+    ../system/sudo-2fa.nix
     # charlie next to admin, mutable users, root untouched until
     # custom.server.legacyCharlie.enable is turned off; then admin is the
     # only login and root is locked (docs/cluster.md, "Removing charlie
