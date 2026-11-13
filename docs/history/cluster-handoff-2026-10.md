@@ -586,17 +586,21 @@ Done in this commit: `cluster-pki-deploy` no longer prints a non-existent
       insensitively and crypt prefixes `$y$ $6$ $2b$ $7$`, flag `kind: Secret`
       with data/stringData and `token:` lines, don't skip comments for key/
       crypt patterns, don't exempt `*.nix`/`*.md` from the filename check.
-- [ ] **cluster-pki default `--out`** is `./pki-out`: default to
+- [x] **cluster-pki default `--out`** is `./pki-out`: default to
       `${XDG_DATA_HOME:-~/.local/share}/cluster-pki` and refuse an `--out`
       under a dir with `flake.nix`/`.git` (this runbook already passes
-      `--out`). Update `docs/pki.md:11`.
-- [ ] **.gitignore**: add `kubeconfig*`, `*.kubeconfig.yaml`, `admin.conf`,
+      `--out`). Update `docs/pki.md:11`. (Done 2026-11-13: default
+      `.../cluster-pki/<cluster>`.)
+- [x] **.gitignore**: add `kubeconfig*`, `*.kubeconfig.yaml`, `admin.conf`,
       `*.p12`, `*.pfx`, `*.passwd`, `cluster-pki-staging/`, `secrets/`.
+      (Done 2026-11-13, except `secrets/`: it now holds the sops files,
+      which are committed.)
 - [ ] **Unused leaves**: drop `flannel-<n>` and `addon-manager-<n>` from
       `SPECS`, and keep `admin-<n>` (a `system:masters` key) off the nodes
       (no `node_files` entry). Fix `docs/pki.md` table lines 107–111.
-- [ ] **CA subject** `<name> <ca> CA <date>` is not unique within a day: add
-      time/serial, or print SKI + fingerprint in `status`.
+- [x] **CA subject** `<name> <ca> CA <date>` is not unique within a day: add
+      time/serial, or print SKI + fingerprint in `status`. (Done 2026-11-13:
+      the CN carries the UTC time, `<name> <ca> CA 2026-11-13T135157Z`.)
 - [ ] **Leaf expiry** (1 year, no renewal automation): calendar a re-issue
       30 days before expiry, or add an expiry check to CI/monitoring.
 - [ ] **keepalived**: document the LVS removal (done above), optionally

@@ -19,6 +19,13 @@ pki-out/
 *.key
 *.kubeconfig
 kubeconfig
+kubeconfig*
+*.kubeconfig.yaml
+admin.conf
+*.p12
+*.pfx
+*.passwd
+cluster-pki-staging/
 **/tls/
 
 # k8s render: built by CI (render.yml) and pushed to GHCR, never committed

@@ -26,7 +26,7 @@
       # Pestilence is archived, so it has none (parts/hosts.nix).
       // (config.flake.lib.system.${system}.mkHostIso "Famine").${system};
 
-      # nix run .#cluster-pki             -> ./pki-out (CAs + leaves)
+      # nix run .#cluster-pki             -> ~/.local/share/cluster-pki/<cluster>
       # nix run .#cluster-pki-deploy -- <node>  (stage + print sudo cmds)
       apps = {
         cluster-pki = {
