@@ -55,11 +55,12 @@ needs the PIV PIN and a touch:
    branch checkout:
    ```sh
    for f in secrets/common.yaml secrets/famine.yaml; do
-     sudo SOPS_AGE_SSH_PRIVATE_KEY_FILE=/etc/ssh/ssh_host_ed25519_key \
-       nix run nixpkgs#sops -- -d "$f" >/dev/null && echo "$f OK"
+     sudo SOPS_AGE_KEY_CMD="$(nix build --no-link --print-out-paths nixpkgs#ssh-to-age)/bin/ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key" \
+       "$(nix build --no-link --print-out-paths nixpkgs#sops)/bin/sops" -d "$f" >/dev/null && echo "$f OK"
    done
    ```
-   Both must print OK.
+   Both must print OK. (`SOPS_AGE_SSH_PRIVATE_KEY_FILE` didn't work with
+   sops 3.13 here; `SOPS_AGE_KEY_CMD` + `ssh-to-age` does.)
 5. **Deploy.** Open a PR, wait for CI, and merge. Then on Famine:
    `sudo nixos-rebuild switch --flake .#Famine`. Log in as charlie with the
    password from `charlie-password`; use `admin` for sudo.
