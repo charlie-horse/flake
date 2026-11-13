@@ -124,13 +124,14 @@ let
     {
       file,
       owner,
-      mode,
       restart,
       sopsFile ? pkiSopsFile,
     }:
     lib.nameValuePair "pki/${file}" {
-      inherit sopsFile owner mode;
+      inherit sopsFile owner;
       group = owner;
+      # Keys 0600, certs and sa.pub 0644 (cluster-pki node_files).
+      mode = if lib.hasSuffix "-key.pem" file || file == "sa.key" then "0600" else "0644";
       key = file;
       path = "${cfg.secretsDir}/${file}";
       restartUnits = units restart;
@@ -145,13 +146,11 @@ let
       (secret {
         file = "${c}-${name}.pem";
         owner = "root";
-        mode = "0644";
         inherit restart;
       })
       (secret {
         file = "${c}-${name}-key.pem";
         owner = keyOwner c;
-        mode = "0600";
         inherit restart;
       })
     ]
@@ -162,14 +161,12 @@ let
     (secret {
       file = "sa.pub";
       owner = "root";
-      mode = "0644";
       restart = [ "kube-apiserver" ];
       sopsFile = config.sops.defaultSopsFile;
     })
     (secret {
       file = "sa.key";
       owner = "kubernetes";
-      mode = "0600";
       restart = [
         "kube-apiserver"
         "kube-controller-manager"
@@ -236,13 +233,6 @@ in
           the legacy-etcd-* leaves of "trust" are not in secrets/pki/.
         '';
       }
-      {
-        assertion = cfg.secretsDir == "/run/secrets/pki";
-        message = ''
-          clusterNode.certSource = "sops" reads the certs from
-          /run/secrets/pki (got secretsDir = ${cfg.secretsDir}).
-        '';
-      }
     ]
     ++ map (u: {
       assertion = config.users.users ? ${u};
@@ -251,6 +241,8 @@ in
         ${name} but does not exist here (etcd/kubernetes create it).
       '';
     }) owners;
+
+    clusterNode.secretsDir = "/run/secrets/pki";
 
     sops.secrets = lib.listToAttrs (leafSecrets ++ saSecrets);
     sops.templates = lib.listToAttrs bundles;
