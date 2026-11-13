@@ -15,6 +15,26 @@
 # (creation rule for secrets/pki/<node>.yaml). sops cannot edit a file
 # without the data key, so a changed node's file is regenerated whole, and an
 # unchanged node's file is left alone (re-encrypting would churn it).
+#
+# Checks, before anything is encrypted or pushed (there is no separate CI
+# checker for these files; this job is it):
+#   per node, or the node is skipped (never a partial file) and the run
+#   exits 1:
+#     - completeness: every expected leaf (--secrets / PKI_EXPORT_SECRETS,
+#       the names from k8s/components/infra/cluster-pki/leaves.nix) is
+#       there, and nothing unexpected is
+#     - chain: the leaf verifies (openssl verify -partial_chain) against its
+#       own intermediate, cluster/pki/{k8s,etcd,front-proxy}-ca.pem on main,
+#       and against no other CA there (the other two, root-ca.pem,
+#       workload-ca.pem); any further cert in tls.crt is that intermediate;
+#       the leaf is not a CA
+#     - ownership: <stem> ends in -<node>; kubelet-<node> has CN
+#       system:node:<node>, etcd-{peer,server}-<node> CN <node>; neither the
+#       CN nor a DNS SAN names another node
+#     - the key matches the cert, the cert is not expired
+#   on every run: no cert in main's secrets/pki/*.yaml expires within 14
+#   days, or the run exits 1 (after opening a renewal PR, if any), so a
+#   failing CronJob flags an unmerged renewal.
 
 usage() {
   cat <<'EOF'
@@ -47,8 +67,12 @@ Dry run (no git and no API calls at all):
                        secrets/pki files from (default: .)
   --out DIR            default: ./pki-export-out
 
+--secrets is also the completeness list and is required (with --from-dir
+it only names the leaves that must be there).
+
 Exit 0: nothing changed, or a PR exists/was opened for this exact set of
-certificates. Exit 1: an error, or a node was skipped (see the log).
+certificates. Exit 1: an error, a node was skipped, or a cert on main
+expires within 14 days (see the log).
 EOF
 }
 
@@ -57,6 +81,8 @@ log() { echo "pki-export: $*" >&2; }
 
 namespace=cluster-pki
 label=pki.neurosis/node
+ca_label=pki.neurosis/ca
+expiry_days=14
 from_dir=
 secret_names=${PKI_EXPORT_SECRETS:-}
 dry_run=0
@@ -101,9 +127,22 @@ umask 077
 work=$(mktemp -d "${TMPDIR:-/tmp}/pki-export.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 
+# Final exit status: 1 if a node was skipped or a cert on main is expiring.
+skipped=0
+expiring=()
+finish() {
+  local e
+  for e in "${expiring[@]}"; do
+    log "EXPIRING within $expiry_days days on $base: $e"
+  done
+  if [ ${#expiring[@]} -gt 0 ] || [ "$skipped" = 1 ]; then exit 1; fi
+  exit 0
+}
+
 # ---------------------------------------------------------------- the leaves
-# -> $work/secrets.json: [{name, node, crt, key}] (crt/key base64, as in the
-# Secret), sorted by name.
+# -> $work/secrets.tsv: name, node, ca label, type, tls.crt, tls.key (base64,
+# as in the Secret), one line per labelled Secret, sorted by name (one jq
+# pass).
 fetch_secrets() {
   local raw=$work/secrets-raw.json
   if [ -n "$from_dir" ]; then
@@ -127,14 +166,15 @@ fetch_secrets() {
     kubectl get secrets -n "$namespace" -l "$label" -o json \
       | jq '.items' > "$raw"
   fi
-  jq --arg ns "$namespace" --arg l "$label" '
+  jq --arg ns "$namespace" --arg l "$label" --arg c "$ca_label" -r '
     [ .[]
       | select(.kind == "Secret" and (.metadata.namespace // $ns) == $ns
                and (.metadata.labels[$l] // "") != "")
-      | { name: .metadata.name, node: .metadata.labels[$l],
-          type: (.type // ""),
-          crt: (.data["tls.crt"] // ""), key: (.data["tls.key"] // "") } ]
-    | sort_by(.name)' "$raw" > "$work/secrets.json"
+      | [ .metadata.name, .metadata.labels[$l], (.metadata.labels[$c] // ""),
+          (.type // ""), (.data["tls.crt"] // ""), (.data["tls.key"] // "") ]
+        # `read` merges empty tab-separated fields: never leave one empty
+        | map(if . == "" then "-" else . end) ]
+    | sort_by(.[0]) | .[] | @tsv' "$raw" > "$work/secrets.tsv"
 }
 
 # ---------------------------------------------------------------- certs
@@ -144,33 +184,144 @@ leaf_fp() { # PEM file -> SHA-256 fingerprint of its first cert (AA:BB:...)
 leaf_subject() { openssl x509 -noout -subject -nameopt RFC2253 -in "$1" | sed 's/^subject=//'; }
 leaf_notafter() { openssl x509 -noout -enddate -in "$1" | sed 's/^notAfter=//'; }
 
-# Stage every Secret as $work/new/<node>/<stem>.pem and <stem>-key.pem, after
-# checking it: kubernetes.io/tls, both keys present, name ends in -<node>,
-# the key matches the cert, the cert is not expired.
+# The intermediate a component's leaves come from (cluster-pki.sh SPECS).
+ca_of() {
+  case "$1" in
+    etcd-peer | etcd-server | etcd-client-apiserver) echo etcd ;;
+    front-proxy-client) echo front-proxy ;;
+    *) echo k8s ;;
+  esac
+}
+
+bad() { # node message: reject the node (it is skipped, the run exits 1)
+  log "REJECT $1: $2"
+  touch "$work/bad-$1"
+}
+
+# Decode every Secret to $work/new/<node>/<stem>.pem and <stem>-key.pem and
+# note "<stem> <ca label> <type>" in $work/meta-<node>. check_node checks.
 stage_secrets() {
-  local n i name node type crt key dir
-  n=$(jq length "$work/secrets.json")
-  [ "$n" -gt 0 ] || die "no Secrets labelled $label in namespace $namespace"
-  for ((i = 0; i < n; i++)); do
-    IFS=$'\t' read -r name node type < <(jq -r --argjson i "$i" \
-      '.[$i] | [.name, .node, .type] | @tsv' "$work/secrets.json")
-    [[ $node =~ ^[a-z0-9]+$ ]] || die "Secret $name: bad node label '$node'"
-    [[ $name =~ ^[a-z0-9-]+-$node$ ]] \
-      || die "Secret $name: name must be <component>-$node"
-    [ "$type" = kubernetes.io/tls ] || die "Secret $name: type '$type', want kubernetes.io/tls"
+  local name node ca type crt key dir
+  [ -s "$work/secrets.tsv" ] || die "no Secrets labelled $label in namespace $namespace"
+  while IFS=$'\t' read -r name node ca type crt key; do
+    if ! [[ $node =~ ^[a-z0-9]+$ ]]; then
+      log "REJECT Secret $name: bad node label '$node'"
+      skipped=1
+      continue
+    fi
     dir=$work/new/$node
     mkdir -p "$dir"
-    crt=$dir/$name.pem
-    key=$dir/$name-key.pem
-    jq -r --argjson i "$i" '.[$i].crt' "$work/secrets.json" | base64 -d > "$crt"
-    jq -r --argjson i "$i" '.[$i].key' "$work/secrets.json" | base64 -d > "$key"
-    [ -s "$crt" ] && [ -s "$key" ] || die "Secret $name: tls.crt or tls.key is empty"
-    openssl x509 -noout -in "$crt" 2>/dev/null || die "Secret $name: tls.crt is not a certificate"
-    [ "$(openssl x509 -noout -pubkey -in "$crt" | openssl sha256)" \
+    echo "$name $ca $type" >> "$work/meta-$node"
+    base64 -d <<<"$crt" > "$dir/$name.pem" 2>/dev/null || : > "$dir/$name.pem"
+    base64 -d <<<"$key" > "$dir/$name-key.pem" 2>/dev/null || : > "$dir/$name-key.pem"
+  done < "$work/secrets.tsv"
+}
+
+# Every check of one node's staged leaves; any failure marks the node bad.
+check_node() {
+  local node=$1 name lca type comp ca crt key d n other cn want f i sans
+  local cas=(k8s etcd front-proxy)
+  # Completeness: every expected leaf of this node is there.
+  for name in "${expected[@]}"; do
+    [[ $name == *-"$node" ]] || continue
+    [ -f "$work/new/$node/$name.pem" ] || bad "$node" "$name: expected, not in the cluster"
+  done
+  while read -r name lca type; do
+    [ "$lca" = - ] && lca=
+    crt=$work/new/$node/$name.pem
+    key=$work/new/$node/$name-key.pem
+    if ! [[ $name =~ ^[a-z0-9-]+-$node$ ]]; then
+      bad "$node" "$name: name must be <component>-$node"
+      continue
+    fi
+    [[ " ${expected[*]} " == *" $name "* ]] || { bad "$node" "$name: not an expected leaf"; continue; }
+    [ "$type" = kubernetes.io/tls ] || { bad "$node" "$name: type '$type', want kubernetes.io/tls"; continue; }
+    [ -s "$crt" ] && [ -s "$key" ] || { bad "$node" "$name: tls.crt or tls.key is empty"; continue; }
+    d=$work/split/$node/$name
+    mkdir -p "$d"
+    if ! (cd "$d" && csplit -s -z -f c "$crt" '/-----BEGIN CERTIFICATE-----/' '{*}') 2>/dev/null \
+      || ! openssl x509 -noout -in "$d/c00" 2>/dev/null; then
+      bad "$node" "$name: tls.crt is not a certificate"
+      continue
+    fi
+    # The key matches the cert; not expired; not a CA.
+    [ "$(openssl x509 -noout -pubkey -in "$d/c00" | openssl sha256)" \
       = "$(openssl pkey -pubout -in "$key" 2>/dev/null | openssl sha256)" ] \
-      || die "Secret $name: tls.key does not match tls.crt"
-    openssl x509 -noout -checkend 0 -in "$crt" >/dev/null \
-      || die "Secret $name: certificate has expired"
+      || { bad "$node" "$name: tls.key does not match tls.crt"; continue; }
+    openssl x509 -noout -checkend 0 -in "$d/c00" >/dev/null \
+      || { bad "$node" "$name: certificate has expired"; continue; }
+    if openssl x509 -noout -ext basicConstraints -in "$d/c00" 2>/dev/null | grep -q 'CA:TRUE'; then
+      bad "$node" "$name: the leaf is a CA"
+      continue
+    fi
+    # Chain: its own intermediate, and no other CA.
+    comp=${name%-"$node"}
+    ca=$(ca_of "$comp")
+    if [ -n "$lca" ] && [ "$lca" != "$ca" ]; then
+      bad "$node" "$name: label $ca_label=$lca, want $ca"
+      continue
+    fi
+    f=$tree/cluster/pki/$ca-ca.pem
+    [ -s "$f" ] || die "no $f on $base"
+    openssl verify -partial_chain -CAfile "$f" "$d/c00" >/dev/null 2>&1 \
+      || { bad "$node" "$name: does not verify against cluster/pki/$ca-ca.pem"; continue; }
+    for other in "${cas[@]}" root workload; do
+      [ "$other" = "$ca" ] && continue
+      f=$tree/cluster/pki/$other-ca.pem
+      [ -s "$f" ] || continue
+      if openssl verify -partial_chain -CAfile "$f" "$d/c00" >/dev/null 2>&1; then
+        bad "$node" "$name: also verifies against cluster/pki/$other-ca.pem"
+        continue 2
+      fi
+    done
+    want=$(openssl x509 -noout -fingerprint -sha256 -in "$tree/cluster/pki/$ca-ca.pem")
+    for ((i = 1; ; i++)); do
+      printf -v n '%s/c%02d' "$d" "$i"
+      [ -f "$n" ] || break
+      [ "$(openssl x509 -noout -fingerprint -sha256 -in "$n" 2>/dev/null)" = "$want" ] \
+        || { bad "$node" "$name: chain cert $i is not cluster/pki/$ca-ca.pem"; continue 2; }
+    done
+    # Ownership: CN and DNS SANs.
+    cn=$(openssl x509 -noout -subject -nameopt RFC2253 -in "$d/c00" \
+      | sed -n 's/^subject=\(.*,\)\{0,1\}CN=\([^,]*\).*/\2/p')
+    case "$comp" in
+      kubelet) want=system:node:$node ;;
+      etcd-peer | etcd-server) want=$node ;;
+      *) want= ;;
+    esac
+    if [ -n "$want" ] && [ "$cn" != "$want" ]; then
+      bad "$node" "$name: CN '$cn', want '$want'"
+      continue
+    fi
+    sans=$(openssl x509 -noout -ext subjectAltName -in "$d/c00" 2>/dev/null \
+      | tail -n +2 | tr ',' '\n' | sed -n 's/^ *DNS://p')
+    for other in "${nodes[@]}"; do
+      [ "$other" = "$node" ] && continue
+      if grep -qE "^$other(\.|$)" <<<"$sans" || [[ $cn == "$other" || $cn == *":$other" ]]; then
+        bad "$node" "$name: names another node ($other)"
+        continue 2
+      fi
+    done
+  done < "$work/meta-$node"
+}
+
+# Every cert in the base tree's secrets/pki/*.yaml must outlive
+# $expiry_days days; the run fails otherwise (finish).
+check_expiry() {
+  local file k d c
+  for file in "$tree/secrets/pki"/*.yaml; do
+    [ -e "$file" ] || continue
+    while IFS= read -r k; do
+      d=$work/exp/${file##*/}/$k
+      mkdir -p "$d"
+      K=$k yq -r '.[strenv(K)]' "$file" > "$d/all.pem"
+      (cd "$d" && csplit -s -z -f c all.pem '/-----BEGIN CERTIFICATE-----/' '{*}') 2>/dev/null || true
+      for c in "$d"/c[0-9]*; do
+        [ -f "$c" ] || continue
+        openssl x509 -noout -checkend $((expiry_days * 86400)) -in "$c" >/dev/null 2>&1 \
+          || expiring+=("secrets/pki/${file##*/} $k: $(leaf_subject "$c"), not after $(leaf_notafter "$c")")
+      done
+    done < <(yq -r 'keys | .[] | select(test("\.pem$") and (test("-key\.pem$") | not))' "$file")
   done
 }
 
@@ -234,6 +385,11 @@ git_auth() { # git with the token from $GITHUB_TOKEN via a credential helper
 }
 
 # ---------------------------------------------------------------- main
+# Expected leaves and the nodes they name.
+read -r -a expected <<<"$secret_names"
+[ ${#expected[@]} -gt 0 ] || die "no expected leaves: pass --secrets (PKI_EXPORT_SECRETS)"
+mapfile -t nodes < <(printf '%s\n' "${expected[@]}" | sed 's/.*-//' | sort -u)
+
 fetch_secrets
 stage_secrets
 
@@ -251,11 +407,22 @@ else
   git_auth clone -q --depth 1 --single-branch --branch "$base" "$repo" "$tree"
 fi
 
-# Which nodes changed? Compare leaf fingerprints with the base tree.
+check_expiry
+
+# Check every node, then compare leaf fingerprints with the base tree.
 changed=()
-skipped=0
-for d in "$work/new"/*/; do
-  node=$(basename "$d")
+for node in "${nodes[@]}"; do
+  if [ ! -d "$work/new/$node" ]; then
+    log "SKIP $node: the cluster has none of its leaves"
+    skipped=1
+    continue
+  fi
+  check_node "$node"
+  if [ -e "$work/bad-$node" ]; then
+    log "SKIP $node: failed the checks above; nothing proposed for it"
+    skipped=1
+    continue
+  fi
   new_fps "$node" > "$work/fp-new-$node"
   base_fps "$node" > "$work/fp-base-$node"
   # A cert on $base that the cluster no longer has: refuse to drop it.
@@ -272,21 +439,19 @@ for d in "$work/new"/*/; do
     changed+=("$node")
   fi
 done
-# A node with a file on $base but no Secrets at all.
-if [ -d "$tree/secrets/pki" ]; then
-  for f in "$tree/secrets/pki"/*.yaml; do
-    [ -e "$f" ] || continue
-    node=$(basename "$f" .yaml)
-    if [ ! -d "$work/new/$node" ]; then
-      log "SKIP $node: secrets/pki/$node.yaml is on $base but the cluster has no Secrets for it"
-      skipped=1
-    fi
-  done
-fi
+# Secrets of a node that no expected leaf names.
+for d in "$work/new"/*/; do
+  [ -d "$d" ] || continue
+  node=$(basename "$d")
+  if ! printf '%s\n' "${nodes[@]}" | grep -qxF "$node"; then
+    log "REJECT $node: Secrets for a node with no expected leaves: $(cut -d' ' -f1 "$work/meta-$node" | tr '\n' ' ')"
+    skipped=1
+  fi
+done
 
 if [ ${#changed[@]} -eq 0 ]; then
   log "no change: every certificate matches $base"
-  exit "$skipped"
+  finish
 fi
 
 # The proposal's identity: a hash of every cert fingerprint it carries.
@@ -325,7 +490,7 @@ if [ "$dry_run" = 1 ]; then
   done
   cp "$body" "$out/pr-body.md"
   log "would push $branch and open a PR (body: $out/pr-body.md)"
-  exit "$skipped"
+  finish
 fi
 
 # Already proposed? A branch for this exact set (any date) means a PR exists,
@@ -339,11 +504,11 @@ if [ -n "$existing" ]; then
   closed_pr=$(jq -r '[.[] | select(.state == "closed")][0].html_url // empty' <<<"$prs")
   if [ -n "$open_pr" ]; then
     log "no change: this set is already proposed in $open_pr"
-    exit "$skipped"
+    finish
   fi
   if [ -n "$closed_pr" ]; then
     log "this set was proposed in $closed_pr and closed; not reopening (delete branch $existing to propose it again)"
-    exit "$skipped"
+    finish
   fi
   log "branch $existing exists without a PR; opening one"
   branch=$existing
@@ -374,4 +539,4 @@ jq -n --arg t "pki: renewed host certificates (${changed[*]})" \
   '{title: $t, head: $h, base: $b, body: $body, maintainer_can_modify: true}' > "$work/pr.json"
 url=$(api_call POST "/repos/$github_repo/pulls" "$work/pr.json" | jq -r .html_url)
 log "opened $url"
-exit "$skipped"
+finish
