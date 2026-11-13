@@ -13,6 +13,7 @@ Every action is pinned by full commit SHA ([below](#pinned-actions)).
 | Job | Runner | What it does |
 | --- | --- | --- |
 | `secrets-guard` | ubuntu-24.04 | Fails if the diff adds a key file, a kubeconfig or a plaintext password ([details](#secrets-guard)). |
+| `pki-files` | ubuntu-24.04 | Checks the exported host certs `secrets/pki/<node>.yaml`: chain, ownership, expiry, encrypted keys ([details](#pki-files)). Passes when there are none yet. |
 | `flake-check` | ubuntu-24.04 | `nix flake check --keep-going`: every output evaluates (every NixOS host: the desktop Famine and the servers c4130, r440 and m2mini; Famine's ISO; the packages). Pestilence is archived and not an output, so it is not checked (`hosts/Pestilence/README.md`). The flake has no `checks`, so nothing heavy is built. The k8s render is the system-independent output `k8s`, which flake check does not evaluate. |
 | `format` | ubuntu-24.04 | `nix fmt -- --check` over every tracked `.nix` file (the flake's formatter, RFC-style nixfmt). Excluded: `hosts/Pestilence/servarr.nix` (its plaintext `rpc-password` line trips the secrets guard on any edit, reformatting included). Run `nix fmt` before committing. |
 | `eval-hosts` (matrix) | x86: ubuntu-24.04, m2mini: ubuntu-24.04-arm | `nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath` with import-from-derivation **disabled**, for c4130, r440 and m2mini. It checks `.system` and writes the drvPath to the job summary. |
@@ -86,13 +87,21 @@ The guard scans only the diff: the PR's merge-base to head, or on a push
   `stringData` encrypted. Any other file under `secrets/` (a subdirectory,
   a non-`.yaml` file) fails, as does any file under `k8s/secrets/` without
   the `.sops.yaml` suffix (the k8s render rejects those too).
-  Recipients: `.sops.yaml`.
+  `secrets/pki/<node>.yaml` (host certs exported from cert-manager,
+  [below](#pki-files)) is the one exception to "every value
+  encrypted": a top-level `<stem>.pem` may be plaintext if it holds
+  nothing but `CERTIFICATE` blocks. Every `<stem>-key.pem`, and any
+  value with anything else in it (a private key included), must be
+  `ENC[...]`; the added-lines scan above flags a PEM private key in
+  any file. Recipients: `.sops.yaml`.
 
 A second step checks **every** sops file in the tree (not only the diff,
 since a `.sops.yaml` change alone can break untouched files): its age
 recipients (`sops.age[].recipient`) must equal those of the first
 `.sops.yaml` creation rule whose `path_regex` matches it, i.e. the file was
-re-wrapped with `sops updatekeys` after the last recipient change. It uses
+re-wrapped with `sops updatekeys` after the last recipient change. When
+the rule sets `encrypted_regex` (`secrets/pki/`, `k8s/secrets/`), the
+file's `sops.encrypted_regex` must be the same. It uses
 only public keys and names missing/extra recipients by their `.sops.yaml`
 anchor. The host side of the same question (can *this* host decrypt?) is
 the pre-switch check `sopsDecrypt` in `modules/system/sops.nix`.
@@ -107,6 +116,39 @@ Secrets in git are sops-encrypted only (sops-nix on the hosts:
 The guard is diff-only on purpose: older plaintext credentials in
 `hosts/Pestilence` (and in git history) only trip it when those lines are
 edited. Rotate them and move them out of git separately.
+
+### pki-files
+
+`.github/scripts/pki-files.py` checks every `secrets/pki/<node>.yaml`
+in the tree (not the diff: certs expire in files nobody touches). These
+are the host leaves the cert-manager export job writes
+(`docs/pki-migration-plan.md`, phase 2): `<stem>.pem` plaintext (leaf +
+intermediate), `<stem>-key.pem` sops-encrypted. Per file it fails when:
+
+- the node is not in `cluster/definition.nix`, a key is neither
+  `<stem>.pem` nor `<stem>-key.pem`, a stem lacks one of the two, or
+  `sops.encrypted_regex` is not `-key\.pem$`;
+- a `-key.pem` value is not `ENC[...]`, or a `.pem` value holds anything
+  but `CERTIFICATE` blocks;
+- the leaf's issuer is not its component's intermediate
+  (`cluster/pki/{k8s,etcd,front-proxy}-ca.pem`, etcd-* on etcd,
+  front-proxy-client on front-proxy, the rest on k8s), it does not verify
+  with `openssl verify -partial_chain` against only that intermediate,
+  it verifies against `root-ca.pem` or `workload-ca.pem`, it is the root
+  or has `CA:TRUE`, or a further cert in the value is not that
+  intermediate;
+- the cert is not the node's: the stem does not end in `-<node>`, a
+  kubelet cert's CN is not `system:node:<node>`, an etcd peer/server
+  cert's CN is not `<node>`, the DNS SANs (if any) miss `<node>`, or a
+  CN or SAN names another node (`<n>`, `<n>.<domain>`,
+  `system:node:<n>`) or carries its LAN/tailnet IP;
+- a cert in the value (leaf or chain) expires within 14 days.
+
+It reads only public data and decrypts nothing. Test it, and the guard's
+`secrets/pki` mode, with `.github/scripts/pki-files-test.sh` (needs
+sops, age, openssl): it generates a throwaway root, intermediates, leaves
+and age key in a temp dir and runs a passing case and one failing case
+per rule. No key material is committed.
 
 ## render.yml
 

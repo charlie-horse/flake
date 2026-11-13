@@ -280,7 +280,7 @@ files** with only the public recipients from `.sops.yaml`:
 - `secrets/pki/<host>.yaml`, one per host, with the recipients
   `admin_yubikey`, `admin_backup` and that host (a new `creation_rules` entry
   per host, like the existing ones).
-- `encrypted_regex: _key$`, so only the private keys are encrypted. The certs
+- `encrypted_regex: -key\.pem$`, so only the private keys are encrypted. The certs
   stay plaintext in git: they're public, PR diffs show exactly what changed,
   and CI can check expiry and issuers without any key.
 
