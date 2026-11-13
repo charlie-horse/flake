@@ -1,0 +1,81 @@
+# docs/pki.md, "Phase 2 operations"
+name: pki-export-image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pkgs/pki-tools/**"
+      - "k8s/components/infra/cluster-pki/leaves.nix"
+      - "cluster/definition.nix"
+      - "parts/packages.nix"
+      - "flake.lock"
+      - ".github/workflows/pki-export-image.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "pkgs/pki-tools/**"
+      - "k8s/components/infra/cluster-pki/leaves.nix"
+      - "cluster/definition.nix"
+      - "parts/packages.nix"
+      - "flake.lock"
+      - ".github/workflows/pki-export-image.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pki-export-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  image:
+    name: Build (and on main push) the pki-export image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: nix-cache
+        uses: ./.github/actions/nix-cache
+        with:
+          netrc: ${{ secrets.NIX_CACHE_NETRC }}
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
+
+      - name: nix build .#pki-export-image
+        run: |
+          set -euo pipefail
+          nix build -L --out-link stream .#packages.x86_64-linux.pki-export-image
+          ./stream > image.tar
+
+      - name: Push to GHCR
+        if: >-
+          github.ref == 'refs/heads/main'
+          && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}/pki-export"
+          echo "$TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          skopeo copy --digestfile digest docker-archive:image.tar "docker://$repo:${GITHUB_SHA::12}"
+          skopeo copy docker-archive:image.tar "docker://$repo:main"
+          digest=$(cat digest)
+          echo "pushed $repo@$digest"
+          {
+            echo "### pki-export image"
+            echo
+            echo "\`$repo@$digest\`"
+            echo
+            echo "Pin it in k8s/components/infra/cluster-pki/export.nix:"
+            echo "\`digest = \"$digest\";\`"
+          } >> "$GITHUB_STEP_SUMMARY"

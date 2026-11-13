@@ -29,6 +29,20 @@ keys:
   - &flux age1ynj83hcd8zmscx4us80q6hqzxmr0d69hv3vr8extl5kvjqd92agqypgdux # flux-system/sops-age
 
 creation_rules:
+  # Host PKI from the export job: certs stay plaintext so PR diffs can read them.
+  # Kept first so no broader secrets/ rule can take these paths.
+  - path_regex: ^secrets/pki/c4130\.yaml$
+    encrypted_regex: -key\.pem$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *c4130]
+  - path_regex: ^secrets/pki/r440\.yaml$
+    encrypted_regex: -key\.pem$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *r440]
+  - path_regex: ^secrets/pki/m2mini\.yaml$
+    encrypted_regex: -key\.pem$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *m2mini]
   # Every host.
   - path_regex: ^secrets/common\.yaml$
     key_groups:

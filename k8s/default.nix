@@ -62,6 +62,7 @@ let
     "infra/coredns" = ./components/infra/coredns.nix;
     "infra/nvidia-device-plugin" = ./components/infra/nvidia-device-plugin.nix;
     "infra/cert-manager" = ./components/infra/cert-manager;
+    "infra/cluster-pki" = ./components/infra/cluster-pki;
     "flux" = ./components/flux;
     "apps/cloudflared" = ./components/apps/cloudflared;
     "apps/authentik" = ./components/apps/authentik;
@@ -81,6 +82,7 @@ let
     dir = "deferred";
     modules = {
       "infra/cert-manager-issuers" = ./components/infra/cert-manager/issuers.nix;
+      "infra/cluster-pki-issuers" = ./components/infra/cluster-pki/issuers.nix;
     };
     # sops-encrypted Secrets: every ./secrets/<namespace>/<name>.sops.yaml
     # is copied verbatim (never parsed or re-serialised: that would break

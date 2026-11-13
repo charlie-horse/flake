@@ -13,17 +13,33 @@
       pki = pkgs.callPackage ../pkgs/cluster-pki {
         definition = import ../cluster/definition.nix;
       };
+      pkiTools = pkgs.callPackage ../pkgs/pki-tools {
+        leaves = import ../k8s/components/infra/cluster-pki/leaves.nix {
+          inherit (pkgs) lib;
+          cluster = import ../cluster/definition.nix;
+        };
+      };
     in
     {
       # `nix fmt`: RFC-style nixfmt over the tracked .nix files (checks.yml
       # runs it with --check, excluding only hosts/Pestilence/servarr.nix).
       formatter = pkgs.nixfmt;
 
+      # pytest runs in pki-tools' checkPhase.
+      checks.pki-tools = pkiTools;
+
       packages = {
         cluster-pki = pki;
         # YubiKey root-CA ceremony tools, entered ad hoc as root on c4130
         # (`nix shell .#ca-ceremony-tools`; docs/pki-migration-plan.md).
         ca-ceremony-tools = pkgs.callPackage ../pkgs/ca-ceremony-tools { };
+        pki-diff = pkiTools // {
+          meta = pkiTools.meta // {
+            mainProgram = "pki-diff";
+          };
+        };
+        pki-export = pkiTools;
+        pki-export-image = pkiTools.image;
       }
       # Installer ISO for the desktop host (lib/system/mkHost.nix).
       # Pestilence is archived, so it has none (parts/hosts.nix).

@@ -54,6 +54,14 @@ in
     hash = "sha256-kjGAYWkePhiNrUUdpesTcGa9jlpFk1/gZs8sztLElRw=";
   };
 
+  # cert-manager approver-policy v0.29.0 (approves by CertificateRequestPolicy).
+  cert-manager-approver-policy = fetch {
+    repo = "https://charts.jetstack.io";
+    name = "cert-manager-approver-policy";
+    version = "v0.29.0";
+    hash = "sha256-HxPA3jUQR4GekLuDv2lTXlPYhEkMte8StRiOdB3t+OY=";
+  };
+
   # Headlamp 0.46.0 (Kubernetes web UI; OIDC via authentik, no Ingress).
   headlamp = fetch {
     repo = "https://kubernetes-sigs.github.io/headlamp/";

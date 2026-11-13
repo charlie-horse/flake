@@ -30,3 +30,4 @@ cluster-pki-staging/
 
 # k8s render: built by CI (render.yml) and pushed to GHCR, never committed
 /k8s/rendered/
+__pycache__/

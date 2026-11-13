@@ -86,13 +86,20 @@ The guard scans only the diff: the PR's merge-base to head, or on a push
   `stringData` encrypted. Any other file under `secrets/` (a subdirectory,
   a non-`.yaml` file) fails, as does any file under `k8s/secrets/` without
   the `.sops.yaml` suffix (the k8s render rejects those too).
-  Recipients: `.sops.yaml`.
+  `secrets/pki/<node>.yaml` (host certs exported from cert-manager;
+  no subdirectories) is the one exception to "every value
+  encrypted": a top-level `<stem>.pem` may be plaintext if it holds
+  nothing but `CERTIFICATE` blocks. Every `<stem>-key.pem` must be
+  `ENC[...]`. The content checks (chain, node, completeness, expiry)
+  are in the export job, `pkgs/pki-tools/pki/cli_export.py`. Recipients: `.sops.yaml`.
 
 A second step checks **every** sops file in the tree (not only the diff,
 since a `.sops.yaml` change alone can break untouched files): its age
 recipients (`sops.age[].recipient`) must equal those of the first
 `.sops.yaml` creation rule whose `path_regex` matches it, i.e. the file was
-re-wrapped with `sops updatekeys` after the last recipient change. It uses
+re-wrapped with `sops updatekeys` after the last recipient change. When
+the rule sets `encrypted_regex` (`secrets/pki/`, `k8s/secrets/`), the
+file's `sops.encrypted_regex` must be the same. It uses
 only public keys and names missing/extra recipients by their `.sops.yaml`
 anchor. The host side of the same question (can *this* host decrypt?) is
 the pre-switch check `sopsDecrypt` in `modules/system/sops.nix`.

@@ -22,9 +22,9 @@
 # leaves ("trust": legacy leaves + new bundle, "final": new leaves). See
 # docs/history/cluster-handoff-2026-10.md for the order.
 #
-# Secrets: every key and cert is a STRING path under cluster.secretsDir
-# (/var/lib/kubernetes/secrets), put there by `cluster-pki deploy`
-# (pkgs/cluster-pki). Nothing secret is a Nix path, so nothing secret is
+# Secrets: every key and cert is a STRING path under clusterNode.secretsDir
+# (/var/lib/kubernetes/secrets from `cluster-pki deploy`, or /run/secrets/pki
+# with certSource "sops"). Nothing secret is a Nix path, so nothing secret is
 # ever copied into /nix/store. File names:
 #   ca.pem etcd-ca.pem front-proxy-ca.pem sa.pub sa.key
 #   <component>-<node>.pem / <component>-<node>-key.pem
@@ -47,6 +47,7 @@ in
     ./keepalived.nix
     ./firewall.nix
     ./tailscale-service.nix
+    ./pki-sops.nix
   ];
 
   options.clusterNode = {
@@ -65,11 +66,30 @@ in
       '';
     };
 
+    certSource = mkOption {
+      type = types.enum [
+        "files"
+        "sops"
+      ];
+      default = cfg.node.rollout.certSource or "files";
+      defaultText = "cluster.nodes.<name>.rollout.certSource or \"files\"";
+      description = ''
+        Where the node's cluster certs and keys come from. "files":
+        secretsDir as filled by `cluster-pki deploy`. "sops": sops-nix
+        from secrets/pki/<name>.yaml (leaves), secrets/<name>.yaml (sa.key,
+        sa.pub) and cluster/pki/ (bundles), in /run/secrets/pki
+        (./pki-sops.nix; docs/pki-migration-plan.md, phase 2).
+      '';
+    };
+
     secretsDir = mkOption {
       # A string on purpose: a Nix path here would copy keys into the store.
       type = types.str;
       default = cluster.secretsDir or "/var/lib/kubernetes/secrets";
-      description = "Directory holding every cluster key and cert.";
+      description = ''
+        Directory holding every cluster key and cert. certSource "sops"
+        sets it to /run/secrets/pki (./pki-sops.nix).
+      '';
     };
 
     stage = mkOption {

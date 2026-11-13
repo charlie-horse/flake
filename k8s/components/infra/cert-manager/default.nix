@@ -5,14 +5,16 @@
 #
 #   chart.nix      controller, webhook, cainjector and the CRDs (this
 #                  component, applied by Flux's `flux-system` Kustomization)
-#   issuers.nix    the CA ClusterIssuer `cluster-ca` over the hand-made
-#                  Secret `cluster-ca` (the workload intermediate under the
-#                  YubiKey root, docs/pki-migration-plan.md). A component
+#   approver-policy.nix  the only approver (this component)
+#   issuers.nix    the CA ClusterIssuer `cluster-ca` over the Secret
+#                  `cluster-ca` from sops (the workload intermediate under
+#                  the YubiKey root, docs/pki-migration-plan.md). A component
 #                  of its own, `infra/cert-manager-issuers`, applied by the
 #                  Kustomization
 #                  `cert-manager-issuers` after `flux-system`
 #                  (k8s/default.nix `deferred`, components/flux/stages.nix)
-#   settings.nix   names shared by both
+#   crds.nix       the two charts' CRDs, for the deferred components
+#   settings.nix   names shared by all of them
 #
 # Workloads ask for a certificate with
 #   issuerRef: { kind: ClusterIssuer, name: cluster-ca }
@@ -23,7 +25,10 @@ let
   inherit (import ./settings.nix) namespace;
 in
 {
-  imports = [ ./chart.nix ];
+  imports = [
+    ./chart.nix
+    ./approver-policy.nix
+  ];
 
   validation.strict = true;
 

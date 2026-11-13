@@ -122,8 +122,12 @@ jobs:
           #    suffix) is refused; k8s/render.nix rejects the same files at
           #    render time. Only the file and the key path are printed,
           #    never a value.
+          #    secrets/pki/<node>.yaml: only a <stem>.pem of CERTIFICATE
+          #    blocks may be plaintext.
           while IFS= read -r -d '' f; do
             case "$f" in
+              secrets/pki/*/*) mode=bad ;;
+              secrets/pki/*.yaml) mode=pki ;;
               secrets/*/*) mode=bad ;;
               secrets/*.yaml) mode=strict ;;
               secrets/*) mode=bad ;;
@@ -132,7 +136,7 @@ jobs:
               *) continue ;;
             esac
             if [ "$mode" = bad ]; then
-              echo "::error file=$f::only sops-encrypted secrets/<name>.yaml files belong in secrets/"
+              echo "::error file=$f::only sops-encrypted secrets/<name>.yaml and secrets/pki/<node>.yaml files belong in secrets/"
               status=1
               continue
             fi
@@ -146,6 +150,11 @@ jobs:
           mode, name = sys.argv[1], sys.argv[2]
           raw = sys.stdin.read()
           enc = re.compile(r"^ENC\[[A-Z0-9_]+,data:.*\]$", re.S)
+          cert = re.compile(r"-----BEGIN CERTIFICATE-----\r?\n"
+                            r"[A-Za-z0-9+/=\r\n]+?-----END CERTIFICATE-----")
+          def certs_only(v):
+              return (isinstance(v, str) and cert.search(v) is not None
+                      and cert.sub("", v).strip() == "")
           bad = []
           for i, line in enumerate(raw.splitlines(), 1):
               t = line.strip()
@@ -184,6 +193,9 @@ jobs:
           for k, v in doc.items():
               if k == "sops" or k in clear or (mode == "k8s" and k not in allowed):
                   continue
+              if (mode == "pki" and str(k).endswith(".pem")
+                      and not str(k).endswith("-key.pem") and certs_only(v)):
+                  continue
               walk(v, [str(k)])
           for b in bad:
               print(f"{name}: {b}")
@@ -217,7 +229,8 @@ jobs:
         run: |
           set -euo pipefail
           # shellcheck disable=SC2016 # Python program, backticks in messages
-          git ls-files -z -- 'secrets/*.yaml' 'k8s/secrets/**/*.sops.yaml' \
+          git ls-files -z -- 'secrets/*.yaml' 'secrets/pki/*.yaml' \
+            'k8s/secrets/**/*.sops.yaml' \
             | python3 -I -c '
           import re, sys, yaml
           raw = open(".sops.yaml").read()
@@ -261,11 +274,20 @@ jobs:
                   continue
               want, have = rule_recipients(rule), file_recipients(meta)
               other = [k for k in ("pgp", "kms", "gcp_kms", "azure_kv", "hc_vault") if meta.get(k)]
+              # A mismatch means another rule, or a hand edit, encrypted the file.
+              rx_want = rule.get("encrypted_regex")
+              rx_have = meta.get("encrypted_regex")
+              rx = rule.get("path_regex")
+              if rx_want != rx_have:
+                  status = 1
+                  print(f"::error file={f}::encrypted_regex {rx_have!r} differs"
+                        f" from .sops.yaml rule {rx} ({rx_want!r})."
+                        " Re-create it with sops under that rule.")
+                  continue
               if want == have and not other:
                   print(f"ok  {f}: {len(have)} recipients")
                   continue
               status = 1
-              rx = rule.get("path_regex")
               msg = [f"recipients differ from .sops.yaml rule {rx}"]
               msg += [f"missing {label(r)}" for r in sorted(want - have)]
               msg += [f"extra {label(r)}" for r in sorted(have - want)]

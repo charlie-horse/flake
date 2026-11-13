@@ -39,6 +39,8 @@ in
         prometheus.enabled = false;
         # A Helm post-install hook; Flux applies plain manifests (noHooks).
         startupapicheck.enabled = false;
+        # The built-in approver would approve every request, cluster-pki's included.
+        disableAutoApproval = true;
 
         # The controller is leader-elected: one replica; a restart only
         # delays issuance/renewal.
