@@ -222,6 +222,14 @@ in
     };
 
     sops = {
+      # sops-install-secrets from sops-nix's own flake packages, i.e. built
+      # with the nixpkgs sops-nix follows (`nixpkgs`, 26.05), not with the
+      # host's pkgs: Famine's nixpkgs-unstable is too old for it (its go
+      # 1.23 < the go 1.26 sops-nix's go.mod needs). On the servers this is
+      # the very same derivation as the default. validationPackage (the
+      # manifest check at build time) defaults to this package when not
+      # cross-compiling.
+      package = inputs.sops-nix.packages.${pkgs.stdenv.hostPlatform.system}.sops-install-secrets;
       # This one file in the store, not the flake source (see the header).
       defaultSopsFile =
         let

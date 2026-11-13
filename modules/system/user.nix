@@ -1,7 +1,7 @@
 # The desktop user (custom.user.name; Famine: charlie). Desktops only
-# (mkHost imports modules/ wholesale; mkServer does not, and the servers
-# have no charlie since 2026-11). admin (the only wheel member), root and
-# users.mutableUsers = false: modules/system/admin.nix.
+# (mkHost imports modules/ wholesale; mkServer does not; the servers'
+# charlie is modules/server/legacy-charlie.nix until stage 2 of the 2026-11
+# charlie removal). admin, root and users.mutableUsers: modules/system/admin.nix.
 { lib, config, ... }:
 let
   inherit (lib)
