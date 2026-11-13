@@ -29,10 +29,14 @@
     # ---- Secrets (every host) --------------------------------------------
     # sops-nix (modules/system/sops.nix): secrets/*.yaml, encrypted to the
     # hosts' SSH host keys (via ssh-to-age) and the admins' age keys, see
-    # .sops.yaml. Follows `nixpkgs` (26.05) for the servers; on Famine
-    # (nixpkgs-unstable) only its NixOS module is used, whose packages come
-    # from the host's own pkgs, so the follows does not pull 26.05 there.
-    # `nix flake update sops-nix` to move it.
+    # .sops.yaml. Follows `nixpkgs` (26.05) on purpose, Famine included:
+    # modules/system/sops.nix takes sops-install-secrets (`sops.package`,
+    # from sops-nix's packages) and the pre-switch check's `sops` and
+    # `ssh-to-age` from sops-nix's own nixpkgs, because Famine's
+    # nixpkgs-unstable pin is too old (its sops 3.9.1 ignores
+    # SOPS_AGE_KEY_CMD, so the check would always fail). Do not repoint
+    # this follows to nixpkgs-unstable. `nix flake update sops-nix` to move
+    # it.
     sops-nix.url = "github:Mic92/sops-nix";
     sops-nix.inputs.nixpkgs.follows = "nixpkgs";
 

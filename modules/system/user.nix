@@ -31,11 +31,12 @@ in
 
   config = {
     # The desktop user keeps a password (greeter, hyprlock; no sudo). The
-    # plaintext is the sops key charlie-password in sops.defaultSopsFile,
+    # plaintext is the sops key <user>-password (the option's default; on
+    # Famine charlie-password) in sops.defaultSopsFile,
     # secrets/<hostname>.yaml (Famine: famine.yaml); the host derives the
     # yescrypt hash and sets hashedPasswordFile (custom.sopsPasswords,
     # modules/system/sops.nix).
-    custom.sopsPasswords.${user.name}.key = "charlie-password";
+    custom.sopsPasswords.${user.name} = { };
 
     users = {
       groups = {

@@ -3,8 +3,9 @@
 # When on, sudo (and polkit, where enabled) needs admin's PASSWORD and ALSO
 # one of:
 #   (a) pam_rssh: a signature from the FIDO2 resident key `ssh:admin`
-#       (rsshKeys below) through the ssh-agent forwarded into the session
-#       (`ssh -A`); the touch happens on the YubiKey at the client;
+#       (rsshKeys; by default admin's sk- SSH login keys) through the
+#       ssh-agent forwarded into the session (`ssh -A`); the touch happens
+#       on the YubiKey at the client;
 #   (b) pam_u2f: a touch on a YubiKey plugged into this host (console),
 #       registered in ./sudo-2fa-u2f-keys with origin pam://neurosis.
 # A password leaked from one host (every host shares admin's password, and
@@ -179,14 +180,17 @@ in
 
     rsshKeys = mkOption {
       type = types.listOf types.str;
-      # Same key as admin's SSH login (modules/system/admin.nix).
-      default = [
-        "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAIMOzLvxaCcRrhYX3MODuBBDsZQTIvhOV4vLLQt+WHn/3AAAACXNzaDphZG1pbg== admin@yubikey-19830800"
-      ];
+      # admin's FIDO2 (sk-) SSH login keys, set in modules/system/admin.nix:
+      # one place to replace the key. Plain keys are left out: a key that
+      # needs no touch on the YubiKey would not be a second factor.
+      default = filter (hasPrefix "sk-") config.users.users.admin.openssh.authorizedKeys.keys;
+      defaultText = lib.literalExpression ''filter (hasPrefix "sk-") config.users.users.admin.openssh.authorizedKeys.keys'';
       description = ''
         Public keys (authorized_keys format) whose signature through the
-        forwarded ssh-agent counts as the second factor. Kept in a
-        root-owned store file, never in a user-writable authorized_keys.
+        forwarded ssh-agent counts as the second factor. By default
+        admin's FIDO2 (`sk-`) SSH login keys (modules/system/admin.nix).
+        Kept in a root-owned store file, never in a user-writable
+        authorized_keys.
       '';
     };
 
@@ -256,7 +260,7 @@ in
       }
       {
         assertion = cfg.rsshKeys != [ ];
-        message = "custom.sudo2fa: rsshKeys is empty.";
+        message = "custom.sudo2fa: rsshKeys is empty (by default admin's sk- keys in users.users.admin.openssh.authorizedKeys.keys, modules/system/admin.nix).";
       }
       {
         assertion =

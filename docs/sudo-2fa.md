@@ -92,8 +92,10 @@ The key files are store paths (root-owned, read-only), never admin's
 `authorized_keys`: a key file admin could write would let anything running
 as admin add its own key.
 
-- rssh keys: `custom.sudo2fa.rsshKeys`, by default only the `ssh:admin` key
-  (the same one as admin's SSH login in `modules/system/admin.nix`).
+- rssh keys: `custom.sudo2fa.rsshKeys`, by default the FIDO2 (`sk-`) keys
+  of admin's SSH login (`users.users.admin.openssh.authorizedKeys.keys`,
+  set in `modules/system/admin.nix`), today only `ssh:admin`; replacing or
+  adding a key there updates both.
   pam_rssh 1.2.0 (nixos-26.05) supports `sk-ssh-ed25519@openssh.com` and
   `sk-ecdsa-sha2-nistp256@openssh.com` keys (it rebuilds the FIDO
   signed message from the key's application, `ssh:admin`).
@@ -120,8 +122,8 @@ A **backup YubiKey** is strongly advised before enabling anywhere (see
 [Lockout and recovery](#lockout-and-recovery)): register it with
 `pamu2fcfg -n -o pam://neurosis -i pam://neurosis` and append its
 `:<KeyHandle>,<UserKey>,es256,+presence` to the same line, and add its
-`ssh` resident key to `custom.sudo2fa.rsshKeys` (and to admin's
-authorized keys for login).
+`ssh` resident key to admin's authorized keys in `modules/system/admin.nix`
+(login, and through the default of `custom.sudo2fa.rsshKeys` also rssh).
 
 ## Connecting with the forwarded agent
 
@@ -217,8 +219,8 @@ sudo on every host that has this on.
 1. **Prevent it**: register a backup YubiKey for both paths (above) and keep
    it offline. Keep at least one host's console reachable.
 2. **Key lost, backup exists**: sudo with the backup, remove the lost key's
-   lines (rsshKeys, u2f mapping, admin's authorized keys) in the repo,
-   switch every host.
+   lines (u2f mapping, admin's authorized keys, which rsshKeys follows) in
+   the repo, switch every host.
 3. **Key lost, no backup, password-only generation still present**: console,
    boot the older generation, `sudo` with the password, switch a commit with
    `custom.sudo2fa.enable = false;` (or new keys). Note: the old generation
@@ -244,8 +246,9 @@ sudo on every host that has this on.
   leaked password gives no shell over plain SSH either.
 - **Prerequisite: a second FIDO2 key.** Both factors and admin's SSH login
   live on YubiKey #19830800. Do not enable `custom.sudo2fa` on any host until
-  a second key is registered for u2f (`u2fKeysFile`), rssh (`rsshKeys`) and
-  admin's `openssh.authorizedKeys` (decided 2026-11).
+  a second key is registered for u2f (`u2fKeysFile`) and in admin's
+  `openssh.authorizedKeys` (login, and rssh through `rsshKeys`' default)
+  (decided 2026-11).
 - Console login as admin needs only the password (by design, for
   recovery); sudo on the console then needs the YubiKey touch.
 - pam_rssh 1.2.0 does not check the user-presence bit of the FIDO signature;
