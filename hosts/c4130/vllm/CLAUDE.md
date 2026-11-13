@@ -1,15 +1,15 @@
 # c4130 vLLM inference host
 
-c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its config is `hosts/c4130/` in this repo (charlie-horse/flake). On every server `/etc/nixos` is a git checkout of `main` (admin:root, 0755) and the only checkout; `~/src/flake` is gone. The vLLM setup comes from the fork's flake (flake input `vllm-fork`, github.com/charlie-horse/vLLM, Nix code under `nix/`); `hosts/c4130/vllm/` only sets the host values. Old `/etc/nixos` backups are in `~admin/archive/nixos-backups/` (see "Files on the host").
+c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its config is `hosts/c4130/` in this repo (charlie-horse/flake). On every server `/etc/nixos` is a git checkout of `main` (0755; charlie:root until stage 2 of charlie's removal, then admin:root) and the only checkout; `~/src/flake` is gone. The vLLM setup comes from the fork's flake (flake input `vllm-fork`, github.com/charlie-horse/vLLM, Nix code under `nix/`); `hosts/c4130/vllm/` only sets the host values. Old `/etc/nixos` backups are in `~admin/archive/nixos-backups/` (see "Files on the host").
 
 ## Access from a cloud session
 - Tailscale isn't preinstalled. Download the static `tailscale_<ver>_amd64.tgz` from pkgs.tailscale.com (piping the install script into `sh` gets blocked), then run `tailscaled --tun=userspace-networking --statedir=/var/lib/tailscale --socket=/var/run/tailscale/tailscaled.sock` in the background and `tailscale up --authkey="$TAIL_AUTH_KEY" --hostname=flake-cloud --accept-routes`. `TAIL_AUTH_KEY` is in the environment. The node can get logged out after container restarts; if `status` shows no peers, run `up` again.
 - Only SSH to the hosts when the user has allowed it for the task.
-- SSH goes through Tailscale SSH as `admin`, the only login on the servers since charlie was removed from them (2026-11): `ssh -o ProxyCommand="tailscale --socket=… nc %h %p" admin@c4130` (install `openssh-client` with apt).
+- SSH goes through Tailscale SSH as `admin` (`charlie` on a host not yet switched to PR #37): `ssh -o ProxyCommand="tailscale --socket=… nc %h %p" admin@c4130` (install `openssh-client` with apt). charlie and admin coexist until stage 2 of `docs/cluster.md`, "Removing charlie from the servers"; after it admin is the only login. The root CLAUDE.md, "Access from a cloud session", has both states.
 - SSH to c4130 over the tailnet uses Tailscale SSH (auth method 'none'). The tailnet ACLs are reviewed and intended by the owner; don't flag it as a security issue.
-- `sudo` needs admin's password. Ask the user for it, and pass it on stdin (`sudo -S`), never on a command line. Secrets never go in git or on a command line. `/etc/nixos` is writable by admin, so `git pull` and building need no sudo; `nixos-rebuild switch` and `journalctl -u vllm` do.
+- `sudo` is run by the user: write privileged steps as blocks for the user to run on the host; the cloud session runs only read-only checks. Secrets never go in git or on a command line. `/etc/nixos` is writable by its owner (charlie, then admin), so `git pull` and building need no sudo; `nixos-rebuild switch` and `journalctl -u vllm` do.
 - etcd and the k8s apiserver also run on this box (3-member etcd with r440 and m2mini). Switch one host at a time and run the etcd health check from `docs/cluster.md` after each; never take two members down together, or etcd loses quorum. `switch` exiting with status 4 means a unit failed (read `systemctl --failed`). Leave etcd alone unless the user asks.
-- The cluster PKI (CA keys) lives only on r440 (`~admin/.local/share/cluster-pki/neurosis`); never copy it elsewhere or into git.
+- The cluster PKI (CA keys) lives only on r440 (`~admin/.local/share/cluster-pki/neurosis`; in `~charlie` until stage 2); never copy it elsewhere or into git.
 
 ## Deploying
 - Every change, including a model entry or a fork re-lock, goes through this repo: branch → CI → merge. Then on c4130: `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#c4130`. Never run `nix flake update` or edit files inside `/etc/nixos` on the host.
@@ -202,7 +202,7 @@ In effect since c4130 switched on 2026-11-12 (flake `c8fb285`): its `vllm-fork` 
 - r440's `memory.nix` adds 25% zram swap (kubelet runs with `failSwapOn: false`, pods `NoSwap`) and caps `nix-daemon.service` (all builds, including this host's) at `MemoryHigh=32G` / `MemoryMax=36G` / `MemorySwapMax=4G`, `OOMScoreAdjust=500`. A build that hits the cap fails with an OOM kill on r440 instead of hanging the box; retry it.
 - c4130 opens TCP 8000 on bond0 to 10.25.0.2 only (vLLM API for r440 workloads).
 
-## Files on the host (c4130, `~admin`; copied from `~charlie` in 2026-11)
+## Files on the host (c4130, `~admin`; copied from `~charlie` in stage 2 of charlie's removal, in `~charlie` until then)
 - `~admin/archive/scripts/`: check and test scripts (see "Stack").
 - `~admin/archive/notes/flint-nix/`: the old `~/flint-nix` (RAM guard, `SWITCH-STEPS.md`, `retired/`, `gguf`, step backups, logs, `lmc/probe.py`).
 - `~admin/archive/flint-gpuopt-saved/`: work saved from the deleted `~/flint`.

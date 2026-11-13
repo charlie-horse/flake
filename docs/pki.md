@@ -175,7 +175,8 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
 
 The operator machine is r440, whose `/etc/nixos` is the checkout of this
 repo. The live PKI there is `~admin/.local/share/cluster-pki/neurosis`
-(outside the checkout; in charlie's home until 2026-11), used as admin with
+(outside the checkout; in charlie's home until stage 2 of charlie's removal,
+docs/cluster.md), used as admin with
 `nix run /etc/nixos#cluster-pki -- --out ~/.local/share/cluster-pki/neurosis`.
 Nothing in the tool defaults to it: without `--out` it writes `./pki-out`.
 

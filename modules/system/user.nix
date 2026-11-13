@@ -46,7 +46,8 @@ in
         inherit (user) name home;
         group = "users";
         isNormalUser = true;
-        # Not wheel: sudo is admin's (modules/system/admin.nix).
+        # Not wheel: sudo is admin's (modules/system/admin.nix); likewise
+        # not a nix trusted-user (modules/system/nix.nix).
         extraGroups = [
           "dialout"
           "plugdev"
