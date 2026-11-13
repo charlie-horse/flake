@@ -217,7 +217,7 @@ client -> https://cache.neuros.is -> Cloudflare -> cloudflared (any node, hostNe
 | --- | --- |
 | c4130 | sops `nix-cache-netrc` in `secrets/c4130.yaml` → `/run/secrets/nix-cache-netrc` (root, 0600); formerly `/var/lib/nix-cache/netrc` |
 | m2mini | sops `nix-cache-netrc` in `secrets/m2mini.yaml` → same path |
-| Famine | sops `nix-cache-netrc` in `secrets/famine.yaml` → same path (the agenix one is lost; new user `famine`) |
+| Famine | sops `nix-cache-netrc` in `secrets/famine.yaml` → same path (the agenix copy is lost; the value came from the existing `famine` user, `r440:/root/nix-cache-setup/famine.netrc`) |
 | GitHub Actions | secret `NIX_CACHE_NETRC` → `$RUNNER_TEMP` (docs/ci.md) |
 
 r440 itself does not use it (it is the cache). Builds still go to r440
@@ -370,9 +370,9 @@ their setup steps but point here. sops-encrypted files are in git
 | charlie's password hash, Famine only | sops `charlie-password-hash` in `secrets/famine.yaml` → `/run/secrets-for-users/charlie-password-hash` (`neededForUsers`, `custom.user.keepPassword` in `modules/system/user.nix`; for the greeter, no sudo). Servers: charlie has no password (`modules/server/users.nix`); m2mini's old `/var/lib/secrets/charlie.passwd` is unused, delete it | you: `mkpasswd -m yescrypt` → `sops secrets/famine.yaml` |
 | sops-nix host identities | each host's SSH ed25519 host key `/etc/ssh/ssh_host_ed25519_key` (never in git); its `ssh-to-age` recipient is an anchor in `.sops.yaml`. Famine (no sshd) gets it from the `sopsHostKey` activation script (`modules/system/sops.nix`). A reinstalled host has a new key: update `.sops.yaml` and `sops updatekeys` before its first switch | sshd / activation |
 | sops admin identities | YubiKey PIV (age-plugin-yubikey, `admin_yubikey` in `.sops.yaml`) and the offline passphrase-protected backup age key (`admin_backup`); recipients of every file | `age-plugin-yubikey`, `age-keygen` |
-| Desktop YubiKey files | sops `pam-yubikeys`, `ssh-yubikey-5`, `ssh-yubikey-5c` in `secrets/famine.yaml` (`modules/system/yubikey.nix`, off until they exist). The old agenix files (`modules/age`, removed) and their keys are lost, as are Pestilence's agenix-only `key-pestilence`, `vpn-privkey`, `vpn-password`, `acme-cloudflare` | remake at Famine with both YubiKeys |
+| Desktop YubiKey files | sops `pam-yubikeys`, `ssh-yubikey-5`, `ssh-yubikey-5c` in `secrets/famine.yaml` (`modules/system/yubikey.nix`, off until they exist). The old agenix files (`modules/age`, removed) and their keys are lost, as are Pestilence's agenix-only `key-pestilence`, `vpn-privkey`, `vpn-password`, `acme-cloudflare` | remake at Famine with both YubiKeys ([docs/famine-sops.md](famine-sops.md)) |
 | Pestilence Transmission `rpc-password` | **plaintext in git**, `hosts/Pestilence/servarr.nix` (archived host; excluded from the format check so the secrets guard stays quiet) | rotate it and move it to sops before restoring Pestilence |
 | Cloud-session secrets | env vars of the Claude Code cloud environment: `TAIL_AUTH_KEY` (joins the session to the tailnet) and the sudo password (charlie's until the sops switch; afterwards admin's, see the admin row above) | environment settings (CLAUDE.md, "Access from a cloud session") |
-| Binary-cache setup files (temporary) | `r440:/root/nix-cache-setup/*.pw,*.netrc` (root, 0700 dir) | made with the htpasswd; shred once every host's sops `nix-cache-netrc` (and r440's `nix-cache-htpasswd`) is live. Famine's old password is lost: give it a new `famine` user first |
+| Binary-cache setup files (temporary) | `r440:/root/nix-cache-setup/*.pw,*.netrc` (root, 0700 dir) | made with the htpasswd; shred once every host's sops `nix-cache-netrc` (and r440's `nix-cache-htpasswd`) is live. Famine's netrc is already in `secrets/famine.yaml` |
 
 None of the plaintext secrets may go into git, the Nix store or a command line (the Pestilence `rpc-password` is the one known exception, above).
