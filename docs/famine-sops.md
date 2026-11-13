@@ -17,7 +17,6 @@ or charlie. Recovery means picking an older generation in the boot menu.
 | --- | --- |
 | `nix-cache-netrc` | Famine's binary-cache login (the existing `famine` htpasswd user on r440) |
 | `charlie-password` | charlie's new Famine login password, random. Deployed with `neededForUsers`; Famine derives its yescrypt hash at activation (`custom.sopsPasswords`, `modules/system/sops.nix`) |
-| `charlie-password-hash` | old yescrypt hash of the above, no longer used (nothing declares it; drop it at the next edit) |
 
 To read charlie's password, run this anywhere the YubiKey is plugged in. It
 needs the PIV PIN and a touch:

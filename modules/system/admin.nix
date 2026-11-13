@@ -13,8 +13,6 @@
 #          /run/secrets-for-users/admin-password-hash, admin's
 #          hashedPasswordFile (custom.sopsPasswords, modules/system/sops.nix).
 #          To change it, edit `admin-password` and switch every host.
-#          (The old `admin-password-hash` key may still sit in common.yaml;
-#          it is unused and nothing may declare it.)
 #   root   locked (no password, no keys); become root with `sudo -i` as
 #          admin.
 #   charlie exists only on desktops (modules/system/user.nix); the
