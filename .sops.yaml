@@ -29,6 +29,24 @@ keys:
   - &flux age1ynj83hcd8zmscx4us80q6hqzxmr0d69hv3vr8extl5kvjqd92agqypgdux # flux-system/sops-age
 
 creation_rules:
+  # Host PKI exported from cert-manager (docs/pki-migration-plan.md, phase
+  # 2): secrets/pki/<node>.yaml, a flat map of <stem>.pem (cert, plaintext:
+  # public, so PR diffs and CI can read them) and <stem>-key.pem (encrypted).
+  # Written by the export job from public recipients only. Kept first so no
+  # broader secrets/ rule can ever take these paths. CI: checks.yml,
+  # pki-files (.github/scripts/pki-files.py).
+  - path_regex: ^secrets/pki/c4130\.yaml$
+    encrypted_regex: -key\.pem$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *c4130]
+  - path_regex: ^secrets/pki/r440\.yaml$
+    encrypted_regex: -key\.pem$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *r440]
+  - path_regex: ^secrets/pki/m2mini\.yaml$
+    encrypted_regex: -key\.pem$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *m2mini]
   # Every host.
   - path_regex: ^secrets/common\.yaml$
     key_groups:
@@ -59,6 +77,8 @@ creation_rules:
   # sops decryption). Only the values under data/stringData are encrypted.
   # Layout enforced by k8s/render.nix: k8s/secrets/<namespace>/<name>.sops.yaml.
   # Sort keys before encrypting (see k8s/README.md, "Secrets").
+  # Also covers the bootstrap CA Secrets of phase 2,
+  # k8s/secrets/cluster-pki/{k8s,etcd,front-proxy}-ca.sops.yaml.
   - path_regex: (^|/)k8s/secrets/[^/]+/[^/]+\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
