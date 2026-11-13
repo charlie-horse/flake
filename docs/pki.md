@@ -99,7 +99,10 @@ would accept it as cluster-admin. With only the k8s intermediate as the
 anchor, that chain does not verify.
 
 - It works because Go's `x509.Verify` accepts a non-self-signed cert in the
-  root pool as a trust anchor. etcd, the apiserver and the kubelet are all
+  root pool as a trust anchor. The rehearsal (plan, node E) confirmed both
+  halves with etcd 3.7.3: a workload-signed `system:masters` cert is
+  rejected with only the k8s intermediate in the trust file, and accepted
+  once the root is in it. etcd, the apiserver and the kubelet are all
   Go. The legacy PKI already relied on this: its "temp root" was never on a
   node (see the inventory below).
 - Server leaves ship the full chain (leaf + intermediate) in the cert file,
@@ -128,7 +131,7 @@ FIDO2 key `ssh:admin` ([cluster.md, Secrets](cluster.md#secrets-all-of-them),
 | Root cert | `CN=neurosis Root CA 2026, O=neurosis`, 20 y, `CA:TRUE, pathlen:1`, `keyCertSign, cRLSign`. Also imported into slot 9c |
 | Signs | the four intermediates only: workload (every 2 y), k8s, etcd, front-proxy (every 5 y, or on rotation) |
 | In git (public) | `cluster/pki/`: the root cert (`root-ca.pem`, which `cluster-pki --ca-import` checks against), the slot attestation (`attest-9c.pem`) and the card's attestation cert (`attest-f9.pem`). The attestation proves the key was generated on the card and cannot be exported. The card serial and root fingerprint are recorded with them |
-| Where it runs | ad hoc, on c4130 or any machine with the card plugged in, like sops on c4130: as root via `sudo -i`, tools from `nix shell` (the ceremony tools package, pending, Linus), a temporary `pcscd --foreground --auto-exit` ([cluster.md, Secrets](cluster.md#secrets-all-of-them)). The user runs every step; a cloud session holds no PIN and runs no sudo |
+| Where it runs | ad hoc, on whatever machine the user plugs the card into; nothing about the root depends on a particular host. Tools: `nix shell <flake>#ca-ceremony-tools`. A desktop that runs pcscd (Famine) needs nothing else; on a server, use the ad-hoc procedure for sops on a server (`sudo -i`, then `ca-pcscd &` for a temporary pcscd; [cluster.md, Secrets](cluster.md#secrets-all-of-them)). The user runs every step; a cloud session holds no PIN and runs no sudo |
 
 Rules:
 
@@ -138,8 +141,9 @@ Rules:
   not changed by the ceremony. The PIN is held by the user, offline. The
   PUK is in sops (`secrets/admin.yaml`). The management key is random and
   PIN-protected on the card, so `ykman` asks for the PIN when it writes
-  slot 9c. Type the PIN at the prompt; never put it on a command line, in
-  shell history or in a file.
+  slot 9c. Never put the PIN on a command line or in shell history. The
+  ceremony's only copy is a 0600 `pin-source` file in tmpfs, shredded
+  after (step must have it, or it tries 123456 and burns a try).
 - **No backup (accepted risk).** If the card is lost, broken or reset, the
   root is gone and every intermediate must be re-rooted under a new one.
   Nothing breaks at once: the bootstrap bundles anchor on their 5-year

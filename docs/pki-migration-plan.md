@@ -7,8 +7,9 @@ Status: **plan, nothing done yet.** Current state is in [pki.md](pki.md).
 - **One trust root for everything**: a new root CA. Its key is generated on
   the **admin YubiKey (serial 19830800)**, in PIV slot **9c (Digital
   Signature)**. That card already holds the sops admin age key (slot 82)
-  and the FIDO2 key `ssh:admin`. It travels with the user and is not
-  parked in c4130 (decision 2026-11-13).
+  and the FIDO2 key `ssh:admin`. It travels with the user; the ceremony
+  runs on whatever machine the user plugs it into, and nothing about the
+  root depends on a particular host (decision 2026-11-13).
 - **The workload intermediate key goes in sops**, at
   `k8s/secrets/cert-manager/cluster-ca.sops.yaml` (recipients: admins +
   `&flux`), applied by the Flux Kustomization `secrets` (decision
@@ -79,20 +80,20 @@ The nodes run in parallel unless an arrow says otherwise. Code nodes are one
 branch, CI run and PR each.
 
 ```
-A tools ──────┐
-B cluster-pki ─┼──► E rehearsal (soft key) ──► F ceremony ──► G workload cutover
+A tools (done)┐
+B cluster-pki ─┼──► E rehearsal (done) ──► F ceremony ──► G workload cutover
 C cert-manager ┤                                       └─► H front-proxy → k8s → etcd rotation
 D docs ────────┘
 ```
 
 | Node | What | Output |
 | --- | --- | --- |
-| **A** tools | The ceremony tools package (pending, Linus): a flake package with `yubikey-manager`, `yubico-piv-tool` (ykcs11), `step-cli` + `step-kms-plugin`, `openssl` + `pkcs11-provider`, `sops`, plus `pcsclite` and `ccid` for a temporary pcscd. Used through `nix shell`; nothing is installed on a host, so no switch. | PR |
+| **A** tools | **Done, no host change.** Flake package `ca-ceremony-tools`: `yubikey-manager`, `yubico-piv-tool` (ykcs11), `step-cli` + `step-kms-plugin`, `openssl` + `pkcs11-provider` (wrapper `ca-openssl`; unused, it crashed in E), and `ca-pcscd`, a temporary pcscd for hosts that don't run one. Used through `nix shell <flake>#ca-ceremony-tools`; nothing is installed on any host, so no switch. | Package |
 | **B** cluster-pki | New modes: `--ca-csr <ca>` (generate the intermediate key and CSR in `ca/<ca>/next/`; don't self-sign) and `--ca-import <ca> <cert>` (check that the cert matches the key, `pathlen:0`, and that it chains to `cluster/pki/root-ca.pem`). Wire into `--rotate-ca … --phase begin`. Leaves get chain files. Trust bundles hold the intermediate only, with the anchor check described above. Also fix the `--out` default to XDG and the `.gitignore` patterns (open TODOs). | PR |
 | **C** cert-manager | `issuers.nix`: drop the `selfsigned` → `cluster-ca` root Certificate. `cluster-ca` ClusterIssuer reads the Secret `cert-manager/cluster-ca` (`tls.crt` = intermediate + root, `tls.key`, `ca.crt` = root), which comes from sops (G). Optional: trust-manager `Bundle` that distributes the root to namespaces. Nothing requests from `cluster-ca` today, so the swap has no consumers to break. | Merge before G (see G). Until then the issuer stays Ready on the old self-signed Secret. trust-manager deferred until `cluster/pki/root-ca.pem` exists. |
 | **D** docs | `pki.md`: one root and two branches, the anchor rule, a YubiKey root CA section. `cluster.md` Secrets table: the root key as a second PIV use on the existing admin YubiKey rows, the workload intermediate as a sops Secret, and the root cert in git (public). | PR |
-| **E** rehearsal | Run the full ceremony script against a **software** P-384 key (tmpfs) on r440. Confirm that `step certificate sign --kms` (or the `openssl x509 -req -provider pkcs11` fallback) produces the right extensions, and that etcd, the apiserver and the kubelet accept intermediate-anchored bundles in a kind/test env. | Script known good |
-| **F** ceremony | Ad hoc on c4130 (or any machine with the card), **the user runs every step** (PIN, touch, sudo). Steps below. | Root cert, attestation, 4 signed intermediates, the sops file for `cluster-ca` |
+| **E** rehearsal | **Done (software rehearsal):** the ceremony commands ran against a SoftHSM key through step-kms-plugin. All PASS: Go TLS and etcd 3.7.3 accept a client cert when the trust file holds only the k8s intermediate; they reject a workload-signed `system:masters` cert with that same trust file; they **accept** it if the root is in the trust file (so the anchor rule is needed); a server cert file with leaf + intermediate verifies against the root alone. The openssl/pkcs11 fallback crashed and is dropped. | Ceremony commands and gotchas (F) |
+| **F** ceremony | Ad hoc on whatever machine the user plugs the card into (a desktop like Famine, or a server). **The user runs every step** (PIN, touch, sudo). No host switch. Steps below. | Root cert, attestation, 4 signed intermediates, the sops file for `cluster-ca` |
 | **G** workload cutover | **Order matters.** (1) Merge C first. It removes the old self-signed `Certificate cluster-ca`; confirm it is gone from the cluster (`kubectl -n cert-manager get certificate cluster-ca` → NotFound). Otherwise cert-manager re-issues over the new Secret with a self-signed cert. (2) At the ceremony (F step 7), encrypt the intermediate straight from tmpfs with `sops` into `k8s/secrets/cert-manager/cluster-ca.sops.yaml`, then PR and merge. Flux's Kustomization `secrets` replaces the old Secret (server-side apply adopts it; the old Certificate no longer owns it). No `kubectl create`. Then check `flux get kustomizations secrets` and `cert-manager-issuers` are Ready, issue a test Certificate, `openssl verify -CAfile root-ca.pem`. | |
 | **H** bootstrap rotation | Existing `--rotate-ca` flow, one CA at a time: front-proxy (lowest risk), then k8s, then etcd (per-node runbook). One host at a time, etcd health check after each. | All bootstrap certs chain to the root |
 
@@ -102,36 +103,69 @@ sessions.
 
 ## Ceremony (node F)
 
-Preconditions: A is merged, E passed, C is merged and the old Certificate
+Preconditions: A and E are done, C is merged and the old Certificate
 is gone (G step 1). **The user runs every step**; a cloud session holds no
-PIN and runs no sudo, and only writes the steps out. Never record the PIN
-in shell history or on a command line. The ceremony does **not** change the
+PIN and runs no sudo, and only writes the steps out. Never put the PIN in
+shell history or on a command line; the only copy on disk is the 0600
+pin-source file in tmpfs (below). The ceremony does **not** change the
 PIN, PUK or management key (already set for sops), never touches slot 82
 (the sops key), and never runs `ykman piv reset`.
 
-0. Set up like sops on c4130 (docs/cluster.md, "Secrets (all of them)"):
-   plug in the card; as admin, `sudo -i`; `nix shell` the ceremony tools
-   package (pending, Linus); start
-   `PCSCLITE_HP_DROPDIR=<ccid>/pcsc/drivers pcscd --foreground --auto-exit &`;
-   work in a tmpfs directory. Any other machine with the card works the
-   same way.
-1. `ykman info` → check serial 19830800 and firmware (need ≥ 5.x for P-384
-   and attestation). `ykman piv info`: slot 9c must be empty, slot 82 holds
-   the sops key (leave it).
-2. `ykman piv keys generate --algorithm ECCP384 --pin-policy ALWAYS
-   --touch-policy ALWAYS 9c root.pub`. The management key is PIN-protected
-   on the card, so ykman asks for the PIN.
-3. `ykman piv keys attest 9c attest-9c.pem` and `ykman piv certificates
-   export f9 attest-f9.pem`. These prove the key was generated on-device
-   and is non-exportable.
-4. Self-sign the root with `CA:TRUE, pathlen:1`, `keyCertSign, cRLSign`,
-   20 y, subject `CN=neurosis Root CA 2026,O=neurosis`, via step-kms-plugin
-   (`--kms 'yubikey:' --key 'yubikey:slot-id=9c'`). Import it into slot 9c
-   (`ykman piv certificates import 9c root-ca.pem`).
-5. Sign the four intermediate CSRs (PIN + touch each):
+0. Plug the card into the machine of your choice and enter
+   `nix shell <flake>#ca-ceremony-tools nixpkgs#sops` (sops for step 7).
+   A desktop that runs pcscd (Famine) needs nothing else. A server has no
+   pcscd: there, follow the ad-hoc procedure for sops on a server
+   (docs/cluster.md, "Secrets (all of them)"), i.e. as admin `sudo -i`,
+   enter the same `nix shell`, and start `ca-pcscd &` (it exits when idle).
+   Work in a tmpfs directory.
+The script is `pkgs/ca-ceremony-tools/ceremony.sh`. It runs these
+commands; `<ca>` is `workload`, `k8s`, `etcd` or `front-proxy`:
+
+```sh
+ykman --device 19830800 piv keys generate --algorithm ECCP384 \
+  --pin-policy ALWAYS --touch-policy ALWAYS 9c root.pub
+ykman --device 19830800 piv keys attest 9c attest-9c.pem
+ykman --device 19830800 piv certificates export f9 attest-f9.pem
+KMS='yubikey:serial=19830800?pin-source=<0600 tmpfs file>'
+step certificate create --template root.tpl --not-after 175320h \
+  --skip-csr-signature --kms "$KMS" --key 'yubikey:slot-id=9c' \
+  "neurosis Root CA 2026" root-ca.pem
+step certificate sign --template intermediate.tpl --not-after 43824h \
+  --kms "$KMS" <ca>.csr root-ca.pem 'yubikey:slot-id=9c' > <ca>.pem   # workload: 17520h
+ykman --device 19830800 piv certificates import --no-update-chuid 9c root-ca.pem
+```
+
+1. Check the card first: `ykman --device 19830800 info` (firmware ≥ 5.x
+   for P-384 and attestation) and `ykman --device 19830800 piv info`:
+   slot 9c must be empty, and slot 82 holds the sops key (leave it).
+2. Generate the root key in 9c. The management key is PIN-protected on
+   the card, so ykman asks for the PIN.
+3. Attest 9c and export the f9 attestation cert. Together they prove the
+   key was generated on the card and is not exportable.
+4. Self-sign the root: `root.tpl` sets `CN=neurosis Root CA 2026,
+   O=neurosis`, `CA:TRUE, pathlen:1`, `keyCertSign, cRLSign` and the AKI;
+   20 y (175320h).
+5. Sign the four intermediate CSRs with `intermediate.tpl` (`pathlen:0`):
+   k8s, etcd and front-proxy 5 y (43824h), workload 2 y (17520h).
    - workload: key and CSR generated in the tmpfs directory;
    - k8s, etcd, front-proxy: CSRs from `cluster-pki --ca-csr` on r440,
      copied over (CSRs are public).
+   Then import the root cert into slot 9c.
+
+That is **5 PIN + touch** in all: the root, then one per intermediate.
+
+Gotchas (found in E):
+
+- **The KMS URI must carry `pin-source`.** Without it, step silently tries
+  the default PIN 123456 and burns one of the 3 PIN tries. The pin-source
+  file is 0600 in the tmpfs directory, written with `read -rs`, and
+  shredded with it.
+- **The root needs a template.** Without one, step sets neither `O=` nor
+  the AKI.
+- **`--skip-csr-signature`** saves one touch on the root.
+- **step is the only path.** The openssl + pkcs11-provider fallback
+  (`ca-openssl`) crashed in E; don't use it.
+
 6. Commit `root-ca.pem`, `attest-9c.pem` and `attest-f9.pem` to
    `cluster/pki/` (public).
 7. Workload intermediate into sops, straight from tmpfs, in a checkout on
@@ -147,7 +181,7 @@ PIN, PUK or management key (already set for sops), never touches slot 82
 ## Host change rules (from CLAUDE.md)
 
 - No switch is needed for the ceremony (tools come from `nix shell`). Any
-  c4130 switch for other nodes: GC first (`nix-env … --delete-generations
+  c4130 switch for other work: GC first (`nix-env … --delete-generations
   +2 && nix-collect-garbage`), outside 22:00–05:55 EST, one host at a
   time, then the etcd health check from `cluster.md`. Builds happen on
   r440.
@@ -175,7 +209,8 @@ PIN, PUK or management key (already set for sops), never touches slot 82
   a CA Secret it didn't issue. Set a reminder about 60 days before the
   2-year expiry; renew by signing a new one and replacing the sops file.
   Leaf durations must stay under the intermediate's remaining life.
-- **Anchor mistake.** Covered by the anchor check in B and the rehearsal in E.
+- **Anchor mistake.** Covered by the anchor check in B. E showed it is real: etcd accepts a workload-signed `system:masters` cert once the root is in the trust file.
+- **Wasted PIN tries.** A KMS URI without `pin-source` burns a try on 123456 (F, gotchas). The PUK in sops covers a lockout.
 
 ## Phase 2 prerequisites (not planned yet)
 
