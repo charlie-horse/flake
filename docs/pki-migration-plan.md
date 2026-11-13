@@ -112,11 +112,13 @@ PIN, PUK or management key (already set for sops), never touches slot 82
 (the sops key), and never runs `ykman piv reset`.
 
 0. Plug the card into the machine of your choice and enter
-   `nix shell <flake>#ca-ceremony-tools nixpkgs#sops` (sops for step 7).
+   `nix shell <flake>#ca-ceremony-tools` (includes sops, age-plugin-yubikey
+   and yq-go) and run `ca-ceremony` (`MODE=rehearsal` uses SoftHSM, no card).
    A desktop that runs pcscd (Famine) needs nothing else. A server has no
    pcscd: there, follow the ad-hoc procedure for sops on a server
    (docs/cluster.md, "Secrets (all of them)"), i.e. as admin `sudo -i`,
-   enter the same `nix shell`, and start `ca-pcscd &` (it exits when idle).
+   enter the same `nix shell`; `ca-ceremony` starts `ca-pcscd` itself when no
+   pcscd is reachable (it exits when idle).
    Work in a tmpfs directory.
 The script is `pkgs/ca-ceremony-tools/ceremony.sh`. It runs these
 commands; `<ca>` is `workload`, `k8s`, `etcd` or `front-proxy`:
