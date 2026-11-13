@@ -87,13 +87,11 @@ in
     secretsDir = mkOption {
       # A string on purpose: a Nix path here would copy keys into the store.
       type = types.str;
-      default =
-        if cfg.certSource == "sops" then
-          "/run/secrets/pki"
-        else
-          cluster.secretsDir or "/var/lib/kubernetes/secrets";
-      defaultText = ''"/run/secrets/pki" with certSource "sops", else cluster.secretsDir'';
-      description = "Directory holding every cluster key and cert.";
+      default = cluster.secretsDir or "/var/lib/kubernetes/secrets";
+      description = ''
+        Directory holding every cluster key and cert. certSource "sops"
+        sets it to /run/secrets/pki (./pki-sops.nix).
+      '';
     };
 
     stage = mkOption {
