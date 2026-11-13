@@ -34,6 +34,10 @@ creation_rules:
           - *c4130
           - *r440
           - *m2mini
+  # Admin-only material, never deployed to a host (e.g. the YubiKey PIV PUK).
+  - path_regex: ^secrets/admin\.yaml$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup]
   # One host each (sops.defaultSopsFile = secrets/<lowercase hostname>.yaml).
   - path_regex: ^secrets/c4130\.yaml$
     key_groups:
