@@ -706,8 +706,11 @@ each one switches to `certSource = "sops"`.
 
 ### Export job
 
-- CronJob `cluster-pki/pki-export`, daily at 09:41 New York time. Script:
-  `pkgs/pki-export/pki-export.sh`.
+- CronJob `cluster-pki/pki-export`, daily at 09:41 New York time. Code:
+  `pkgs/pki-tools` (Python; `pki/cli_export.py`). The expected leaves are
+  baked into the package from `leaves.nix` (`PKI_LEAVES_JSON`);
+  `PKI_EXPORT_SECRETS`, set by the CronJob, narrows them to its list.
+  Other environment: `PKI_EXPORT_TOKEN_FILE`, `GITHUB_REPOSITORY`.
 - It gets each leaf Secret by name and writes `secrets/pki/<node>.yaml`:
   certs in plaintext, keys sops-encrypted to the admins and that host. It
   validates each node (chain, node, completeness, expiry). When
@@ -721,9 +724,11 @@ each one switches to `certSource = "sops"`.
   image holds no age identity.
 - The image is amd64 only. The job has an amd64 nodeSelector, and
   `k8s/render.nix` exempts it from the multi-arch check.
-- Local runs: `nix build .#pki-export` (the script; `--from-dir`,
-  `--dry-run`). `nix build .#pki-export-image` is a `docker-archive`
-  stream: `./result | skopeo copy docker-archive:/dev/stdin …`.
+- Local runs: `nix run .#pki-export -- --from-dir DIR --dry-run
+  --repo-dir . --out OUT` (Secret YAML files in, no cluster, no git, no
+  API). `nix build .#pki-export-image` is a `docker-archive` stream:
+  `./result | skopeo copy docker-archive:/dev/stdin …`. Tests: `nix build
+  .#checks.x86_64-linux.pki-tools` (pytest; also in `nix flake check`).
 
 ### Export job: GitHub token
 

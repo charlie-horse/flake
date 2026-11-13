@@ -285,7 +285,7 @@ files** with only the public recipients from `.sops.yaml`:
   changed.
 
 **Checks live in the export job, not in CI** (decision 2026-11-13).
-`pki-export.sh` validates every node before it pushes: all of the node's
+`pki-export` (`pkgs/pki-tools`) validates every node before it pushes: all of the node's
 stems are present (otherwise the node is skipped), each cert chains to
 exactly its own intermediate (not the root, not the workload CA), each cert
 belongs to that node, each key is encrypted, and each key matches its cert.

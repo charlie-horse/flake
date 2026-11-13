@@ -91,7 +91,7 @@ The guard scans only the diff: the PR's merge-base to head, or on a push
   encrypted": a top-level `<stem>.pem` may be plaintext if it holds
   nothing but `CERTIFICATE` blocks. Every `<stem>-key.pem` must be
   `ENC[...]`. The content checks (chain, node, completeness, expiry)
-  are in the export job, `pkgs/pki-export/pki-export.sh`. Recipients: `.sops.yaml`.
+  are in the export job, `pkgs/pki-tools/pki/cli_export.py`. Recipients: `.sops.yaml`.
 
 A second step checks **every** sops file in the tree (not only the diff,
 since a `.sops.yaml` change alone can break untouched files): its age
