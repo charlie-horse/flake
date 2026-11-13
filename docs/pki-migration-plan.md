@@ -113,7 +113,7 @@ the PIN in shell history or on a command line.
 5. Self-sign the root with `CA:TRUE, pathlen:1`, `keyCertSign, cRLSign`,
    20 y, subject `CN=neurosis Root CA 2026,O=neurosis`, via step-kms-plugin
    (`--kms 'yubikey:' --key 'yubikey:slot-id=9c'`). Import it into slot 9c
-   (`ykman piv certificates import 9c root.pem`).
+   (`ykman piv certificates import 9c root-ca.pem`).
 6. Sign the four intermediate CSRs (PIN + touch each):
    - workload: key and CSR generated on c4130 in tmpfs;
    - k8s, etcd, front-proxy: CSRs from `cluster-pki --ca-csr` on r440,
