@@ -39,6 +39,11 @@ in
         prometheus.enabled = false;
         # A Helm post-install hook; Flux applies plain manifests (noHooks).
         startupapicheck.enabled = false;
+        # No built-in auto-approver (it would approve every request to every
+        # Issuer, the cluster-pki ones included): approver-policy decides
+        # (approver-policy.nix). The chart drops the controller's
+        # certificaterequests-approver and its `approve` RBAC.
+        disableAutoApproval = true;
 
         # The controller is leader-elected: one replica; a restart only
         # delays issuance/renewal.
