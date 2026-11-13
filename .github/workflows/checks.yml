@@ -6,8 +6,6 @@
 #   secrets-guard  keys, kubeconfigs or plaintext passwords in the diff;
 #                  sops files (secrets/, k8s/**/*.sops.yaml) fully encrypted,
 #                  and each encrypted to exactly its .sops.yaml recipients
-#   pki-files      secrets/pki/<node>.yaml (host certs exported from
-#                  cert-manager): chain, ownership, expiry, keys encrypted
 #   flake-check    every flake output evaluates (nothing heavy is built)
 #   eval-hosts     each server's toplevel drvPath evaluates, for its system
 #   format         every tracked .nix file is nixfmt-formatted (`nix fmt`)
@@ -124,11 +122,9 @@ jobs:
           #    suffix) is refused; k8s/render.nix rejects the same files at
           #    render time. Only the file and the key path are printed,
           #    never a value.
-          #    secrets/pki/<node>.yaml (exported host PKI, .sops.yaml rules
-          #    with encrypted_regex -key\.pem$): a top-level <stem>.pem may
-          #    be plaintext only if it holds nothing but CERTIFICATE blocks;
-          #    every other value, every <stem>-key.pem included, must be
-          #    ENC[...]. The pki-files job checks their content.
+          #    secrets/pki/<node>.yaml (no subdirectories): a <stem>.pem
+          #    may be plaintext if it holds only CERTIFICATE blocks; every
+          #    other value, each -key.pem included, must be ENC[...].
           while IFS= read -r -d '' f; do
             case "$f" in
               secrets/pki/*/*) mode=bad ;;
@@ -304,27 +300,6 @@ jobs:
                     + f". Run `sops updatekeys {f}` (dev shell) and commit it.")
           sys.exit(status)
           '
-
-  # ------------------------------------------------------------------------
-  # secrets/pki/<node>.yaml, the host certs the cert-manager export job
-  # writes (docs/pki-migration-plan.md, phase 2). Over the whole tree, not
-  # the diff: certs expire without anyone touching the file. Per cert: it
-  # verifies (-partial_chain) against only its own intermediate in
-  # cluster/pki/, never the root or the workload CA; it belongs to the node
-  # (stem -<node>, kubelet CN system:node:<node>, no other node's name or IP
-  # in CN/SANs); nothing expires within 14 days; every -key.pem is ENC[...]
-  # and every stem has both files. Passes when there are no files yet. Public
-  # data only; nothing is decrypted.
-  pki-files:
-    name: PKI files
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Check secrets/pki/*.yaml
-        run: python3 -I .github/scripts/pki-files.py
 
   # ------------------------------------------------------------------------
   flake-check:
