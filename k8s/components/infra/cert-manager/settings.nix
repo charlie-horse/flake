@@ -11,9 +11,8 @@ rec {
 
   # Workload certificates: `issuerRef: { kind: ClusterIssuer; name = caIssuer; }`.
   caIssuer = "cluster-ca";
-  # The root CA's Certificate and its Secret (tls.crt, tls.key, ca.crt) in
-  # `namespace`, the CA ClusterIssuer's signing key. Never copied anywhere.
+  # The CA ClusterIssuer's Secret in `namespace` (tls.crt = workload
+  # intermediate + root, tls.key, ca.crt = root). Created by hand, never in
+  # git (issuers.nix, docs/pki-migration-plan.md).
   caSecret = "cluster-ca";
-  # Signs the root CA once (and on renewal); nothing else should use it.
-  selfSignedIssuer = "selfsigned";
 }
