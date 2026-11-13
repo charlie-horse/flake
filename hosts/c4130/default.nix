@@ -25,6 +25,5 @@
     ./vllm
     ./builder.nix
     ./gpu-window.nix
-    ./yubikey.nix
   ];
 }

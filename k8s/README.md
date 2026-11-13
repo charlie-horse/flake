@@ -310,7 +310,7 @@ SSO for the cluster and its apps (`components/apps/authentik/`). It runs
 control plane and the admin kubeconfig authenticate with x509 certs, Flux
 and pods with service-account tokens. OIDC is only an extra way for people
 to log in. If authentik is down, only those logins fail; the admin cert
-(`r440:~/.local/share/cluster-pki/neurosis/admin.kubeconfig`) is the
+(`r440:~admin/.local/share/cluster-pki/neurosis/admin.kubeconfig`) is the
 break-glass.
 
 | Piece | Where | Data |
@@ -329,7 +329,7 @@ WAL.
 The pods read `authentik/authentik-secrets`. Flux doesn't create or prune it.
 Until it exists, the pods sit in `CreateContainerConfigError` (they start
 by themselves once it does) and nothing else is affected. Create it on r440
-with the operator kubeconfig. The values are generated in place and never
+(as admin) with the operator kubeconfig. The values are generated in place and never
 appear on a command line:
 
 ```sh
@@ -438,7 +438,7 @@ own ServiceAccount has no RBAC; what a user sees is what
 ### The Secret (once, by hand, never in git)
 
 Copy the client secret from authentik (Applications → Providers →
-`headlamp`), then on r440 with the operator kubeconfig paste it on stdin:
+`headlamp`), then on r440 (as admin) with the operator kubeconfig paste it on stdin:
 
 ```sh
 export KUBECONFIG=~/.local/share/cluster-pki/neurosis/admin.kubeconfig
@@ -494,7 +494,7 @@ caches nothing. Setup and secrets: docs/cluster.md, "Binary cache".
   ```
 
 - **DNS.** A proxied CNAME per hostname to the tunnel (account cert:
-  charlie's `~/.cloudflared/cert.pem` on c4130):
+  `~admin/.cloudflared/cert.pem` on c4130, run as admin):
   `cloudflared tunnel route dns --overwrite-dns 59a275ca-be31-4f8d-99ce-c536eaf490f8 <hostname>`.
 - **New hostname.** Add it to `routes` in `components/apps/cloudflared/` (the
   pods roll on config change), then add its DNS route.

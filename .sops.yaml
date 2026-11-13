@@ -8,6 +8,10 @@
 # The host decrypts with that private key at activation; a reinstalled host
 # gets a new key, so its anchor must be updated (and every file it reads
 # re-encrypted) BEFORE its first switch, or admin's password is missing.
+# Both are enforced: CI (checks.yml, secrets-guard) fails when a file's
+# recipients differ from its rule below, and each host's pre-switch check
+# `sopsDecrypt` (modules/system/sops.nix) refuses to switch when the host
+# key cannot decrypt a file it uses.
 keys:
   # Admins: every rule includes both, so any file can be recovered.
   - &admin_yubikey age1yubikey1qwdgvy8jqgqjd2f380hf6d787x25eyhfwj5nxyv5gzhu6827medygv69f6q # age-plugin-yubikey (PIV slot)

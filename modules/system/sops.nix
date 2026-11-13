@@ -18,46 +18,254 @@
 # sops, age, age-plugin-yubikey, ssh-to-age). Secrets land in /run/secrets/
 # (neededForUsers: /run/secrets-for-users/, before users are created).
 #
+# Can this host decrypt? Checked twice, automatically:
+#   - CI (.github/workflows/checks.yml, secrets-guard): every sops file's
+#     age recipients equal its .sops.yaml creation rule, i.e. no file was
+#     left un-re-encrypted after a recipient change. No keys needed.
+#   - On the host, before every switch/boot/test (system.preSwitchChecks.
+#     sopsDecrypt below): each sops file this configuration uses is
+#     decrypted with the host key (to /dev/null). Any failure, or a missing
+#     host key, aborts switch-to-configuration before the bootloader or
+#     activation is touched, so a host that would come up with no admin
+#     password refuses to switch instead. `NIXOS_NO_CHECK=1` skips all
+#     pre-switch checks (don't, unless you know why it failed).
+#
 # The host key must exist before the first activation decrypts anything. On
 # the servers sshd made it long ago; Famine runs no sshd at all
-# (services.openssh.enable = false), so the activation script below makes
-# it when it is missing, without enabling or exposing sshd. It runs before
-# sops-nix's setupSecretsForUsers (every host has one: admin's password
-# hash), which runs before `users` and so before setupSecrets. An existing
-# key is never touched; sshd, where enabled, uses the same file.
+# (services.openssh.enable = false). The pre-switch check refuses a switch
+# while the key is missing (make it with `sudo ssh-keygen -A` and enroll
+# it, docs/famine-sops.md); the activation script below remains as a
+# fallback for activations that skip the check (NIXOS_NO_CHECK=1, a fresh
+# nixos-install with the check overridden): it makes the key when it is
+# missing, without enabling or exposing sshd. It runs before sops-nix's
+# setupSecretsForUsers (every host has one: admin's password), which runs
+# before `users` and so before setupSecrets. An existing key is never
+# touched; sshd, where enabled, uses the same file.
+#
+# Login passwords (custom.sopsPasswords below): the sops file holds the
+# PLAINTEXT password only (one source of truth, readable with
+# `sops -d --extract '["<key>"]' <file>`). It is decrypted with
+# neededForUsers to /run/secrets-for-users/<key> (ramfs, root 0400), and
+# the activation script `sopsPasswordHashes` derives the yescrypt hash from
+# it at every activation (`mkpasswd -m yescrypt --stdin`) into
+# /run/secrets-for-users/<key>-hash, which is users.users.<user>.
+# hashedPasswordFile. Ordering: setupSecretsForUsers -> sopsPasswordHashes
+# -> users (nixpkgs' update-users-groups.pl reads hashedPasswordFile there).
+# The current /etc/shadow hash is reused when it still matches the
+# plaintext, so an unchanged password does not get a new salt every switch.
+# If the plaintext is missing or empty (decryption failed), the snippet
+# fails the activation loudly and keeps the user's PREVIOUS hash from
+# /etc/shadow, rather than letting `users` lock the account ("!").
+# Assumes the classic perl `users` activation script: no systemd-sysusers
+# and no userborn (asserted; sops-nix would then decrypt in a systemd unit
+# instead of setupSecretsForUsers).
 {
   config,
+  options,
   lib,
   pkgs,
   inputs,
   ...
 }:
 let
+  inherit (lib)
+    types
+    mkOption
+    ;
   hostKey = "/etc/ssh/ssh_host_ed25519_key";
+  cfg = config.custom.sopsPasswords;
+  defaultSopsFile = toString config.sops.defaultSopsFile;
+
+  # Every sops file this configuration decrypts at activation: the default
+  # file (if it exists) and each secret's sopsFile, deduplicated.
+  sopsFiles = lib.unique (
+    lib.optional (builtins.pathExists config.sops.defaultSopsFile) "${config.sops.defaultSopsFile}"
+    ++ lib.mapAttrsToList (_: s: "${s.sopsFile}") config.sops.secrets
+  );
+
+  mkpasswd = "${pkgs.mkpasswd}/bin/mkpasswd";
 in
 {
   imports = [ inputs.sops-nix.nixosModules.sops ];
 
-  system.activationScripts = {
-    sopsHostKey = lib.stringAfter [ "specialfs" ] ''
-      if [ ! -s ${hostKey} ]; then
-        echo "generating ${hostKey} (sops-nix decryption identity)..."
-        mkdir -p -m 0755 ${dirOf hostKey}
-        ${pkgs.openssh}/bin/ssh-keygen -q -t ed25519 -N "" -C "" -f ${hostKey}
-      fi
+  options.custom.sopsPasswords = mkOption {
+    default = { };
+    description = ''
+      Users whose login password comes from a plaintext sops key. Each
+      entry declares sops.secrets.<key> (neededForUsers), derives its
+      yescrypt hash at activation and sets
+      users.users.<name>.hashedPasswordFile to it.
     '';
-    setupSecretsForUsers.deps = [ "sopsHostKey" ];
+    type = types.attrsOf (
+      types.submodule (
+        { name, config, ... }:
+        {
+          options = {
+            key = mkOption {
+              type = types.str;
+              default = "${name}-password";
+              description = "sops key holding the plaintext password.";
+            };
+            sopsFile = mkOption {
+              type = types.str;
+              default = defaultSopsFile;
+              defaultText = lib.literalExpression "config.sops.defaultSopsFile";
+              description = "sops file holding the key.";
+            };
+            hashFile = mkOption {
+              type = types.str;
+              readOnly = true;
+              default = "/run/secrets-for-users/${config.key}-hash";
+              description = "Where the derived yescrypt hash is written.";
+            };
+          };
+        }
+      )
+    );
   };
 
-  sops = {
-    # Through inputs.self, not a relative path: mkHost imports modules/
-    # from its own store copy, which has no ../secrets.
-    defaultSopsFile = "${inputs.self}/secrets/${lib.toLower config.networking.hostName}.yaml";
-    age = {
-      sshKeyPaths = [ hostKey ];
-      keyFile = null;
-      generateKey = false;
+  config = {
+    system.activationScripts = {
+      sopsHostKey = lib.stringAfter [ "specialfs" ] ''
+        if [ ! -s ${hostKey} ]; then
+          echo "generating ${hostKey} (sops-nix decryption identity)..."
+          mkdir -p -m 0755 ${dirOf hostKey}
+          ${pkgs.openssh}/bin/ssh-keygen -q -t ed25519 -N "" -C "" -f ${hostKey}
+        fi
+      '';
+      setupSecretsForUsers.deps = [ "sopsHostKey" ];
+    }
+    // lib.optionalAttrs (cfg != { }) {
+      sopsPasswordHashes = {
+        deps = [ "setupSecretsForUsers" ];
+        # Not run on dry-activate (sops-nix installs nothing then either).
+        supportsDryActivation = false;
+        text = ''
+          # _sopsWriteHash HASH FILE: atomically, root 0600.
+          _sopsWriteHash() {
+            ( umask 077 && printf '%s\n' "$1" > "$2.tmp" && mv -f "$2.tmp" "$2" )
+          }
+          # _sopsPasswordHash USER PLAINTEXT_FILE HASH_FILE
+          _sopsPasswordHash() {
+            local user=$1 plain=$2 out=$3 old new=""
+            old=$(getent shadow "$user" | cut -d: -f2) || old=""
+            if [ -r "$plain" ] && grep -q '[^[:space:]]' "$plain"; then
+              if [[ $old == '$y$'* ]] \
+                && [ "$(${mkpasswd} -m yescrypt --stdin -S "''${old%\$*}" < "$plain")" = "$old" ]; then
+                new=$old
+              else
+                new=$(${mkpasswd} -m yescrypt --stdin < "$plain") || new=""
+              fi
+            fi
+            if [[ $new != '$y$'* ]]; then
+              echo "ERROR: no password for $user: $plain is missing or empty" >&2
+              echo "  (sops decryption failed? see setupSecretsForUsers above), or mkpasswd failed." >&2
+              if [[ $old == '$'* ]]; then
+                echo "  Keeping $user's previous password hash from /etc/shadow." >&2
+                _sopsWriteHash "$old" "$out"
+              else
+                echo "  $user has no previous password hash: the account is LOCKED." >&2
+              fi
+              return 1
+            fi
+            _sopsWriteHash "$new" "$out"
+          }
+        ''
+        + lib.concatStrings (
+          lib.mapAttrsToList (user: c: ''
+            _sopsPasswordHash ${
+              lib.escapeShellArgs [
+                user
+                config.sops.secrets.${c.key}.path
+                c.hashFile
+              ]
+            }
+          '') cfg
+        );
+      };
+      # nixpkgs' users script reads hashedPasswordFile: after the hashes.
+      users.deps = [ "sopsPasswordHashes" ];
     };
-    gnupg.sshKeyPaths = [ ];
+
+    sops = {
+      # Through inputs.self, not a relative path: mkHost imports modules/
+      # from its own store copy, which has no ../secrets.
+      defaultSopsFile = "${inputs.self}/secrets/${lib.toLower config.networking.hostName}.yaml";
+      age = {
+        sshKeyPaths = [ hostKey ];
+        keyFile = null;
+        generateKey = false;
+      };
+      gnupg.sshKeyPaths = [ ];
+
+      secrets = lib.mapAttrs' (
+        _: c:
+        lib.nameValuePair c.key {
+          inherit (c) sopsFile;
+          # /run/secrets-for-users/<key>, root 0400, before users exist.
+          neededForUsers = true;
+        }
+      ) cfg;
+    };
+
+    users.users = lib.mapAttrs (_: c: { hashedPasswordFile = c.hashFile; }) cfg;
+
+    assertions = [
+      {
+        assertion =
+          cfg == { }
+          || (
+            !config.systemd.sysusers.enable && !(options.services ? userborn && config.services.userborn.enable)
+          );
+        message = "modules/system/sops.nix: custom.sopsPasswords needs the perl `users` activation script (no systemd.sysusers, no userborn).";
+      }
+    ]
+    ++ lib.mapAttrsToList (user: c: {
+      assertion = !(config.sops.secrets ? "${c.key}-hash");
+      message = "modules/system/sops.nix: ${user}'s hash /run/secrets-for-users/${c.key}-hash is derived from `${c.key}`; do not also declare sops.secrets.\"${c.key}-hash\".";
+    }) cfg;
+
+    # Refuse to switch when the host cannot decrypt a sops file it uses
+    # (see the header). Runs as root from the NEW generation's
+    # switch-to-configuration, for every action, before activation.
+    system.preSwitchChecks.sopsDecrypt = ''
+      PATH=${
+        lib.makeBinPath [
+          pkgs.coreutils
+          pkgs.gnused
+        ]
+      }:$PATH
+      key=${hostKey}
+      if [ ! -s "$key" ]; then
+        echo "sops: $key does not exist, so this host cannot decrypt its secrets"
+        echo "  (admin would have no password). Create it and enroll it first:"
+        echo "  docs/famine-sops.md, steps 1-2 (sudo ssh-keygen -A; add its"
+        echo "  ssh-to-age recipient to .sops.yaml; sops updatekeys; merge)."
+        exit 1
+      fi
+      home=$(mktemp -d)
+      trap 'rm -rf "$home"' EXIT
+      failed=0
+      for f in ${lib.escapeShellArgs sopsFiles}; do
+        # Only the host key: no ~/.config/sops, ~/.ssh or SOPS_AGE_* from
+        # the caller's environment. (SOPS_AGE_SSH_PRIVATE_KEY_FILE did not
+        # work with sops 3.13; SOPS_AGE_KEY_CMD + ssh-to-age does.)
+        if (cd / && env -i HOME="$home" \
+          SOPS_AGE_KEY_CMD="${pkgs.ssh-to-age}/bin/ssh-to-age -private-key -i $key" \
+          ${pkgs.sops}/bin/sops -d "$f" >/dev/null 2>"$home/err"); then
+          echo "sops: decrypts ''${f#/nix/store/*-source/}"
+        else
+          echo "sops: CANNOT decrypt ''${f#/nix/store/*-source/} with $key:"
+          sed 's/^/    /' "$home/err"
+          failed=1
+        fi
+      done
+      if [ "$failed" -ne 0 ]; then
+        echo "sops: refusing to switch: this host is not a recipient of the file(s)"
+        echo "  above (or they were not re-encrypted). Add its ssh-to-age recipient"
+        echo "  to .sops.yaml and run sops updatekeys (docs/famine-sops.md, step 2)."
+        exit 1
+      fi
+    '';
   };
 }

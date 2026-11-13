@@ -4,7 +4,8 @@
 # runner), never renders k8s (render.yml does) and never writes.
 #
 #   secrets-guard  keys, kubeconfigs or plaintext passwords in the diff;
-#                  sops files (secrets/, k8s/**/*.sops.yaml) fully encrypted
+#                  sops files (secrets/, k8s/**/*.sops.yaml) fully encrypted,
+#                  and each encrypted to exactly its .sops.yaml recipients
 #   flake-check    every flake output evaluates (nothing heavy is built)
 #   eval-hosts     each server's toplevel drvPath evaluates, for its system
 #   format         every tracked .nix file is nixfmt-formatted (`nix fmt`)
@@ -185,6 +186,77 @@ jobs:
             echo "no secrets found"
           fi
           exit "$status"
+
+      # Every sops file in the tree (not just the diff: a .sops.yaml change
+      # alone can break files nobody touched) must be encrypted to exactly
+      # the age recipients of the first .sops.yaml creation rule whose
+      # path_regex matches it, as sops itself picks the rule. A mismatch
+      # means the file was not re-wrapped (`sops updatekeys <file>`) after
+      # a recipient change, so a host would fail to decrypt it (and come up
+      # without admin's password); the host-side pre-switch check
+      # (modules/system/sops.nix) would then refuse to switch. Uses only
+      # public keys. PyYAML resolves the .sops.yaml anchors (*c4130, ...).
+      - name: sops files are encrypted to their .sops.yaml recipients
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016 # Python program, backticks in messages
+          git ls-files -z -- 'secrets/*.yaml' 'k8s/secrets/**/*.sops.yaml' \
+            | python3 -I -c '
+          import re, sys, yaml
+          raw = open(".sops.yaml").read()
+          cfg = yaml.safe_load(raw)
+          # age1... -> anchor name, for readable messages.
+          names = {k: n for n, k in re.findall(r"&(\S+)\s+(age1[0-9a-z]+)", raw)}
+          def label(r):
+              return f"{names[r]} ({r})" if r in names else r
+          def ages(v):
+              if not v:
+                  return set()
+              if isinstance(v, str):
+                  v = v.split(",")
+              return {a.strip() for a in v if a.strip()}
+          def rule_recipients(rule):
+              rs = ages(rule.get("age"))
+              for g in rule.get("key_groups") or []:
+                  rs |= ages(g.get("age"))
+              return rs
+          def file_recipients(meta):
+              entries = list(meta.get("age") or [])
+              for g in meta.get("key_groups") or []:
+                  entries += g.get("age") or []
+              return {e["recipient"].strip() for e in entries}
+          files = [f for f in sys.stdin.read().split("\0") if f]
+          if not files:
+              print("no sops files found")
+              sys.exit(1)
+          status = 0
+          for f in sorted(files):
+              rule = next((r for r in cfg.get("creation_rules") or []
+                           if re.search(r.get("path_regex", ""), f)), None)
+              if rule is None:
+                  print(f"::error file={f}::no creation rule in .sops.yaml matches {f}")
+                  status = 1
+                  continue
+              meta = (yaml.safe_load(open(f)) or {}).get("sops")
+              if not isinstance(meta, dict):
+                  print(f"::error file={f}::no sops metadata (not encrypted?)")
+                  status = 1
+                  continue
+              want, have = rule_recipients(rule), file_recipients(meta)
+              other = [k for k in ("pgp", "kms", "gcp_kms", "azure_kv", "hc_vault") if meta.get(k)]
+              if want == have and not other:
+                  print(f"ok  {f}: {len(have)} recipients")
+                  continue
+              status = 1
+              rx = rule.get("path_regex")
+              msg = [f"recipients differ from .sops.yaml rule {rx}"]
+              msg += [f"missing {label(r)}" for r in sorted(want - have)]
+              msg += [f"extra {label(r)}" for r in sorted(have - want)]
+              msg += [f"unexpected {k} keys" for k in other]
+              print(f"::error file={f}::" + "; ".join(msg)
+                    + f". Run `sops updatekeys {f}` (dev shell) and commit it.")
+          sys.exit(status)
+          '
 
   # ------------------------------------------------------------------------
   flake-check:

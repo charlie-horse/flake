@@ -85,6 +85,15 @@ The guard scans only the diff: the PR's merge-base to head, or on a push
   file under `secrets/` (a subdirectory, a non-`.yaml` file) fails.
   Recipients: `.sops.yaml`.
 
+A second step checks **every** sops file in the tree (not only the diff,
+since a `.sops.yaml` change alone can break untouched files): its age
+recipients (`sops.age[].recipient`) must equal those of the first
+`.sops.yaml` creation rule whose `path_regex` matches it, i.e. the file was
+re-wrapped with `sops updatekeys` after the last recipient change. It uses
+only public keys and names missing/extra recipients by their `.sops.yaml`
+anchor. The host side of the same question (can *this* host decrypt?) is
+the pre-switch check `sopsDecrypt` in `modules/system/sops.nix`.
+
 It prints only `file:line` (or file and key path), never the matching text.
 Secrets in git are sops-encrypted only (sops-nix on the hosts:
 `modules/system/sops.nix`); cluster PKI key material lives under

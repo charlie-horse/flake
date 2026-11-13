@@ -58,9 +58,9 @@ in
     # secrets/r440.yaml) and its netrc line here.
     nixCache.enable = true;
 
-    # TODO(famine-yubikey): pam_u2f mappings and the two ed25519-sk ssh
-    # keys (the agenix pam-yubikeys, ssh-yubikey-5, ssh-yubikey-5c) are
-    # lost. Remake them at Famine with both YubiKeys plugged in (how:
+    # TODO(famine-yubikey): the pam_u2f mappings and the ed25519-sk ssh
+    # key (the agenix pam-yubikeys, ssh-yubikey-5) are lost. Remake them
+    # at Famine with the YubiKey 5 plugged in (how:
     # modules/system/yubikey.nix), add them to secrets/famine.yaml, then
     # set this to true. Until then login/sudo take the password only.
     yubikey.enable = false;

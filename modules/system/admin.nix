@@ -4,14 +4,21 @@
 #
 #   admin  the only account in wheel. Logs in with a FIDO2 resident key
 #          (sk-ssh-ed25519, on the YubiKey) over SSH; sudo asks for its
-#          password, whose hash is the sops key `admin-password-hash` in
-#          secrets/common.yaml (`mkpasswd -m yescrypt`). The plaintext is
-#          kept next to it under `admin-password` for retrieval only: it is
-#          deliberately NOT a sops.secrets entry, so it never reaches a host.
+#          password. Its one source of truth is the PLAINTEXT sops key
+#          `admin-password` in secrets/common.yaml (read it with
+#          `sops -d --extract '["admin-password"]' secrets/common.yaml`).
+#          The host decrypts it to /run/secrets-for-users/admin-password
+#          (neededForUsers: ramfs, root 0400) and derives the yescrypt
+#          hash from it at activation into
+#          /run/secrets-for-users/admin-password-hash, admin's
+#          hashedPasswordFile (custom.sopsPasswords, modules/system/sops.nix).
+#          To change it, edit `admin-password` and switch every host.
+#          (The old `admin-password-hash` key may still sit in common.yaml;
+#          it is unused and nothing may declare it.)
 #   root   locked (no password, no keys); become root with `sudo -i` as
 #          admin.
-#   charlie (and other users) are declared elsewhere: servers in
-#          modules/server/users.nix, desktops in modules/system/user.nix.
+#   charlie exists only on desktops (modules/system/user.nix); the
+#          servers have no other login account.
 #
 # users.mutableUsers = false: /etc/passwd, /etc/shadow and /etc/group are
 # rebuilt from this config at every activation. Passwords set with
@@ -20,10 +27,12 @@
 # LOCKOUT WARNING: if the host cannot decrypt secrets/common.yaml (its
 # ssh-to-age recipient missing from .sops.yaml, or the file not re-encrypted
 # with `sops updatekeys` after adding it), admin has no password and sudo
-# fails for everyone. Check before switching:
-#   sudo ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key \
-#     | SOPS_AGE_KEY_FILE=/dev/stdin sops -d secrets/common.yaml >/dev/null
-# (or simply that the host's anchor is a recipient of common.yaml).
+# fails for everyone. Both causes are checked automatically (details in
+# modules/system/sops.nix): CI's secrets-guard compares every sops file's
+# recipients with .sops.yaml, and on the host the pre-switch check
+# `sopsDecrypt` decrypts every sops file the new generation uses with the
+# host key and refuses the switch if any fails. If decryption still fails
+# at activation, the previous admin hash in /etc/shadow is kept.
 { config, inputs, ... }:
 let
   # FIDO2 resident keys allowed to log in as admin (one per line).
@@ -32,12 +41,9 @@ let
   ];
 in
 {
-  sops.secrets."admin-password-hash" = {
-    # Through inputs.self: mkHost's store copy of modules/ has no ../secrets.
-    sopsFile = "${inputs.self}/secrets/common.yaml";
-    # Decrypted to /run/secrets-for-users/ before users are created.
-    neededForUsers = true;
-  };
+  # sops.secrets.admin-password (neededForUsers) and its derived hash.
+  # Through inputs.self: mkHost's store copy of modules/ has no ../secrets.
+  custom.sopsPasswords.admin.sopsFile = "${inputs.self}/secrets/common.yaml";
 
   users = {
     mutableUsers = false;
@@ -46,7 +52,7 @@ in
       isNormalUser = true;
       description = "Local administrator";
       extraGroups = [ "wheel" ];
-      hashedPasswordFile = config.sops.secrets."admin-password-hash".path;
+      # hashedPasswordFile: custom.sopsPasswords.admin (above).
       openssh.authorizedKeys.keys = adminAuthorizedKeys;
     };
 

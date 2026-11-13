@@ -1,8 +1,9 @@
 # GPU window on c4130: vllm.service is stopped at 22:00 and started again at
-# 05:55 (America/New_York), so charlie can use both V100s in between.
+# 05:55 (America/New_York), so admin (the only login since charlie's removal
+# from the servers, 2026-11) can use both V100s in between.
 #
 # - gpu-window-start: stops vllm.service (and nothing else).
-# - gpu-window-end:   kills the GPU processes owned by user `charlie`, then
+# - gpu-window-end:   kills the GPU processes owned by user `admin`, then
 #                     starts vllm.service. 06:00 is the deadline.
 #
 # Both are oneshot services run by timers with Persistent = false, so a
@@ -17,7 +18,7 @@
 #   reboot between 22:00 and 06:00 starts vllm.service again (it is enabled),
 #   and the GPUs are then taken. Stop it again by hand, or switch outside the
 #   window.
-# - "charlie's" GPU processes means PIDs in user-<uid>.slice (a login session,
+# - "admin's" GPU processes means PIDs in user-<uid>.slice (a login session,
 #   tmux, a user service). A GPU pod run by kubelet as the same uid is in a
 #   kubepods cgroup, is not matched, and is only logged as skipped.
 {
@@ -27,7 +28,7 @@
   ...
 }:
 let
-  gpuUser = "charlie";
+  gpuUser = "admin";
   nvidiaSmi = "${config.hardware.nvidia.package.bin}/bin/nvidia-smi";
   systemctl = "${config.systemd.package}/bin/systemctl";
 

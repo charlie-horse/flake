@@ -33,5 +33,8 @@
       starship init fish | source
     '';
   };
-  users.users.charlie.shell = pkgs.fish;
+  # admin's login shell (charlie's until 2026-11). Tailscale SSH runs
+  # remote commands through it: use `ssh ... bash -s` / `ssh -t ... bash`
+  # for sh syntax (cluster-pki-deploy already does).
+  users.users.admin.shell = pkgs.fish;
 }

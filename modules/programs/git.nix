@@ -37,18 +37,15 @@ let
     status.short = true;
   };
   userConfig = {
-    user.name = "Charlie Syvertsen";
-    user.email = "charliesyvertsen06@icloud.com";
-  }
-  // (
-    if yubikey.enable then
-      {
-        alias.yk5 = "config --replace-all user.signingkey ${secrets.ssh-yubikey-5.path}";
-        alias.yk5c = "config --replace-all user.signingkey ${secrets.ssh-yubikey-5c.path}";
-      }
-    else
-      { }
-  );
+    user = {
+      name = "Charlie Syvertsen";
+      email = "charliesyvertsen06@icloud.com";
+    }
+    # Sign with the YubiKey 5's ed25519-sk key (gpg.format = ssh above).
+    // lib.optionalAttrs yubikey.enable {
+      signingkey = secrets.ssh-yubikey-5.path;
+    };
+  };
 in
 mkMerge [
   {

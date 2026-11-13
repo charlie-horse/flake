@@ -16,8 +16,8 @@ or charlie. Recovery means picking an older generation in the boot menu.
 | Key | Value |
 | --- | --- |
 | `nix-cache-netrc` | Famine's binary-cache login (the existing `famine` htpasswd user on r440) |
-| `charlie-password` | charlie's new Famine login password, random. Not deployed; it's stored so you can read it |
-| `charlie-password-hash` | yescrypt hash of the above, deployed with `neededForUsers` |
+| `charlie-password` | charlie's new Famine login password, random. Deployed with `neededForUsers`; Famine derives its yescrypt hash at activation (`custom.sopsPasswords`, `modules/system/sops.nix`) |
+| `charlie-password-hash` | old yescrypt hash of the above, no longer used (nothing declares it; drop it at the next edit) |
 
 To read charlie's password, run this anywhere the YubiKey is plugged in. It
 needs the PIV PIN and a touch:
@@ -38,28 +38,34 @@ needs the PIV PIN and a touch:
      `[*admin_yubikey, *admin_backup, *famine]`;
    - delete the "Famine: not a recipient yet" comment.
 
-   Then re-wrap both files. This needs the YubiKey (on c4130:
-   `ssh admin@c4130`, which has pcscd and the plugin) or the backup key:
+   Then re-wrap both files. This needs the backup key or the YubiKey, used
+   ad hoc on any machine it's plugged into: `nix shell nixpkgs#sops
+   nixpkgs#age-plugin-yubikey` plus a temporary pcscd (no host has them
+   installed; on c4130 it all runs as root, see `docs/cluster.md`, "Secrets
+   (all of them)", for the exact commands):
    `sops updatekeys -y secrets/common.yaml secrets/famine.yaml`
-3. **YubiKey secrets (optional, needs both YubiKeys at Famine).**
-   - `pam-yubikeys`: run `pamu2fcfg -o pam://sortofasian -i pam://sortofasian`,
-     then run `pamu2fcfg -n -o pam://sortofasian -i pam://sortofasian` for the
-     second key and append its output to the same line.
-   - `ssh-yubikey-5`, `ssh-yubikey-5c`: if the keys are resident, run
-     `ssh-keygen -K`; otherwise make new
-     `ssh-keygen -t ed25519-sk -O resident` keys and update GitHub.
-   - Add the three values with `sops secrets/famine.yaml`, then set
+3. **YubiKey secrets (optional, needs the YubiKey 5 at Famine).**
+   - `pam-yubikeys`: run `pamu2fcfg -o pam://sortofasian -i pam://sortofasian`.
+   - `ssh-yubikey-5`: if the key is resident, run `ssh-keygen -K`; otherwise
+     make a new `ssh-keygen -t ed25519-sk -O resident` key and update GitHub.
+   - Add the two values with `sops secrets/famine.yaml`, then set
      `custom.yubikey.enable = true` in `hosts/Famine/default.nix`. The
      comments in `modules/system/yubikey.nix` give the exact formats.
-4. **Check that decryption works before switching.** On Famine, from the
-   branch checkout:
+4. **Check that decryption works (automatic, optional by hand).** The
+   switch now refuses on its own: the pre-switch check `sopsDecrypt`
+   (`modules/system/sops.nix`) decrypts `common.yaml` and `famine.yaml` with
+   the host key before anything is activated, and aborts (bootloader and
+   system untouched) if either fails or the host key is missing. CI also
+   fails if a file's recipients don't match `.sops.yaml` (step 2 forgotten
+   `updatekeys`). As an optional sanity check before merging, on Famine from
+   the branch checkout:
    ```sh
    for f in secrets/common.yaml secrets/famine.yaml; do
      sudo SOPS_AGE_KEY_CMD="$(nix build --no-link --print-out-paths nixpkgs#ssh-to-age)/bin/ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key" \
        "$(nix build --no-link --print-out-paths nixpkgs#sops)/bin/sops" -d "$f" >/dev/null && echo "$f OK"
    done
    ```
-   Both must print OK. (`SOPS_AGE_SSH_PRIVATE_KEY_FILE` didn't work with
+   Both should print OK. (`SOPS_AGE_SSH_PRIVATE_KEY_FILE` didn't work with
    sops 3.13 here; `SOPS_AGE_KEY_CMD` + `ssh-to-age` does.)
 5. **Deploy.** Open a PR, wait for CI, and merge. Then on Famine:
    `sudo nixos-rebuild switch --flake .#Famine`. Log in as charlie with the
@@ -68,9 +74,9 @@ needs the PIV PIN and a touch:
    needed in `r440:/root/nix-cache-setup/`. Shred that directory if every
    other host has switched too (`docs/cluster.md`, "Secrets (all of them)").
 
-## Open choices
+## Decisions
 
-- **charlie's Famine password.** `custom.user.keepPassword` (in
-  `modules/system/user.nix`, default true) keeps it for the greeter and
-  hyprlock. Set it to false only if Famine gets another login method.
+- **charlie's Famine password** (decided 2026-11: kept). charlie always
+  has a password on the desktop, from `charlie-password`
+  (`modules/system/user.nix`), for the greeter and hyprlock.
 - **sudo on Famine.** charlie is no longer in wheel, so sudo needs `admin`.

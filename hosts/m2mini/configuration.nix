@@ -14,16 +14,15 @@
   time.timeZone = lib.mkDefault "America/New_York";
   i18n.defaultLocale = "en_US.UTF-8";
 
-  # charlie (no password, not in wheel) and admin: modules/server/users.nix,
-  # modules/system/admin.nix (users are immutable). m2mini only: charlie's
-  # fixed uid and dialout. The old hash file /var/lib/secrets/charlie.passwd
-  # is no longer read; delete it on m2mini after the switch. Never put a
-  # plaintext `password = ...` here, in any form.
-  users.users.charlie = {
-    uid = 1000;
-    group = "users";
-    extraGroups = [ "dialout" ];
-  };
+  # The only login is admin (modules/system/admin.nix, via modules/server;
+  # users are immutable). charlie was removed from the servers in 2026-11
+  # (docs/cluster.md, "Removing charlie from the servers"); what it had
+  # here that is still wanted moved to admin: dialout (serial adapters)
+  # here, fish in ./shell.nix, Nix trust in ./nix.nix. charlie's fixed uid
+  # 1000 stays reserved in /var/lib/nixos/uid-map, so admin keeps its own
+  # uid. The old hash file /var/lib/secrets/charlie.passwd is unused;
+  # delete it. Never put a plaintext `password = ...` here, in any form.
+  users.users.admin.extraGroups = [ "dialout" ];
 
   services.openssh.enable = true;
   networking.firewall.allowedTCPPorts = [

@@ -3,7 +3,9 @@ let
   inherit (lib)
     mkForce
     ;
-  user = config.users.users.charlie;
+  # The login account that may use (and is trusted by) the Nix daemon;
+  # charlie until 2026-11.
+  user = config.users.users.admin;
 in
 {
   environment.variables.NIXPKGS_ALLOW_UNFREE = "1";

@@ -35,7 +35,7 @@
   #  useXkbConfig = true; # use xkb.options in tty.
   #};
 
-  # charlie and admin: modules/server/users.nix, modules/system/admin.nix.
+  # The only login is admin (modules/system/admin.nix, via modules/server).
 
   environment.systemPackages = with pkgs; [
     neovim
