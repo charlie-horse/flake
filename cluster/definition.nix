@@ -55,7 +55,7 @@
 #     kubeletConfig      attrs  merged into the KubeletConfiguration
 #                        (services.kubernetes.kubelet.extraConfig), e.g.
 #                        evictionHard / image GC thresholds per node
-#     rollout            { stage; etcdPhase; }  where this node is in the
+#     rollout            { stage; etcdPhase; certSource; }  where this node is in the
 #                        cut-over from the legacy cluster (docs/
 #                        history/cluster-handoff-2026-10.md). The cut-over is done: every
 #                        node is at stage "full", etcdPhase "final".
@@ -71,6 +71,13 @@
 #                           peerClientCertAuth off, as today
 #                  "final"  new etcd-server/-peer/-client-apiserver leaves,
 #                           peerClientCertAuth on (end state)
+#       certSource "files"  certs and keys in secretsDir, from
+#                           `cluster-pki deploy` (default)
+#                  "sops"   from sops-nix in /run/secrets/pki: leaves from
+#                           secrets/pki/<n>.yaml, sa.key/sa.pub from
+#                           secrets/<n>.yaml, bundles from cluster/pki/
+#                           (modules/cluster/pki-sops.nix; needs etcdPhase
+#                           "final"; docs/pki-migration-plan.md, phase 2)
 #   apiserverTailscaleService  optional string  name of the Tailscale Service
 #                        (svc:<name>) every controlPlane node hosts for the
 #                        apiserver port; clients use <name>.<domain>:6443.
@@ -244,6 +251,7 @@
       rollout = {
         stage = "full";
         etcdPhase = "final";
+        certSource = "files";
       };
     };
 
@@ -267,6 +275,7 @@
       rollout = {
         stage = "full";
         etcdPhase = "final";
+        certSource = "files";
       };
     };
 
@@ -290,6 +299,7 @@
       rollout = {
         stage = "full";
         etcdPhase = "final";
+        certSource = "files";
       };
     };
   };
