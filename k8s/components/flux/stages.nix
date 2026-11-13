@@ -20,7 +20,7 @@
 #                           Deployment)
 #   retryInterval 1m        until the webhook answers (first install)
 #   wait                    Ready only when every object is Ready (the
-#                           ClusterIssuers, the root Certificate)
+#                           the cluster-ca ClusterIssuer)
 {
   lib,
   deferred,
