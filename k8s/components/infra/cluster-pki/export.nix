@@ -5,7 +5,7 @@ let
   name = "pki-export";
 
   # From .github/workflows/pki-export-image.yml on main; null keeps the CronJob suspended.
-  digest = null;
+  digest = "sha256:f74eab678c8f67e17890646efccaaa13e2352fba17eb1463ba3805f1d8bba4df";
   imageRepo = "ghcr.io/charlie-horse/flake/pki-export";
   image = if digest == null then "${imageRepo}:main" else "${imageRepo}@${digest}";
 
