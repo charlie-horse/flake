@@ -553,7 +553,12 @@ ca_import() {
 # ---------------------------------------------------------------- anchors
 # The anchor rule (docs/pki.md): a trust bundle holds only its own CA's
 # generations (plus adopted --trust certs), never the root, never another
-# branch, and no self-signed cert once that CA is an intermediate.
+# branch, and no self-signed cert once that CA's *current* generation is an
+# intermediate. Only `current` decides: while an old self-signed CA rotates
+# to an intermediate, it is legitimately `current` (with the intermediate in
+# next/, pending or begun) and then `previous` (after reissue, until finish).
+# So a self-signed cert is allowed when current is self-signed, or when it
+# is exactly that CA's own previous generation.
 # Prints one line per problem; returns non-zero if there is any.
 check_anchors() {
   local fails=0 ca other dir f g fp tmp root_fp='' inter b n comp prof cn o sans
@@ -567,9 +572,13 @@ check_anchors() {
     for f in "$dir"/current/ca.pem "$dir"/next/ca.pem "$dir"/previous/ca.pem; do
       [ -f "$f" ] || continue
       cert_fp "$f" >>"$tmp/$ca.fps"; cat "$f" >>"$tmp/$ca.gens.pem"
-      is_self_signed "$f" || inter=1
     done
+    if [ -f "$dir/current/ca.pem" ] && ! is_self_signed "$dir/current/ca.pem"; then
+      inter=1
+    fi
     echo "$inter" >"$tmp/$ca.inter"
+    : >"$tmp/$ca.prev"
+    if [ -f "$dir/previous/ca.pem" ]; then cert_fp "$dir/previous/ca.pem" >"$tmp/$ca.prev"; fi
     for f in "$dir"/trust/*.pem; do
       if [ -f "$f" ]; then cert_fp "$f" >>"$tmp/$ca.trust"; fi
     done
@@ -586,8 +595,9 @@ check_anchors() {
       cn=$(subject_of_cert "$f")
       echo "$fp" >>"$tmp/bundle-$ca.fps"
       if [ "$fp" = "$root_fp" ]; then bad "$b contains the root CA ($cn)"; fi
-      if [ "$inter" = 1 ] && is_self_signed "$f"; then
-        bad "$b contains self-signed $cn, but the $ca CA is an intermediate"
+      if [ "$inter" = 1 ] && is_self_signed "$f" \
+          && ! grep -qxF "$fp" "$tmp/$ca.prev"; then
+        bad "$b contains self-signed $cn, but the current $ca CA is an intermediate"
       fi
       for other in $cas; do
         [ "$other" = "$ca" ] && continue

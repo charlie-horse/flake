@@ -4,21 +4,22 @@
 #                                `cert-manager/cluster-ca`: what workloads
 #                                reference
 #
-# The Secret is NOT declared here: it is sops-encrypted in git at
+# The Secret is not in this component. It comes from
 # k8s/secrets/cert-manager/cluster-ca.sops.yaml (made at the root CA
-# ceremony, docs/pki-migration-plan.md nodes F and G; pending) and applied
-# by the Flux Kustomization `secrets`. It holds the "neurosis workload CA"
-# intermediate, signed by the YubiKey root:
+# ceremony, docs/pki-migration-plan.md nodes F and G), and the Flux
+# Kustomization `secrets` owns it (prune: true; hand edits are reverted).
+# It holds the "neurosis workload CA" intermediate, signed by the YubiKey
+# root:
 #
 #   tls.crt   workload intermediate, then the root (the chain)
 #   tls.key   the intermediate's key (made in tmpfs at the ceremony and
 #             encrypted with sops straight from there)
 #   ca.crt    the root (cluster/pki/root-ca.pem)
 #
-# No Certificate points at it, so cert-manager does not reissue or renew it
-# (renewal is manual, docs/pki-migration-plan.md "Risks"). Until it exists
-# the ClusterIssuer is NotReady, and so is this Kustomization (`wait`);
-# nothing else is affected.
+# No Certificate points at it, so cert-manager does not reissue or renew it.
+# Renewal: a new signature from the root, then `sops` edit, PR, merge
+# (docs/pki-migration-plan.md "Risks"). Without it the ClusterIssuer is
+# NotReady, and so is this Kustomization (`wait`); nothing else is affected.
 #
 # Applied by its own Flux Kustomization `cert-manager-issuers`
 # (components/flux/stages.nix), after `flux-system` has applied the same
