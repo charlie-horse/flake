@@ -86,6 +86,10 @@ let
       }
     else
       pkiSopsPath;
+  saSopsFile = builtins.path {
+    path = "${inputs.self}/secrets/cluster-sa.yaml";
+    name = "cluster-sa.yaml";
+  };
 
   secret =
     {
@@ -123,13 +127,13 @@ let
     ]
   ) leaves;
 
-  # Static, from the host's default sops file (moved there by hand once).
+  # Static and identical on every control plane.
   saSecrets = lib.optionals hasCP [
     (secret {
       file = "sa.pub";
       owner = "root";
       restart = [ "kube-apiserver" ];
-      sopsFile = config.sops.defaultSopsFile;
+      sopsFile = saSopsFile;
     })
     (secret {
       file = "sa.key";
@@ -138,7 +142,7 @@ let
         "kube-apiserver"
         "kube-controller-manager"
       ];
-      sopsFile = config.sops.defaultSopsFile;
+      sopsFile = saSopsFile;
     })
   ];
 
