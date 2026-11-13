@@ -789,8 +789,8 @@ suspend the job again, set `digest = null;`.
 - Files are under `/run/secrets/pki` (sops-nix's ramfs, a new generation
   at every activation, before any unit starts):
   - `<component>-<node>.pem` / `-key.pem` from `secrets/pki/<node>.yaml`.
-  - `sa.key` / `sa.pub` (controlPlane) from the host's own
-    `secrets/<node>.yaml`, moved there by hand once.
+  - `sa.key` / `sa.pub` (controlPlane) from `secrets/cluster-sa.yaml`,
+    one file for every control plane (admins + the three hosts).
   - `ca.pem`, `etcd-ca.pem`, `front-proxy-ca.pem` from `cluster/pki/` in
     git, as sops templates (0644 root).
 - The file set is what `cluster-pki deploy` installs, unused leaves

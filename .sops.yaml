@@ -43,6 +43,10 @@ creation_rules:
     encrypted_regex: -key\.pem$
     key_groups:
       - age: [*admin_yubikey, *admin_backup, *m2mini]
+  # Service-account keypair, the same on every control plane.
+  - path_regex: ^secrets/cluster-sa\.yaml$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *c4130, *r440, *m2mini]
   # Every host.
   - path_regex: ^secrets/common\.yaml$
     key_groups:
