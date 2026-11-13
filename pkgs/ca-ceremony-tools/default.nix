@@ -6,6 +6,9 @@
 #
 #   sudo -i                                  # pcscd and its clients run as root
 #   nix shell /etc/nixos#ca-ceremony-tools
+#   CSR_DIR=~/csrs ca-ceremony               # the whole ceremony (ceremony.sh)
+#   MODE=rehearsal CSR_DIR=... ca-ceremony   # node E: SoftHSM key, no card
+# or by hand:
 #   ca-pcscd &                               # temporary pcscd, exits when idle
 #   ykman info; ykman piv info
 #   step certificate create ... --kms 'yubikey:' --key 'yubikey:slot-id=9c'
@@ -25,6 +28,10 @@
 #   ca-openssl        openssl with OPENSSL_MODULES=<pkcs11-provider> and
 #                     PKCS11_PROVIDER_MODULE=<libykcs11.so>, for that
 #                     process only (no openssl.cnf anywhere is changed)
+#   ca-ceremony       ./ceremony.sh (root key in 9c, root + 4 intermediates,
+#                     sops-encrypted workload Secret); owned by the PKI plan
+#   sops, age-plugin-yubikey, yq (yq-go)   for the workload Secret
+#   softhsm2-util     softhsm, for MODE=rehearsal
 #
 # The admin YubiKey's other uses (sops age identity in PIV slot 82, FIDO2
 # ssh:admin and pam_u2f) are untouched: nothing here writes to the card by
@@ -33,6 +40,7 @@
   lib,
   symlinkJoin,
   writeShellApplication,
+  fetchFromGitHub,
   yubikey-manager,
   yubico-piv-tool,
   step-cli,
@@ -42,8 +50,47 @@
   pcsclite,
   ccid,
   procps,
+  sops,
+  age-plugin-yubikey,
+  yq-go,
+  softhsm,
+  coreutils,
+  diffutils,
+  findutils,
+  gnugrep,
+  gnused,
+  git,
 }:
 let
+  # step-cli >= 0.31.0: 0.30.2 (nixos-26.05) loads the issuer certificate of
+  # `step certificate sign --kms ... <csr> <crt> <key>` through the KMS
+  # plugin whenever --kms is set, so a root.pem file fails ("scheme is
+  # missing"); 0.31.0 reads it as a file. Same src and vendor hashes as
+  # nixos-unstable's step-cli 0.31.0, so both FODs come from the cache. Drop
+  # this once the 26.05 step-cli is >= 0.31.0.
+  step-cli' =
+    if lib.versionAtLeast step-cli.version "0.31.0" then
+      step-cli
+    else
+      step-cli.overrideAttrs (_: rec {
+        version = "0.31.0";
+        src = fetchFromGitHub {
+          owner = "smallstep";
+          repo = "cli";
+          tag = "v${version}";
+          hash = "sha256-v8insc/+vnc4JVNeHeF3UU+rYdNtMeQkdWxVc+vq7ms=";
+          postFetch = ''
+            rm -f $out/.VERSION
+          '';
+        };
+        vendorHash = "sha256-UNrUy0aWl7w5SmlsxLpmx6WxI2AElHE6llAMLRLi0r0=";
+        ldflags = [
+          "-w"
+          "-s"
+          "-X=main.Version=${version}"
+        ];
+      });
+
   ca-pcscd = writeShellApplication {
     name = "ca-pcscd";
     runtimeInputs = [ procps ];
@@ -70,20 +117,41 @@ let
       exec ${lib.getExe openssl} "$@"
     '';
   };
-in
-symlinkJoin {
-  name = "ca-ceremony-tools";
-  paths = [
+
+  tools = [
     yubikey-manager
     yubico-piv-tool
-    step-cli
+    step-cli'
     step-kms-plugin
     openssl
     pkcs11-provider
     pcsclite
+    sops
+    age-plugin-yubikey
+    yq-go
+    softhsm
     ca-pcscd
     ca-openssl
   ];
+
+  ca-ceremony = writeShellApplication {
+    name = "ca-ceremony";
+    runtimeInputs = tools ++ [
+      coreutils
+      diffutils
+      findutils
+      gnugrep
+      gnused
+      procps
+      git
+    ];
+    # writeShellApplication adds its own shebang and `set -euo pipefail`.
+    text = lib.removePrefix "#!/usr/bin/env bash\n" (builtins.readFile ./ceremony.sh);
+  };
+in
+symlinkJoin {
+  name = "ca-ceremony-tools";
+  paths = tools ++ [ ca-ceremony ];
   meta = {
     description = "YubiKey PIV root-CA ceremony tools (ykman, step + step-kms-plugin, openssl + pkcs11-provider, ad-hoc pcscd)";
     platforms = lib.platforms.linux;
