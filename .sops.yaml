@@ -33,8 +33,10 @@ creation_rules:
   # 2): secrets/pki/<node>.yaml, a flat map of <stem>.pem (cert, plaintext:
   # public, so PR diffs and CI can read them) and <stem>-key.pem (encrypted).
   # Written by the export job from public recipients only. Kept first so no
-  # broader secrets/ rule can ever take these paths. CI: checks.yml,
-  # secrets-guard.
+  # broader secrets/ rule can ever take these paths. The export job
+  # (pkgs/pki-export/pki-export.sh) validates the content (chain, node,
+  # completeness, expiry); the secrets guard (checks.yml) enforces plaintext
+  # certs only and every -key.pem ENC[...].
   - path_regex: ^secrets/pki/c4130\.yaml$
     encrypted_regex: -key\.pem$
     key_groups:
