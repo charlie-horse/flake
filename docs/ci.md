@@ -74,12 +74,22 @@ The guard scans only the diff: the PR's merge-base to head, or on a push
   `=`, a PEM private-key header, or a kubeconfig client-key field. Lines
   starting with `#` or `//` are skipped, so comments and docs can name the
   pattern; `hashedPassword`/`hashedPasswordFile` never match (the match is
-  case-sensitive).
+  case-sensitive);
+- **sops files that are not fully encrypted**: every added or modified
+  `secrets/*.yaml` and `k8s/**/*.sops.yaml` is checked as a whole (at the
+  head commit, not just the diff). It needs a top-level `sops:` block with
+  `mac: ENC[...]` and at least one recipient; every value outside that block
+  must be `ENC[...]` and every comment `#ENC[...]`. A k8s file may keep
+  `apiVersion`, `kind`, `type` and `metadata` in the clear (Flux reads them);
+  everything else (`data`, `stringData`, ...) must be encrypted. Any other
+  file under `secrets/` (a subdirectory, a non-`.yaml` file) fails.
+  Recipients: `.sops.yaml`.
 
-It prints only `file:line`, never the matching text. All key material lives
-under `/var/lib/kubernetes/secrets/` on the hosts and the CA key on r440
-(`docs/pki.md`); in-cluster secrets are hand-made Kubernetes Secrets
-(`k8s/README.md`). Every secret, CI's included, is listed in
+It prints only `file:line` (or file and key path), never the matching text.
+Secrets in git are sops-encrypted only (sops-nix on the hosts:
+`modules/system/sops.nix`); cluster PKI key material lives under
+`/var/lib/kubernetes/secrets/` on the hosts and the CA key on r440
+(`docs/pki.md`). Every secret, CI's included, is listed in
 `docs/cluster.md`, "Secrets (all of them)".
 
 The guard is diff-only on purpose: older plaintext credentials in

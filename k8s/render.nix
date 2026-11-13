@@ -106,14 +106,16 @@ let
     assert lib.assertMsg (lib.allUnique (
       map baseNameOf deferredComponents
     )) "k8s render: deferred components need distinct last path elements (their Kustomization names)";
-    assert lib.assertMsg (
-      !lib.any (
-        n:
-        n == deferred.secrets.name
-        || lib.hasPrefix "${deferred.secrets.name}/" n
-        || baseNameOf n == deferred.secrets.name
-      ) deferredComponents
-    ) "k8s render: no deferred component may be named ${deferred.secrets.name}[/...] or end in /${deferred.secrets.name} (the secrets Kustomization)";
+    assert lib.assertMsg
+      (
+        !lib.any (
+          n:
+          n == deferred.secrets.name
+          || lib.hasPrefix "${deferred.secrets.name}/" n
+          || baseNameOf n == deferred.secrets.name
+        ) deferredComponents
+      )
+      "k8s render: no deferred component may be named ${deferred.secrets.name}[/...] or end in /${deferred.secrets.name} (the secrets Kustomization)";
     lib.mapAttrs (_: evalComponent) (components // deferred.modules);
 
   # A component's directory in the render.
@@ -190,7 +192,8 @@ let
   # a single v1 Secret whose namespace and name match its path, only the
   # usual Secret fields, every data/stringData value encrypted, sops
   # metadata with an age recipient and a MAC, encrypted_regex
-  # ^(data|stringData)$ (so metadata stays readable for kustomize and Flux).
+  # ^(data|stringData)$ (so metadata stays readable for kustomize and Flux),
+  # keys sorted.
   checkSecret = pkgs.writeShellScript "check-sops-secret" ''
     set -euo pipefail
     file=$1 namespace=$2 name=$3
@@ -213,6 +216,13 @@ let
     check '(.sops.age // []) | length > 0' "no age recipient"
     check '.sops.encrypted_regex == "^(data|stringData)$"' \
       "sops.encrypted_regex must be ^(data|stringData)$ (.sops.yaml creation rule)"
+    # The MAC covers every value (encrypted or not) in document order, and
+    # kustomize re-serialises with keys sorted (kustomize-controller
+    # decrypts after its build): a file whose keys were not sorted when it
+    # was encrypted fails with "MAC mismatch". Encrypt only key-sorted files
+    # (yq -i 'sort_keys(..)'; k8s/README.md, "Secrets").
+    [ "$($yq 'del(.sops)' "$file")" = "$($yq 'del(.sops) | sort_keys(..)' "$file")" ] \
+      || fail "keys not sorted (sort with yq 'sort_keys(..)' BEFORE encrypting, then re-encrypt)"
   '';
 
   # The tree: every component's files, the deferred fence and the

@@ -20,26 +20,28 @@
   ...
 }:
 {
-  resources."kustomize.toolkit.fluxcd.io".v1.Kustomization = lib.optionalAttrs deferred.secrets.enable {
-    ${deferred.secrets.name} = {
-      metadata.namespace = "flux-system";
-      spec = {
-        sourceRef = {
-          kind = "OCIRepository";
-          name = "flux-system-oci";
-        };
-        path = "./${deferred.secrets.path}";
-        dependsOn = [ { name = "flux-system"; } ];
-        interval = "10m";
-        retryInterval = "1m";
-        timeout = "5m";
-        prune = true;
-        wait = false;
-        decryption = {
-          provider = "sops";
-          secretRef.name = "sops-age";
+  resources."kustomize.toolkit.fluxcd.io".v1.Kustomization =
+    lib.optionalAttrs deferred.secrets.enable
+      {
+        ${deferred.secrets.name} = {
+          metadata.namespace = "flux-system";
+          spec = {
+            sourceRef = {
+              kind = "OCIRepository";
+              name = "flux-system-oci";
+            };
+            path = "./${deferred.secrets.path}";
+            dependsOn = [ { name = "flux-system"; } ];
+            interval = "10m";
+            retryInterval = "1m";
+            timeout = "5m";
+            prune = true;
+            wait = false;
+            decryption = {
+              provider = "sops";
+              secretRef.name = "sops-age";
+            };
+          };
         };
       };
-    };
-  };
 }

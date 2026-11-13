@@ -24,7 +24,7 @@
 #   sudo ssh-to-age -private-key -i /etc/ssh/ssh_host_ed25519_key \
 #     | SOPS_AGE_KEY_FILE=/dev/stdin sops -d secrets/common.yaml >/dev/null
 # (or simply that the host's anchor is a recipient of common.yaml).
-{ config, ... }:
+{ config, inputs, ... }:
 let
   # FIDO2 resident keys allowed to log in as admin (one per line).
   adminAuthorizedKeys = [
@@ -33,7 +33,8 @@ let
 in
 {
   sops.secrets."admin-password-hash" = {
-    sopsFile = ../../secrets/common.yaml;
+    # Through inputs.self: mkHost's store copy of modules/ has no ../secrets.
+    sopsFile = "${inputs.self}/secrets/common.yaml";
     # Decrypted to /run/secrets-for-users/ before users are created.
     neededForUsers = true;
   };

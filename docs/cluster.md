@@ -314,8 +314,9 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
 
    SHA-512 crypt, not bcrypt: nginx checks the password on every request
    (thousands of .narinfo lookups), and a 256-bit random password needs no
-   slow hash. Revoke a client by deleting its line (read per request, no
-   reload).
+   slow hash. Revoke a client by deleting its line from
+   `nix-cache-htpasswd` (`sops secrets/r440.yaml`) and switching r440
+   (nginx reads the file per request).
 4. **DNS** (outward; charlie on c4130, account cert):
    `cloudflared tunnel route dns --overwrite-dns 59a275ca-be31-4f8d-99ce-c536eaf490f8 cache.neuros.is`.
    Check: `curl -sI https://cache.neuros.is/nix-cache-info` → 401,
@@ -368,6 +369,6 @@ other secret lives outside git.
 | Desktop secrets (agenix) | `modules/age/secrets/*.age`, encrypted in git (recipients: `modules/age/secrets/secrets.nix`); decrypted to `/run/agenix/` on the desktop. Famine: `login` (charlie's password hash, `custom.user.passwordFile`), `pam-yubikeys`, `ssh-yubikey-5`, `ssh-yubikey-5c`, `key-famine`, `nix-cache-netrc`. Pestilence only (archived): `key-pestilence`, `vpn-privkey`, `vpn-password`, `acme-cloudflare` | `agenix -e <name>.age` in `modules/age/secrets` |
 | Pestilence Transmission `rpc-password` | **plaintext in git**, `hosts/Pestilence/servarr.nix` (archived host; excluded from the format check so the secrets guard stays quiet) | rotate it and move it to agenix before restoring Pestilence |
 | Cloud-session secrets | env vars of the Claude Code cloud environment: `TAIL_AUTH_KEY` (joins the session to the tailnet) and charlie's sudo password | environment settings (CLAUDE.md, "Access from a cloud session") |
-| Binary-cache setup files (temporary) | `r440:/root/nix-cache-setup/*.pw,*.netrc` (root, 0700 dir) | made with the htpasswd; shred after Famine's agenix `nix-cache-netrc` exists |
+| Binary-cache setup files (temporary) | `r440:/root/nix-cache-setup/*.pw,*.netrc` (root, 0700 dir) | made with the htpasswd; shred once every host's sops `nix-cache-netrc` (and r440's `nix-cache-htpasswd`) is live. Famine's old password is lost: give it a new `famine` user first |
 
 None of the plaintext secrets may go into git, the Nix store or a command line (the Pestilence `rpc-password` is the one known exception, above).
