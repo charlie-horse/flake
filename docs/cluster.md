@@ -602,12 +602,17 @@ Once, for all hosts: the backup check below. Per host, before its PR:
 
 Then, on the host, steps 1 to 5:
 
-**1. Stop charlie's processes** (*user*, as admin):
+**1. Stop charlie's login sessions** (*user*, as admin). **Never
+`pkill -u charlie`:** uid 1000 is also the uid that container processes run
+as (authentik's gunicorn on m2mini, about 8 pod processes on every node,
+found 2026-11-13), so that would kill pods. Removing charlie doesn't touch
+them: uid 1000 stays reserved in `/var/lib/nixos/uid-map` and those
+processes just show as `1000` afterwards. End only charlie's systemd user
+slice:
 
 ```sh
 sudo loginctl terminate-user charlie 2>/dev/null; sleep 3
-sudo pkill -TERM -u charlie; sleep 5; sudo pkill -KILL -u charlie
-ps -u charlie --no-headers | wc -l      # 0
+ps -u charlie -o pid=,cgroup=,comm= | grep 'user-1000\.slice'   # nothing listed (pods are in kubepods, leave them)
 ```
 
 **2. Copy what is still used to `/home/admin`** (*user*, as admin):
