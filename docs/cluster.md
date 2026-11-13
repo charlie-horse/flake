@@ -408,9 +408,13 @@ local login, `admin`; the `charlie` account goes away on them (Famine keeps
 charlie). It happens in two stages, each a plain `git pull && nixos-rebuild
 switch` of `main`, so no switch both creates admin and removes charlie. The
 switch between them is `custom.server.legacyCharlie.enable`
-(`modules/server/legacy-charlie.nix`):
+(`modules/server/legacy-charlie.nix`, default `true`). Stage 2 is per host:
+one small PR per host sets `custom.server.legacyCharlie.enable = false;` in
+that host's `hosts/<host>/configuration.nix` (m2mini, then r440, then
+c4130), so each host leaves stage 1 only when its own PR is merged and
+switched:
 
-| | Before (main up to PR #36) | Stage 1 (PR #37; option on, the default) | Stage 2 (follow-up PR; option off) |
+| | Before (main up to PR #36) | Stage 1 (PR #37; option on, the default) | Stage 2 (per-host PR; option off for that host) |
 | --- | --- | --- | --- |
 | Logins | charlie (wheel) | charlie (wheel, unchanged) and admin (wheel) | admin (wheel) only |
 | `users.mutableUsers` | true | true | false |
@@ -558,16 +562,19 @@ done
 Until step 6, a rollback to the previous (pre-sops) generation is safe and
 only removes admin. After it, fix forward with a PR.
 
-### Stage 2: charlie removed (follow-up PR)
+### Stage 2: charlie removed (one PR per host)
 
-Preconditions:
-- Stage 1 is done on all three hosts: admin logs in and `sudo -v` works,
-  and the generation check above says `admin=yes` everywhere (*read-only*,
-  as admin, on each host).
+Start only when stage 1 is done on all three hosts. Then do the whole of
+stage 2 for one host (m2mini, then r440, then c4130), including the etcd
+check, before the next host's PR.
+
+Once, for all hosts: the backup check below. Per host, before its PR:
+- Stage 1 is done on this host: admin logs in and `sudo -v` works, and
+  the generation check above says `admin=yes` for every generation
+  (*read-only*, as admin).
 - Nothing imperative that stage 2 would delete: immutable users remove
-  every account and group that is not declared. *Read-only*, as admin, on
-  each host, in bash; both lists must be empty (charlie is still declared
-  here):
+  every account and group that is not declared. *Read-only*, as admin, in
+  bash; both lists must be empty (charlie is still declared here):
 
   ```sh
   comm -23 <(cut -d: -f1 /etc/passwd | sort) <(tr ' ' '\n' < /var/lib/nixos/declarative-users | sort)
@@ -589,11 +596,11 @@ Preconditions:
   ```
 
   Every archive must say `ok`. Files charlie changed after his backup are
-  not in it: on each host, *user*, as admin,
+  not in it: on the host, *user*, as admin,
   `sudo find /home/charlie -xdev -newermt '<that host's backup time>' | head`;
   if anything that matters shows up, ask the user (re-take that backup).
 
-Then, on each host (m2mini, r440, c4130), steps 1 and 2:
+Then, on the host, steps 1 to 5:
 
 **1. Stop charlie's processes** (*user*, as admin):
 
@@ -642,11 +649,10 @@ grep -rIl --exclude-dir=nixos-backups /home/charlie /home/admin 2>/dev/null | he
 EOF
 ```
 
-**3. The follow-up PR**: set the default of
-`custom.server.legacyCharlie.enable` in `modules/server/legacy-charlie.nix`
-to `false` (one line), CI, merge.
-
-Then per host (m2mini, r440, c4130):
+**3. This host's PR**: add `custom.server.legacyCharlie.enable = false;`
+to `hosts/<host>/configuration.nix` (only this host; the option's default
+stays `true`, so the hosts not yet through stage 2 are unaffected), CI,
+merge.
 
 **4. Pull and switch** (*user*, as admin). admin cannot pull a checkout
 charlie owns, so re-own it first (the switch's `Z` rule keeps it so):
@@ -687,7 +693,10 @@ sudo awk -F: '$1~/^(root|admin)$/ {print $1, substr($2,1,3)}' /etc/shadow   # ro
 
 If something is wrong: `sudo nixos-rebuild switch --rollback` returns to
 the stage-1 generation (see the rollback table: charlie back without a
-password, admin unchanged, `/etc/nixos` back to charlie).
+password, admin unchanged, `/etc/nixos` back to charlie). Revert this
+host's PR too, or the next pull switches it to stage 2 again.
+
+Then the next host, from its preconditions.
 
 ### Afterwards (needs the user)
 

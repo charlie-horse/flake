@@ -18,9 +18,12 @@
 #     (listed in /var/lib/nixos/declarative-users) and leaves charlie as he
 #     was.
 #
-#   stage 2, false (a one-line follow-up PR once admin works on every host
-#     and the pre-sops generations are deleted): users.mutableUsers = false,
-#     root locked ("!", modules/system/admin.nix), no charlie on the servers.
+#   stage 2, false (per host: one PR per host sets
+#     `custom.server.legacyCharlie.enable = false;` in
+#     hosts/<host>/configuration.nix once admin works there and its pre-sops
+#     generations are deleted; the default stays true):
+#     users.mutableUsers = false, root locked ("!", modules/system/admin.nix),
+#     no charlie on that server.
 #
 # /etc/nixos's owner follows the same switch (modules/server/default.nix).
 { config, lib, ... }:

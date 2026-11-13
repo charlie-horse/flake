@@ -110,6 +110,12 @@ let
   );
 
   mkpasswd = "${pkgs.mkpasswd}/bin/mkpasswd";
+
+  # The nixpkgs sops-nix follows (`nixpkgs`, 26.05), for the sops tools the
+  # pre-switch check runs: Famine's nixpkgs-unstable has sops 3.9.1, which
+  # ignores SOPS_AGE_KEY_CMD (3.10+), so the check would always fail there.
+  # On the servers these are the same derivations as their own pkgs'.
+  sopsNixPkgs = inputs.sops-nix.inputs.nixpkgs.legacyPackages.${pkgs.stdenv.hostPlatform.system};
 in
 {
   imports = [ inputs.sops-nix.nixosModules.sops ];
@@ -293,8 +299,8 @@ in
         # the caller's environment. (SOPS_AGE_SSH_PRIVATE_KEY_FILE did not
         # work with sops 3.13; SOPS_AGE_KEY_CMD + ssh-to-age does.)
         if (cd / && env -i HOME="$home" \
-          SOPS_AGE_KEY_CMD="${pkgs.ssh-to-age}/bin/ssh-to-age -private-key -i $key" \
-          ${pkgs.sops}/bin/sops -d "$f" >/dev/null 2>"$home/err"); then
+          SOPS_AGE_KEY_CMD="${sopsNixPkgs.ssh-to-age}/bin/ssh-to-age -private-key -i $key" \
+          ${sopsNixPkgs.sops}/bin/sops -d "$f" >/dev/null 2>"$home/err"); then
           echo "sops: decrypts ''${f#/nix/store/*-}"
         else
           echo "sops: CANNOT decrypt ''${f#/nix/store/*-} with $key:"
