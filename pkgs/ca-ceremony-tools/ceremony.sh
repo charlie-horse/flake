@@ -64,7 +64,11 @@ if [[ $MODE == yubikey ]]; then
   # --auto-exit (~60 s idle), so this is re-checked before every card step
   # and ours is restarted as needed. ca-pcscd refuses to start while any
   # pcscd runs, so first wait for our previous one to finish exiting.
-  card_visible() { ykman list --serials 2>/dev/null | grep -qx "$SERIAL"; }
+  # Check PC/SC specifically: `ykman list --serials` also finds the key over
+  # FIDO/HID with no pcscd at all, so ensure_pcscd never started ca-pcscd and
+  # the PIV commands then failed with "PC/SC not available" (c4130,
+  # 2026-11-13). `piv info` goes through PC/SC only.
+  card_visible() { ykman --device "$SERIAL" piv info >/dev/null 2>&1; }
   OWN_PCSCD=0
   PCSCD_PID=
   ensure_pcscd() {
@@ -115,6 +119,9 @@ fi
 # --- 2. Generate the root key in 9c + attestation --------------------------
 if [[ $MODE == yubikey ]]; then
   say "Generating P-384 key in $SLOT (PIN for the management key)"
+  # ykman prompts for the PIN itself (getpass). Anything typed before getpass
+  # has turned echo off is echoed to the terminal and then flushed (lost):
+  # wait for the "Enter PIN" prompt before typing.
   yk piv keys generate --algorithm ECCP384 --pin-policy ALWAYS --touch-policy ALWAYS "$SLOT" "$WORK/root.pub"
   yk piv keys attest "$SLOT" "$OUT/attest-9c.pem"
   yk piv certificates export f9 "$OUT/attest-f9.pem"
@@ -159,6 +166,9 @@ openssl verify -x509_strict -CAfile "$OUT/root.pem" "$OUT/root.pem"
 
 if [[ $MODE == yubikey ]]; then
   say "Importing root.pem into $SLOT (PIN for the management key)"
+  # ykman prompts for the PIN itself (getpass). Anything typed before getpass
+  # has turned echo off is echoed to the terminal and then flushed (lost):
+  # wait for the "Enter PIN" prompt before typing.
   yk piv certificates import --no-update-chuid "$SLOT" "$OUT/root.pem"
 fi
 

@@ -370,8 +370,10 @@ Enforces the anchor rule below. It fails when a trust bundle (`ca.pem`,
 `etcd-ca.pem`, `front-proxy-ca.pem`):
 
 - holds the root CA (`--root-ca`),
-- holds a self-signed cert while that CA is an intermediate (any of its
-  current/next/previous generations is not self-signed),
+- holds a self-signed cert while that CA's `current` generation is an
+  intermediate, other than its own `previous` generation (so rotating from
+  an old self-signed CA to an intermediate passes: imported, begun,
+  reissued, finished),
 - holds a cert that is not one of its own CA's generations or an adopted
   `--trust` cert (this catches another branch's CA, the workload CA, or
   anything else), or lacks the current CA;
