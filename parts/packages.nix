@@ -13,6 +13,11 @@
       pki = pkgs.callPackage ../pkgs/cluster-pki {
         definition = import ../cluster/definition.nix;
       };
+      # Phase-2 export job (docs/pki-migration-plan.md, P2). Its image
+      # (`pki-export-image`) is pushed to GHCR by
+      # .github/workflows/pki-export-image.yml; the CronJob is
+      # k8s/components/infra/cluster-pki/export.nix.
+      pkiExport = pkgs.callPackage ../pkgs/pki-export { };
     in
     {
       # `nix fmt`: RFC-style nixfmt over the tracked .nix files (checks.yml
@@ -27,6 +32,8 @@
         # cluster-pki leaves vs the cert-manager set of one node
         # (phase 2 dry run, docs/pki-migration-plan.md).
         pki-diff = pkgs.callPackage ../pkgs/pki-diff { };
+        pki-export = pkiExport;
+        pki-export-image = pkiExport.image;
       }
       # Installer ISO for the desktop host (lib/system/mkHost.nix).
       # Pestilence is archived, so it has none (parts/hosts.nix).

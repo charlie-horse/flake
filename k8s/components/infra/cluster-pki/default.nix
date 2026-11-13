@@ -12,17 +12,22 @@
 #                  cert-manager's issuers.nix
 #   leaves.nix     the leaves, from cluster/definition.nix, as cluster-pki
 #                  issues them
-#   settings.nix   names shared by both
+#   export.nix     the export job (P2): CronJob, ServiceAccount and a
+#                  get-only Role, imported here (applied by `flux-system`
+#                  too: nothing in it goes through cert-manager's webhook)
+#   settings.nix   names shared by all of them
 #
 # Namespaced Issuers: only a Certificate (or CertificateRequest) in this
 # namespace can use them, so who may create those here is who may ask for a
 # bootstrap cert. What they get is limited by the policies (issuers.nix).
-# No pods run here.
+# The only pod here is the daily export job (export.nix).
 { ... }:
 let
   inherit (import ./settings.nix) namespace;
 in
 {
+  imports = [ ./export.nix ];
+
   validation.strict = true;
 
   resources.core.v1.Namespace.${namespace}.metadata.labels = {
