@@ -1,0 +1,54 @@
+# sops recipients for every encrypted file in this repo (sops-nix:
+# modules/system/sops.nix). After changing a recipient list, re-encrypt the
+# affected files with `sops updatekeys <file>` from the dev shell.
+#
+# Host keys are age recipients derived from each host's SSH ed25519 host
+# public key (/etc/ssh/ssh_host_ed25519_key.pub):
+#   ssh-to-age < ssh_host_ed25519_key.pub
+# The host decrypts with that private key at activation; a reinstalled host
+# gets a new key, so its anchor must be updated (and every file it reads
+# re-encrypted) BEFORE its first switch, or admin's password is missing.
+keys:
+  # Admins: every rule includes both, so any file can be recovered.
+  - &admin_yubikey age1yubikey1qwdgvy8jqgqjd2f380hf6d787x25eyhfwj5nxyv5gzhu6827medygv69f6q # age-plugin-yubikey (PIV slot)
+  - &admin_backup age1dcz2gzz3u4uw09jvgp74zv33eqhvwgd7rl76kg9ehwy3g00thsms8vpl08 # offline file key, passphrase-encrypted
+  # Hosts (ssh-to-age of the SSH ed25519 host key).
+  - &c4130 age1jkfgs08xx6h07x0feqxxh2urnngpu5unt40hrs74t8pz37m3qags2mamet
+  - &r440 age13g3xjkuy4fuvc7lusza526vl47ljyc5qx0452dq2z7hufhr45egq9wssep
+  - &m2mini age1f25zd3jg5k8unh27rnmrlejmh8lxp2tep33rt5hp25d7k98773uqsdr0pn
+  - &famine TODO-famine-age-recipient # ssh-to-age of Famine's ssh_host_ed25519_key.pub
+  # Flux (in-cluster decryption of k8s secrets).
+  - &flux TODO-flux-age-recipient
+
+creation_rules:
+  # Every host.
+  - path_regex: ^secrets/common\.yaml$
+    key_groups:
+      - age:
+          - *admin_yubikey
+          - *admin_backup
+          - *c4130
+          - *r440
+          - *m2mini
+          - *famine
+  # One host each (sops.defaultSopsFile = secrets/<lowercase hostname>.yaml).
+  - path_regex: ^secrets/c4130\.yaml$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *c4130]
+  - path_regex: ^secrets/r440\.yaml$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *r440]
+  - path_regex: ^secrets/m2mini\.yaml$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *m2mini]
+  - path_regex: ^secrets/famine\.yaml$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *famine]
+  # Kubernetes secrets decrypted in-cluster by Flux (kustomize-controller's
+  # sops decryption). Only the values under data/stringData are encrypted.
+  # NOTE: path pattern agreed with the k8s side (Linus); adjust if the
+  # encrypted manifests end up elsewhere.
+  - path_regex: ^k8s/.*\.sops\.yaml$
+    encrypted_regex: ^(data|stringData)$
+    key_groups:
+      - age: [*admin_yubikey, *admin_backup, *flux]

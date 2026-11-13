@@ -36,8 +36,9 @@ in
     # here (and its ISO in parts/packages.nix) and fix it for the current
     # nixpkgs-unstable.
 
-    # Servers: only the host dir + modules/cluster (no desktop,
-    # home-manager or agenix). See lib/system/mkServer.nix.
+    # Servers: only the host dir + modules/cluster + modules/server (no
+    # desktop or home-manager; sops-nix and the admin account come through
+    # modules/server). See lib/system/mkServer.nix.
     (lib.system.x86_64-linux.mkServer {
       path = ../hosts/c4130;
       nixpkgs = inputs.nixpkgs;

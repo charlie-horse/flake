@@ -18,9 +18,10 @@ in
   # Server host builder (c4130, r440, m2mini, ...).
   #
   # Unlike mkHost it does NOT import ../../modules wholesale (desktop,
-  # home-manager, agenix, ...): a server gets only its host dir, the shared
+  # home-manager, ...): a server gets only its host dir, the shared
   # cluster module (modules/cluster), the server baseline (modules/server:
-  # git, cloudflared) and whatever `modules` adds.
+  # git, cloudflared, tailscale, sops-nix, the admin account and charlie)
+  # and whatever `modules` adds.
   #
   #   mkServer {
   #       path = ./hosts/c4130;         # host dir (or file)
