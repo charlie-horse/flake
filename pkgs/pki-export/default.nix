@@ -24,6 +24,7 @@
   cacert,
   openssl,
   coreutils,
+  diffutils,
   gnused,
   gnugrep,
 }:
@@ -42,6 +43,7 @@ let
       curl
       openssl
       coreutils
+      diffutils # cmp
       gnused
       gnugrep
     ];
