@@ -2,10 +2,15 @@
 #
 # Prepended by default.nix:
 #   CLUSTER_PKI_DEFINITION  JSON projection of cluster/definition.nix (store path)
+#   CLUSTER_PKI_ROOT_CA     cluster/pki/root-ca.pem as a store path, or empty
+#                           while the offline root does not exist yet
 #
-# Layout of the output dir (default ./pki-out, operator machine only):
+# Layout of the output dir (default
+# ${XDG_DATA_HOME:-~/.local/share}/cluster-pki/<cluster>, operator machine only):
 #   ca/<k8s|etcd|front-proxy>/current/{ca.pem,ca-key.pem}   signing CA
-#   ca/<ca>/next/        new CA during a rotation (after `begin`)
+#   ca/<ca>/next/        new CA during a rotation (after `begin`); with an
+#                        offline root: ca-key.pem + ca.csr from --ca-csr,
+#                        ca.pem from --ca-import, and .pending until `begin`
 #   ca/<ca>/previous/    old CA during a rotation (after `reissue`)
 #   ca/<ca>/trust/*.pem  extra trusted certs (e.g. adopted legacy CA, public)
 #   ca/<ca>/retired/<ts>/  CAs dropped by `finish`/`abort` (never deleted)
@@ -26,8 +31,17 @@ RENEW_BEFORE_DAYS=${CLUSTER_PKI_RENEW_BEFORE_DAYS:-30}
 KEY_ALGO=rsa
 KEY_SIZE=2048
 
-out=./pki-out
+# Where the offline root's public cert lives in this repo (docs/pki.md).
+# default.nix bakes it into CLUSTER_PKI_ROOT_CA when the file exists.
+ROOT_CA_REPO_PATH=cluster/pki/root-ca.pem
+
+out=
 def=${CLUSTER_PKI_DEFINITION:-}
+root_ca=${CLUSTER_PKI_ROOT_CA:-}
+self_signed=0
+csr_ca=
+import_ca=
+import_file=
 mode=generate
 renew=0
 only_node=
@@ -43,14 +57,34 @@ ts=$(date -u +%Y%m%dT%H%M%SZ)
 
 usage() {
   cat <<'EOF'
-cluster-pki [--out DIR] [--definition FILE.json] [--renew] [--node NAME]
+Common options: [--out DIR] [--definition FILE.json] [--root-ca FILE.pem]
+    --out      default ${XDG_DATA_HOME:-~/.local/share}/cluster-pki/<cluster>
+    --root-ca  the offline root's public cert (default: cluster/pki/root-ca.pem
+               baked in at build time, if it exists in the repo)
+
+cluster-pki [--renew] [--node NAME] [--self-signed]
     Create missing CAs, the SA keypair and every node's leaves. Idempotent:
     CA keys are never overwritten; a leaf is (re)issued only when missing,
-    not signed by the current CA, its SANs/subject differ from the
-    definition, it expires within 30 days, or --renew is given.
+    not signed by the current CA, its SANs/subject/chain differ from the
+    definition, it expires within 30 days, or --renew is given. A missing CA
+    is taken from an imported intermediate in ca/<ca>/next/; it is only
+    self-signed when no root is configured or --self-signed is given.
 
-cluster-pki --rotate-ca <etcd|k8s|front-proxy> [--phase PHASE] [--out DIR]
-    PHASE  begin    create a new CA next to the current one; bundle = old+new
+cluster-pki --ca-csr <etcd|k8s|front-proxy>
+    Generate the next intermediate CA's key (ECDSA P-384) and CSR in
+    ca/<ca>/next/. Sign ca.csr with the offline root (CA:TRUE, pathlen:0,
+    keyCertSign), then --ca-import the cert.
+
+cluster-pki --ca-import <etcd|k8s|front-proxy> CERT.pem
+    Check the signed intermediate (matches the next key, critical CA:TRUE
+    pathlen:0, keyCertSign, verifies against the root) and install it as
+    ca/<ca>/next/ca.pem. Trust bundles change only at `--phase begin`.
+
+cluster-pki --rotate-ca <etcd|k8s|front-proxy> [--phase PHASE] [--self-signed]
+    PHASE  begin    put the next CA next to the current one; bundle = old+new.
+                    Uses the imported intermediate in next/; without one it
+                    self-signs a new CA, which needs --self-signed once a
+                    root is configured
            reissue  new CA becomes the signer; re-issue that CA's leaves
                     (old leaves are copied to backup/<ts>/); bundle = new+old
            finish   drop the old CA (and adopted trust certs) from the bundle
@@ -63,7 +97,14 @@ cluster-pki --trust <etcd|k8s|front-proxy> FILE.pem [--out DIR]
     so a cut-over from it never loses quorum. `finish` removes it again.
 
 cluster-pki status [--out DIR]
-    Show every leaf with issuer, expiry and whether it is up to date.
+    Show every leaf with issuer, expiry and whether it is up to date, then
+    run check-anchors (exit 1 if it fails).
+
+cluster-pki check-anchors [--out DIR]
+    Fail if a trust bundle holds the root, a self-signed cert while that CA
+    is an intermediate, or a cert that is not one of its own CA's
+    generations (or adopted --trust certs); or if a leaf (or a cert in its
+    chain) does not come from its own CA's generations.
 
 cluster-pki deploy <node> [--out DIR] [--host SSH_HOST] [--staging DIR]
                    [--dry-run]
@@ -82,6 +123,10 @@ while [ $# -gt 0 ]; do
     -h|--help) usage; exit 0 ;;
     --out) out=$2; shift 2 ;;
     --definition) def=$2; shift 2 ;;
+    --root-ca) root_ca=$2; shift 2 ;;
+    --self-signed) self_signed=1; shift ;;
+    --ca-csr) mode=csr; csr_ca=$2; shift 2 ;;
+    --ca-import) mode=import; import_ca=$2; import_file=$3; shift 3 ;;
     --renew) renew=1; shift ;;
     --node) only_node=$2; shift 2 ;;
     --rotate-ca) mode=rotate; rotate_ca=$2; shift 2 ;;
@@ -91,6 +136,7 @@ while [ $# -gt 0 ]; do
     --staging) staging=$2; shift 2 ;;
     --dry-run) dry_run=1; shift ;;
     status) mode=status; shift ;;
+    check-anchors) mode=check-anchors; shift ;;
     deploy) mode=deploy; deploy_node=${2:-}; shift; [ $# -gt 0 ] && shift ;;
     *) usage >&2; die "unknown argument: $1" ;;
   esac
@@ -102,6 +148,10 @@ jq -e '.nodes | length > 0' "$def" >/dev/null || die "definition has no nodes"
 # ---------------------------------------------------------------- definition
 d() { jq -r "$1" "$def"; }
 cluster_name=$(d '.name')
+: "${out:=${XDG_DATA_HOME:-$HOME/.local/share}/cluster-pki/$cluster_name}"
+if [ -n "$root_ca" ]; then
+  [ -r "$root_ca" ] || die "root CA cert not readable: '$root_ca'"
+fi
 SECRETS_DIR=$(d ".secretsDir // \"/var/lib/kubernetes/secrets\"")
 domain=$(d '.domain // empty')
 nodes() { jq -r '.nodes | keys[]' "$def"; }
@@ -206,11 +256,43 @@ atomic_write() {
 
 ca_dir() { echo "$out/ca/$1"; }
 
+# CA common name. The time of day keeps it unique when two CAs of one kind
+# are made on the same day (e.g. begin, abort, begin): two CAs with the same
+# subject in one bundle make issuer lookup by name ambiguous.
+ca_cn() { echo "$cluster_name $1 CA $(date -u +%Y-%m-%dT%H%M%SZ)"; }
+
+cert_fp() { openssl x509 -noout -fingerprint -sha256 -in "$1" | sed 's/.*=//'; }
+cert_count() { grep -c -- '-----BEGIN CERTIFICATE-----' "$1" || true; }
+is_self_signed() {  # subject == issuer (a root, or an old-style CA)
+  [ "$(openssl x509 -noout -subject -nameopt RFC2253 -in "$1" | sed 's/^subject=//')" \
+    = "$(openssl x509 -noout -issuer -nameopt RFC2253 -in "$1" | sed 's/^issuer=//')" ]
+}
+# Split a PEM file into $2/001.pem, $2/002.pem, ... (one cert each).
+split_certs() {
+  local in=$1 d=$2 i=0 line
+  mkdir -p "$d"
+  while IFS= read -r line; do
+    if [ "$line" = "-----BEGIN CERTIFICATE-----" ]; then i=$((i + 1)); fi
+    if [ $i -gt 0 ]; then printf '%s\n' "$line" >>"$d/$(printf %03d $i).pem"; fi
+  done <"$in"
+}
+root_configured() { [ -n "$root_ca" ]; }
+# The next CA exists but was only imported, not yet `begin`-ed.
+next_pending() { [ -e "$(ca_dir "$1")/next/.pending" ]; }
+next_imported() {
+  local n; n=$(ca_dir "$1")/next
+  [ -f "$n/ca-key.pem" ] && [ -f "$n/ca.pem" ]
+}
+
 init_ca() {  # $1 = ca, $2 = target dir (must not contain a key)
   local ca=$1 dir=$2 cn work
   [ -e "$dir/ca-key.pem" ] && die "refusing to overwrite CA key $dir/ca-key.pem"
+  if root_configured && [ $self_signed = 0 ]; then
+    die "$ca: a root CA is configured ($root_ca); refusing to self-sign a CA." \
+      "Use --ca-csr $ca / --ca-import $ca, or pass --self-signed."
+  fi
   mkdir -p "$dir"
-  cn="$cluster_name $ca CA $(date -u +%Y-%m-%d)"
+  cn=$(ca_cn "$ca")
   work=$(mktemp -d)
   jq -n --arg cn "$cn" --arg o "$cluster_name" --arg e "${CA_HOURS}h" \
     --arg a "$KEY_ALGO" --argjson s "$KEY_SIZE" \
@@ -223,14 +305,19 @@ init_ca() {  # $1 = ca, $2 = target dir (must not contain a key)
   install -m 0600 "$work/ca-key.pem" "$dir/ca-key.pem"
   install -m 0644 "$work/ca.pem" "$dir/ca.pem"
   rm -rf "$work"
-  log "created CA $ca: $cn ($dir)"
+  log "created self-signed CA $ca: $cn ($dir)"
 }
 
-write_bundle() {  # trust bundle = current + next + previous + trust/*
-  local ca=$1 dir f
+# Trust bundle = current + next + previous + trust/*. Never the root: Go
+# (etcd, apiserver, kubelet) accepts an intermediate in the root pool as the
+# anchor, and the root would also anchor the workload CA (docs/pki.md).
+# A next CA that is only imported (.pending) is left out until `begin`.
+write_bundle() {
+  local ca=$1 dir f next=
   dir=$(ca_dir "$ca")
+  next_pending "$ca" || next="$dir/next/ca.pem"
   {
-    for f in "$dir/current/ca.pem" "$dir/next/ca.pem" "$dir/previous/ca.pem" \
+    for f in "$dir/current/ca.pem" $next "$dir/previous/ca.pem" \
              "$dir"/trust/*.pem; do
       if [ -f "$f" ]; then cat "$f"; fi
     done
@@ -240,9 +327,20 @@ write_bundle() {  # trust bundle = current + next + previous + trust/*
 
 ensure_cas() {
   local ca
+  local dir
   for ca in $cas; do
-    [ -f "$(ca_dir "$ca")/current/ca-key.pem" ] \
-      || init_ca "$ca" "$(ca_dir "$ca")/current"
+    dir=$(ca_dir "$ca")
+    if [ ! -f "$dir/current/ca-key.pem" ]; then
+      if next_imported "$ca"; then
+        # First CA of a new cluster, from --ca-csr/--ca-import.
+        [ -e "$dir/current" ] && die "$ca: $dir/current exists without a key"
+        rm -f "$dir/next/.pending"
+        mv "$dir/next" "$dir/current"
+        log "$ca: imported intermediate is the first $ca CA"
+      else
+        init_ca "$ca" "$dir/current"
+      fi
+    fi
     write_bundle "$ca"
   done
   if [ ! -f "$out/sa.key" ]; then
@@ -267,12 +365,19 @@ expected_subject() {  # RFC2253 order is reversed: CN first
   if [ -n "$2" ]; then echo "CN=$1,O=$2"; else echo "CN=$1"; fi
 }
 
+# Server leaves (profile server/peer) of an intermediate CA carry the chain:
+# leaf + intermediate, so clients that trust only the root can verify them.
+wants_chain() {  # $1 profile, $2 CA cert
+  case "$1" in server|peer) ! is_self_signed "$2" ;; *) return 1 ;; esac
+}
+
 # Why a leaf needs (re)issuing; empty = up to date.
 leaf_reason() {
-  local base=$1 ca=$2 cn=$3 o=$4 want_sans=$5 cadir have
+  local base=$1 ca=$2 cn=$3 o=$4 want_sans=$5 prof=$6 cadir have want_n=1
   cadir=$(ca_dir "$ca")/current
   [ -f "$base.pem" ] && [ -f "$base-key.pem" ] || { echo missing; return; }
-  openssl verify -CAfile "$cadir/ca.pem" "$base.pem" >/dev/null 2>&1 \
+  # -partial_chain: the CA may be an intermediate (anchor, like Go does).
+  openssl verify -partial_chain -CAfile "$cadir/ca.pem" "$base.pem" >/dev/null 2>&1 \
     || { echo "not signed by current $ca CA"; return; }
   openssl x509 -noout -checkend $((RENEW_BEFORE_DAYS * 86400)) \
     -in "$base.pem" >/dev/null \
@@ -284,6 +389,12 @@ leaf_reason() {
   [ "$(openssl x509 -noout -pubkey -in "$base.pem")" = \
     "$(openssl pkey -pubout -in "$base-key.pem" 2>/dev/null)" ] \
     || { echo "key does not match cert"; return; }
+  wants_chain "$prof" "$cadir/ca.pem" && want_n=2
+  [ "$(cert_count "$base.pem")" = $want_n ] || { echo "chain changed"; return; }
+  if [ $want_n = 2 ] && [ "$(cat "$cadir/ca.pem")" != \
+      "$(tail -n "$(wc -l <"$cadir/ca.pem")" "$base.pem")" ]; then
+    echo "chain changed"; return
+  fi
   [ $renew = 1 ] && { echo "--renew"; return; }
   echo ""
 }
@@ -310,6 +421,9 @@ issue_leaf() {  # $1 base, $2 ca, $3 profile, $4 CN, $5 O, $6 sans (newline list
   then
     cat "$work/log" >&2; rm -rf "$work"; die "issuing $base failed"
   fi
+  if wants_chain "$prof" "$cadir/ca.pem"; then
+    cat "$cadir/ca.pem" >>"$work/leaf.pem"
+  fi
   backup_leaf "$base"
   install -m 0600 "$work/leaf-key.pem" "$base-key.pem.new"
   install -m 0644 "$work/leaf.pem" "$base.pem.new"
@@ -333,7 +447,7 @@ generate_leaves() {
       esac
       base="$out/$comp-$n"
       if [ "$force" = 1 ]; then why=forced; else
-        why=$(leaf_reason "$base" "$ca" "$cn" "$o" "$want"); fi
+        why=$(leaf_reason "$base" "$ca" "$cn" "$o" "$want" "$prof"); fi
       if [ -n "$why" ]; then
         issue_leaf "$base" "$ca" "$prof" "$cn" "$o" "$want"
         log "issued $comp-$n ($why)"
@@ -347,17 +461,172 @@ generate_leaves() {
 }
 
 ensure_out() {
+  local d
+  # Keys must never end up in a checkout (or a flake's store copy): refuse
+  # an --out inside any directory that has .git or flake.nix.
+  d=$(realpath -m "$out")
+  while :; do
+    if [ -e "$d/.git" ] || [ -e "$d/flake.nix" ]; then
+      die "--out $out is inside $d (has .git or flake.nix); use a dir" \
+        "outside any checkout, e.g. the default ~/.local/share/cluster-pki/<cluster>"
+    fi
+    [ "$d" = / ] && break
+    d=$(dirname "$d")
+  done
   mkdir -p "$out"
   chmod 0700 "$out"
-  local top
-  # Keys must never be committed. The dir ignores itself (.gitignore '*');
-  # inside a git work tree, double-check that git really ignores a key path.
+  # Belt and braces: the dir ignores itself (.gitignore '*').
   [ -f "$out/.gitignore" ] || printf '*\n' >"$out/.gitignore"
-  if top=$(git -C "$out" rev-parse --show-toplevel 2>/dev/null) \
-      && ! git -C "$top" check-ignore -q "$(realpath "$out")/ca-key.pem"; then
-    die "$out is inside git repo $top but git does not ignore it; refusing"
-  fi
   mkdir -p "$out/ca"
+}
+
+# ---------------------------------------------------------------- offline root
+# --ca-csr: key + CSR for the next intermediate; the root signs it elsewhere.
+ca_csr() {
+  local ca=$1 dir cn
+  bundle_name "$ca" >/dev/null
+  dir=$(ca_dir "$ca")
+  [ -e "$dir/next" ] && die "$ca: $dir/next exists (rotation begun, or CSR" \
+    "already made). Discard it with --rotate-ca $ca --phase abort."
+  [ -e "$dir/previous" ] && die "$ca: rotation not finished ($dir/previous exists)"
+  mkdir -p "$dir/next"
+  touch "$dir/next/.pending"
+  openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-384 \
+    -out "$dir/next/ca-key.pem" 2>/dev/null
+  chmod 0600 "$dir/next/ca-key.pem"
+  cn=$(ca_cn "$ca")
+  # The requested extensions are a hint; the root's signing profile decides.
+  openssl req -new -sha384 -key "$dir/next/ca-key.pem" \
+    -subj "/O=$cluster_name/CN=$cn" \
+    -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign" \
+    -out "$dir/next/ca.csr"
+  chmod 0644 "$dir/next/ca.csr"
+  log "$ca: CSR $dir/next/ca.csr (CN=$cn, O=$cluster_name, P-384)"
+  log "public key sha256: $(openssl req -noout -pubkey -in "$dir/next/ca.csr" \
+    | openssl pkey -pubin -outform DER | sha256sum | cut -d' ' -f1)"
+  log "Sign it with the root (CA:TRUE pathlen:0, keyCertSign), then"
+  log "  cluster-pki --ca-import $ca <cert.pem>"
+}
+
+# --ca-import: check the root-signed intermediate and install it as next.
+ca_import() {
+  local ca=$1 f=$2 dir bc
+  bundle_name "$ca" >/dev/null
+  dir=$(ca_dir "$ca")
+  root_configured || die "no root CA configured (--root-ca FILE, or" \
+    "$ROOT_CA_REPO_PATH in the repo at build time)"
+  is_self_signed "$root_ca" || die "root $root_ca is not self-signed"
+  { [ -f "$dir/next/ca-key.pem" ] && next_pending "$ca"; } \
+    || die "$ca: no pending CSR in $dir/next; run --ca-csr $ca first"
+  [ -e "$dir/next/ca.pem" ] && die "$ca: $dir/next/ca.pem already imported"
+  [ -r "$f" ] || die "cannot read $f"
+  grep -q 'PRIVATE KEY' "$f" && die "$f holds a private key"
+  [ "$(cert_count "$f")" = 1 ] \
+    || die "$f must hold exactly one certificate (the intermediate, no chain)"
+  [ "$(openssl x509 -noout -pubkey -in "$f")" = \
+    "$(openssl pkey -pubout -in "$dir/next/ca-key.pem")" ] \
+    || die "$f does not match the key in $dir/next (wrong CSR or CA?)"
+  bc=$(openssl x509 -noout -ext basicConstraints -in "$f" 2>/dev/null | tr -d ' \n')
+  [ "$bc" = "X509v3BasicConstraints:criticalCA:TRUE,pathlen:0" ] \
+    || die "$f: basicConstraints must be 'critical, CA:TRUE, pathlen:0' (got '$bc')"
+  openssl x509 -noout -ext keyUsage -in "$f" 2>/dev/null \
+    | grep -q 'Certificate Sign' || die "$f: keyUsage lacks keyCertSign"
+  [ "$(cert_fp "$f")" != "$(cert_fp "$root_ca")" ] || die "$f is the root itself"
+  openssl verify -x509_strict -CAfile "$root_ca" "$f" >/dev/null \
+    || die "$f does not verify against the root $root_ca"
+  if ! openssl x509 -noout -checkend \
+      $(( LEAF_HOURS * 3600 + RENEW_BEFORE_DAYS * 86400 )) -in "$f" >/dev/null; then
+    log "WARNING: $f expires before a ${LEAF_HOURS}h leaf would; cfssl does"
+    log "not shorten leaves to the CA's lifetime."
+  fi
+  install -m 0644 "$f" "$dir/next/ca.pem"
+  log "$ca: imported $(subject_of_cert "$f")"
+  log "  issuer: $(openssl x509 -noout -issuer -nameopt RFC2253 -in "$f" | sed 's/^issuer=//')"
+  if [ -f "$dir/current/ca-key.pem" ]; then
+    log "Trust bundles are unchanged. Next: --rotate-ca $ca --phase begin"
+  else
+    log "No current $ca CA: the next 'cluster-pki' run makes it the first one."
+  fi
+}
+
+# ---------------------------------------------------------------- anchors
+# The anchor rule (docs/pki.md): a trust bundle holds only its own CA's
+# generations (plus adopted --trust certs), never the root, never another
+# branch, and no self-signed cert once that CA is an intermediate.
+# Prints one line per problem; returns non-zero if there is any.
+check_anchors() {
+  local fails=0 ca other dir f g fp tmp root_fp='' inter b n comp prof cn o sans
+  tmp=$(mktemp -d)
+  if root_configured; then root_fp=$(cert_fp "$root_ca"); fi
+  bad() { echo "check-anchors: FAIL: $*"; fails=$((fails + 1)); }
+  for ca in $cas; do  # every CA's generations (current/next/previous)
+    dir=$(ca_dir "$ca")
+    : >"$tmp/$ca.fps"; : >"$tmp/$ca.gens.pem"; : >"$tmp/$ca.trust"
+    inter=0
+    for f in "$dir"/current/ca.pem "$dir"/next/ca.pem "$dir"/previous/ca.pem; do
+      [ -f "$f" ] || continue
+      cert_fp "$f" >>"$tmp/$ca.fps"; cat "$f" >>"$tmp/$ca.gens.pem"
+      is_self_signed "$f" || inter=1
+    done
+    echo "$inter" >"$tmp/$ca.inter"
+    for f in "$dir"/trust/*.pem; do
+      if [ -f "$f" ]; then cert_fp "$f" >>"$tmp/$ca.trust"; fi
+    done
+  done
+  for ca in $cas; do
+    b="$out/$(bundle_name "$ca").pem"
+    if [ ! -s "$b" ]; then bad "$b is missing or empty"; continue; fi
+    inter=$(cat "$tmp/$ca.inter")
+    : >"$tmp/bundle-$ca.fps"
+    split_certs "$b" "$tmp/bundle-$ca"
+    for f in "$tmp/bundle-$ca"/*.pem; do
+      [ -f "$f" ] || continue
+      fp=$(cert_fp "$f")
+      cn=$(subject_of_cert "$f")
+      echo "$fp" >>"$tmp/bundle-$ca.fps"
+      if [ "$fp" = "$root_fp" ]; then bad "$b contains the root CA ($cn)"; fi
+      if [ "$inter" = 1 ] && is_self_signed "$f"; then
+        bad "$b contains self-signed $cn, but the $ca CA is an intermediate"
+      fi
+      for other in $cas; do
+        [ "$other" = "$ca" ] && continue
+        if grep -qxF "$fp" "$tmp/$other.fps"; then
+          bad "$b contains the $other CA $cn"
+        fi
+      done
+      grep -qxF "$fp" "$tmp/$ca.fps" || grep -qxF "$fp" "$tmp/$ca.trust" \
+        || bad "$b contains $cn, which is not a $ca CA generation or --trust cert"
+    done
+    g=$(ca_dir "$ca")/current/ca.pem
+    if [ -f "$g" ] && ! grep -qxF "$(cert_fp "$g")" "$tmp/bundle-$ca.fps"; then
+      bad "$b lacks the current $ca CA"
+    fi
+  done
+  # Each leaf must be issued by one of its own CA's generations, and any
+  # chain cert in its file must be one of them too (never root/other CA).
+  for n in $(nodes); do
+    while IFS='|' read -r comp ca prof cn o sans; do
+      f="$out/$comp-$n.pem"
+      [ -f "$f" ] || continue
+      rm -rf "$tmp/leaf"; split_certs "$f" "$tmp/leaf"
+      if [ ! -s "$tmp/$ca.gens.pem" ] || ! openssl verify -partial_chain \
+          -no_check_time -CAfile "$tmp/$ca.gens.pem" "$tmp/leaf/001.pem" \
+          >/dev/null 2>&1; then
+        bad "$comp-$n.pem: issuer is not one of the $ca CA's generations"
+      fi
+      for g in "$tmp/leaf"/*.pem; do
+        [ "$g" = "$tmp/leaf/001.pem" ] && continue
+        grep -qxF "$(cert_fp "$g")" "$tmp/$ca.fps" \
+          || bad "$comp-$n.pem: chain holds $(subject_of_cert "$g"), not a $ca CA"
+      done
+    done < <(node_leaves "$n")
+  done
+  rm -rf "$tmp"
+  if [ $fails = 0 ]; then
+    echo "check-anchors: ok (each bundle holds only its own CA's generations)"
+  fi
+  [ $fails = 0 ]
 }
 
 # ---------------------------------------------------------------- rotation
@@ -368,15 +637,24 @@ rotate() {
   [ -f "$dir/current/ca-key.pem" ] || die "no current $ca CA; run cluster-pki first"
   case "$phase" in
     begin)
-      [ -e "$dir/next" ] && die "$ca rotation already begun ($dir/next exists)"
       [ -e "$dir/previous" ] && die "$ca rotation not finished ($dir/previous exists)"
-      init_ca "$ca" "$dir/next"
+      if next_pending "$ca"; then
+        next_imported "$ca" || die "$ca: $dir/next has a CSR but no cert;" \
+          "sign it with the root and run --ca-import $ca <cert.pem>"
+        rm -f "$dir/next/.pending"
+        log "$ca: using the imported intermediate $(subject_of_cert "$dir/next/ca.pem")"
+      elif [ -e "$dir/next" ]; then
+        die "$ca rotation already begun ($dir/next exists)"
+      else
+        init_ca "$ca" "$dir/next"   # self-signed; refuses if a root exists
+      fi
       write_bundle "$ca"
       log "$ca: bundle now old+new. Deploy $(bundle_name "$ca").pem to every"
       log "node one at a time (docs/pki.md), then --phase reissue."
       ;;
     reissue)
-      [ -f "$dir/next/ca-key.pem" ] || die "$ca: no next CA; run --phase begin"
+      { [ -f "$dir/next/ca-key.pem" ] && [ -f "$dir/next/ca.pem" ] \
+        && ! next_pending "$ca"; } || die "$ca: no begun next CA; run --phase begin"
       [ -e "$dir/previous" ] && die "$ca: $dir/previous exists; finish first"
       mv "$dir/current" "$dir/previous"
       mv "$dir/next" "$dir/current"
@@ -442,7 +720,7 @@ status() {
         *) want= ;;
       esac
       base="$out/$comp-$n"
-      why=$(leaf_reason "$base" "$ca" "$cn" "$o" "$want")
+      why=$(leaf_reason "$base" "$ca" "$cn" "$o" "$want" "$prof")
       end=-
       [ -f "$base.pem" ] && end=$(openssl x509 -noout -enddate -in "$base.pem" \
         | sed 's/notAfter=//')
@@ -453,7 +731,15 @@ status() {
     echo "== $ca trust bundle ($(bundle_name "$ca").pem):"
     openssl crl2pkcs7 -nocrl -certfile "$out/$(bundle_name "$ca").pem" \
       | openssl pkcs7 -print_certs -noout | grep '^subject' || true
+    if next_pending "$ca"; then
+      if next_imported "$ca"; then
+        echo "   pending next CA in ca/$ca/next: imported, run --phase begin"
+      else
+        echo "   pending next CA in ca/$ca/next: CSR only, awaiting --ca-import"
+      fi
+    fi
   done
+  check_anchors
 }
 
 # ---------------------------------------------------------------- deploy
@@ -465,6 +751,7 @@ deploy() {
   stage="$staging/$n"
   list=$(node_files "$n")
   # Check everything locally before anything leaves this machine.
+  check_anchors >&2 || die "trust anchors are wrong; not deploying"
   while IFS='|' read -r f owner mode; do
     [ -f "$out/$f" ] || die "missing $out/$f; run cluster-pki first"
   done <<<"$list"
@@ -474,7 +761,7 @@ deploy() {
       front-proxy-*) ca="front-proxy-ca" ;;
       *) ca="ca" ;;
     esac
-    openssl verify -CAfile "$out/$ca.pem" "$out/$f" >/dev/null \
+    openssl verify -partial_chain -CAfile "$out/$ca.pem" "$out/$f" >/dev/null \
       || die "$f does not verify against $ca.pem"
   done < <(grep -o "^[^|]*-$n\.pem" <<<"$list")
   if [ $dry_run = 0 ]; then
@@ -541,6 +828,9 @@ case "$mode" in
     openssl x509 -noout -in "$trust_file" 2>/dev/null \
       || die "$trust_file is not a PEM certificate"
     grep -q 'PRIVATE KEY' "$trust_file" && die "$trust_file holds a private key"
+    if root_configured && [ "$(cert_fp "$trust_file")" = "$(cert_fp "$root_ca")" ]; then
+      die "$trust_file is the root CA; bundles must never hold it"
+    fi
     mkdir -p "$(ca_dir "$trust_ca")/trust"
     fp=$(openssl x509 -noout -fingerprint -sha256 -in "$trust_file" \
       | sed 's/.*=//; s/://g' | cut -c1-16)
@@ -548,6 +838,9 @@ case "$mode" in
     write_bundle "$trust_ca"
     log "$trust_ca bundle now also trusts $(subject_of_cert "$trust_file")"
     ;;
+  csr) ensure_out; ca_csr "$csr_ca" ;;
+  import) ensure_out; ca_import "$import_ca" "$import_file" ;;
   status) [ -d "$out/ca" ] || die "no PKI in $out"; status ;;
+  check-anchors) [ -d "$out/ca" ] || die "no PKI in $out"; check_anchors ;;
   deploy) [ -d "$out/ca" ] || die "no PKI in $out"; deploy "$deploy_node" ;;
 esac

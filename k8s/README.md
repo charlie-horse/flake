@@ -37,7 +37,7 @@ with one line in `components` in `default.nix` (or in `deferred.modules`,
 | `infra/coredns` | CoreDNS, Service `kube-system/kube-dns` at `dnsServiceIP` (10.96.0.10), zone `clusterDomain` (cluster.local), 2 replicas | coredns chart 1.48.2 (CoreDNS 1.14.7) |
 | `infra/nvidia-device-plugin` | NVIDIA device plugin on `nvidia.com/gpu.present=true` nodes, `runtimeClassName: nvidia`, `DEVICE_ID_STRATEGY=index` (matches the host's index-named CDI spec) | nvidia-device-plugin chart 0.20.1 |
 | `infra/cert-manager` | cert-manager v1.21.3 (namespace `cert-manager`, enforce `restricted`): CRDs, controller and cainjector (1 replica each), webhook (2 replicas, PDB); r440 and m2mini ([cert-manager](#cert-manager)) | jetstack cert-manager chart v1.21.3 |
-| `infra/cert-manager-issuers` (deferred: `deferred/infra/cert-manager-issuers/`) | the workload CA: ClusterIssuer `selfsigned`, root Certificate `cert-manager/cluster-ca` (ECDSA P-384, 10 y), CA ClusterIssuer **`cluster-ca`**; applied by the Kustomization `cert-manager-issuers` | hand-written (`components/infra/cert-manager/issuers.nix`) |
+| `infra/cert-manager-issuers` (deferred: `deferred/infra/cert-manager-issuers/`) | the workload CA: CA ClusterIssuer **`cluster-ca`** over the Secret `cert-manager/cluster-ca` (workload intermediate under the YubiKey root, from sops after the ceremony: [Secrets](#secrets), [docs/pki-migration-plan.md](../docs/pki-migration-plan.md)); applied by the Kustomization `cert-manager-issuers` | hand-written (`components/infra/cert-manager/issuers.nix`) |
 | `flux` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers; OCIRepository `flux-system-oci` (the signed GHCR artifact) + Kustomization `flux-system`, one Kustomization per deferred component (`cert-manager-issuers`), Kustomization `secrets` (sops decryption, [Secrets](#secrets)); Receiver `ghcr` (push webhook) | fluxcd-community flux2 chart 2.19.1 |
 | `apps/cloudflared` | the single Cloudflare tunnel `cluster`: cloudflared, one replica per node (hostNetwork), nginx sidecar that sets `X-Forwarded-For` from `Cf-Connecting-Ip`; routes auth/k8s/chat, the Flux webhook host (`/hook/` only) and `cache.neuros.is` (r440's Nix cache, outside the cluster) | hand-written |
 | `apps/authentik` | authentik (SSO/OIDC): one server + one worker per node, PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprints (one file per OIDC client: `kubernetes`, `headlamp`, `open-webui`). Secrets from `authentik/authentik-secrets`, sops in git ([below](#the-secret-authentikauthentik-secrets)) | authentik chart 2026.8.5 + hand-written |
@@ -117,8 +117,10 @@ use the same fence ([Secrets](#secrets)).
 
 Every Kubernetes Secret the apps need is a sops-encrypted manifest in git,
 `k8s/secrets/<namespace>/<name>.sops.yaml`, decrypted in the cluster by
-kustomize-controller. Not the Secrets the cluster makes itself
-(`cert-manager/cluster-ca`, the webhook's own CA) and not the node PKI. The
+kustomize-controller. Not the Secrets the cluster makes itself (the
+cert-manager webhook's own CA) and not the node PKI. `cert-manager/cluster-ca`
+(the workload intermediate) is in sops too, once the root CA ceremony has
+made it; until then the cluster's own self-signed one is live. The
 one exception is the bootstrap key `flux-system/sops-age`
 ([below](#the-bootstrap-key-flux-systemsops-age)). Inventory of every
 secret: docs/cluster.md, "Secrets (all of them)".
@@ -129,6 +131,7 @@ secret: docs/cluster.md, "Secrets (all of them)".
 | `headlamp/headlamp-oidc` | `OIDC_CLIENT_SECRET` ([Headlamp](#the-secret-headlampheadlamp-oidc)) | `deploy/headlamp` (env) |
 | `open-webui/open-webui-secrets` | `OAUTH_CLIENT_SECRET`, `WEBUI_SECRET_KEY` ([Open WebUI](#open-webui)) | `deploy/open-webui` (env) |
 | `cloudflared/tunnel-credentials` | `credentials.json` ([Cloudflare tunnel](#cloudflare-tunnel)) | `deploy/cloudflared` (file, read at start) |
+| `cert-manager/cluster-ca`, **pending ceremony** (`type: kubernetes.io/tls`) | `ca.crt` (the root), `tls.crt` (intermediate + root), `tls.key` ([cert-manager](#cert-manager)) | nothing to restart: the ClusterIssuer reads it on each signature |
 | `flux-system/webhook-token` | `token`, no trailing newline (the Receiver's HMAC key; `components/flux/receiver.nix`) | nothing to restart; then update the GitHub secrets `FLUX_WEBHOOK_TOKEN` and `FLUX_WEBHOOK_URL` (the path is derived from the token: docs/ci.md) |
 
 - **Render.** `render.nix` copies each file byte for byte (never parsed
@@ -344,14 +347,18 @@ before the cluster exists ([docs/pki.md](../docs/pki.md#bootstrap-pki-and-worklo
 
 | Object | What |
 | --- | --- |
-| ClusterIssuer `selfsigned` | signs the root below; nothing else should use it |
-| Certificate `cert-manager/cluster-ca` | the root CA: `isCA`, ECDSA P-384, 10 years, renewed one year before expiry with the same key (`rotationPolicy: Never`, so issued leaves keep verifying) |
-| Secret `cert-manager/cluster-ca` | its key and cert, generated by cert-manager in the cluster; never copied out, never in git |
+| Secret `cert-manager/cluster-ca` | the workload intermediate CA (ECDSA P-384, 2 y), signed by the YubiKey root: `tls.crt` = intermediate + root, `tls.key`, `ca.crt` = root. **Pending ceremony:** sops-encrypted in git at `k8s/secrets/cert-manager/cluster-ca.sops.yaml`, applied by the Kustomization `secrets` ([Secrets](#secrets), [docs/pki-migration-plan.md](../docs/pki-migration-plan.md)). Until then the Secret is the old self-signed one cert-manager made |
 | ClusterIssuer **`cluster-ca`** | CA issuer over that Secret: **what workloads use** |
 
-All of it is declared; nothing is made by hand. The CA is independent of
-the bootstrap CAs on r440 and its key never leaves the cluster (a backup of
-the etcd data holds it, like every Secret).
+Only the ClusterIssuer is declared in this component. After the ceremony
+the Kustomization `secrets` owns the Secret (prune, hand edits reverted),
+like every sops Secret. No Certificate points at it, so cert-manager does
+not renew it: renewal is manual (sign a new intermediate with the root,
+replace the sops file, PR, merge) before the intermediate's 2-year expiry.
+Without the Secret the ClusterIssuer (and the Kustomization
+`cert-manager-issuers`) is NotReady and nothing else breaks. The key is
+readable by the admin sops identities and Flux's age key, and a backup of
+the etcd data holds it, like every Secret.
 
 ### Requesting a certificate
 
@@ -374,10 +381,10 @@ As a catenix component: `resources."cert-manager.io".v1.Certificate.<name>`,
 which needs the cert-manager CRDs imported to type-check (see `issuers.nix`:
 `catenix.crdModule` over the chart's CRDs), and the component must be
 **deferred** ([Deferred components](#deferred-components)), as everything
-`cert-manager.io` is. Defaults: 90 days, renewed at 2/3. Clients that should
-trust these certificates use `ca.crt` from any issued Secret, or the root:
-`kubectl -n cert-manager get secret cluster-ca -o jsonpath='{.data.ca\.crt}' | base64 -d`
-(read only `ca.crt`; the Secret also holds the key).
+`cert-manager.io` is. Defaults: 90 days, renewed at 2/3; keep durations
+under the intermediate's remaining life. Clients that should trust these
+certificates use `ca.crt` from any issued Secret, or the root,
+`cluster/pki/root-ca.pem` (public, in git).
 
 cert-manager approves every CertificateRequest for its own issuers, so
 whoever may create a Certificate may get any name signed by `cluster-ca`.
@@ -403,11 +410,12 @@ configurations by the cainjector), so it does not depend on `cluster-ca`.
 
 ### Removing it
 
-Deleting the root Certificate, or the whole component, leaves the Secret
-`cluster-ca` (no owner reference): re-adding the Certificate picks the same
-CA up again. Deleting the Secret makes a new root, and every client trusting
-the old one must be updated. Removing `infra/cert-manager` removes its CRDs
-and with them every Certificate and Issuer in the cluster.
+Deleting the ClusterIssuer, or the whole component, leaves the Secret
+`cluster-ca`. Deleting its sops file deletes the Secret (prune), but the
+key stays recoverable from git history with an admin identity. A new
+intermediate is signed by the root (docs/pki-migration-plan.md). Removing
+`infra/cert-manager` removes its CRDs and with them every Certificate and
+Issuer in the cluster.
 
 ## authentik
 

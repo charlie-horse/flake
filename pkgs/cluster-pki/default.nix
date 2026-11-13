@@ -51,6 +51,12 @@ let
 
   definitionJSON = writeText "cluster-pki-definition.json" (builtins.toJSON projected);
 
+  # The offline root's public cert (docs/pki.md). Until it is committed,
+  # cluster-pki has no root and may still self-sign CAs; once it exists,
+  # new CAs must be root-signed intermediates (--ca-csr/--ca-import).
+  rootCAFile = ../../cluster/pki/root-ca.pem;
+  rootCA = if builtins.pathExists rootCAFile then "${rootCAFile}" else "";
+
   cluster-pki = writeShellApplication {
     name = "cluster-pki";
     runtimeInputs = [
@@ -67,6 +73,8 @@ let
     text = ''
       : "''${CLUSTER_PKI_DEFINITION:=${definitionJSON}}"
       export CLUSTER_PKI_DEFINITION
+      : "''${CLUSTER_PKI_ROOT_CA=${rootCA}}"
+      export CLUSTER_PKI_ROOT_CA
     ''
     + builtins.readFile ./cluster-pki.sh;
   };
@@ -83,7 +91,12 @@ symlinkJoin {
     cluster-pki-deploy
   ];
   passthru = {
-    inherit cluster-pki cluster-pki-deploy definitionJSON;
+    inherit
+      cluster-pki
+      cluster-pki-deploy
+      definitionJSON
+      rootCA
+      ;
   };
   meta.mainProgram = "cluster-pki";
 }
