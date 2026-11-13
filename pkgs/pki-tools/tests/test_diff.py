@@ -79,9 +79,9 @@ def test_three_mutations(pki, sets):
     api = specs["apiserver-r440"]
     dns = tuple(d + ".evil" if d == "kubernetes.default.svc" else d for d in api.dns)
     mutated = {
-        "apiserver-r440": pki.leaf(k8s, api, dns=dns)[0],
-        "kubelet-r440": pki.leaf(k8s, specs["kubelet-r440"], eku=("server",))[0],
-        "admin-r440": pki.leaf(k8s, specs["admin-r440"], orgs=("system:masters", "extra-group"))[0],
+        "apiserver-r440": pki.issue(k8s, api, dns=dns)[0],
+        "kubelet-r440": pki.issue(k8s, specs["kubelet-r440"], eku=("server",))[0],
+        "admin-r440": pki.issue(k8s, specs["admin-r440"], orgs=("system:masters", "extra-group"))[0],
     }
     replace = {s: pem(c, k8s.cert).decode() for s, c in mutated.items()}
     lines, status = run(tmp / "A", export(tmp / "B", tmp / "r440.yaml", replace), None)
@@ -97,7 +97,7 @@ def test_three_mutations(pki, sets):
 def test_key_issuer_lifetime(pki, sets):
     tmp, specs = sets
     key = ec.generate_private_key(ec.SECP256R1())
-    cert, _ = pki.leaf(pki.cas["front-proxy"], specs["scheduler-r440"], key=key, days=300)
+    cert, _ = pki.issue(pki.cas["front-proxy"], specs["scheduler-r440"], key=key, days=300)
     (tmp / "B" / "scheduler-r440.pem").write_bytes(pem(cert))
     lines, status = run(tmp / "A", tmp / "B", "r440")
     diffs = problems(lines)[:-1]

@@ -5,32 +5,17 @@ from datetime import UTC, datetime, timedelta
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec, ed25519, rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID
-from cryptography.x509.verification import (
-    Criticality,
-    ExtensionPolicy,
-    PolicyBuilder,
-    Store,
-    VerificationError,
-)
+from cryptography.x509.verification import Criticality, ExtensionPolicy, PolicyBuilder, Store, VerificationError
 
 KEY_USAGES = {
-    "digital_signature": "Digital Signature",
-    "content_commitment": "Non Repudiation",
-    "key_encipherment": "Key Encipherment",
-    "data_encipherment": "Data Encipherment",
-    "key_agreement": "Key Agreement",
-    "key_cert_sign": "Certificate Sign",
-    "crl_sign": "CRL Sign",
+    "digital_signature": "Digital Signature", "content_commitment": "Non Repudiation",
+    "key_encipherment": "Key Encipherment", "data_encipherment": "Data Encipherment",
+    "key_agreement": "Key Agreement", "key_cert_sign": "Certificate Sign", "crl_sign": "CRL Sign",
 }
-EKU_NAMES = {
-    ExtendedKeyUsageOID.SERVER_AUTH: "TLS Web Server Authentication",
-    ExtendedKeyUsageOID.CLIENT_AUTH: "TLS Web Client Authentication",
-    ExtendedKeyUsageOID.CODE_SIGNING: "Code Signing",
-    ExtendedKeyUsageOID.EMAIL_PROTECTION: "E-mail Protection",
-    ExtendedKeyUsageOID.OCSP_SIGNING: "OCSP Signing",
-}
+CLIENT_AUTH = "TLS Web Client Authentication"
+EKU_NAMES = {ExtendedKeyUsageOID.SERVER_AUTH: "TLS Web Server Authentication", ExtendedKeyUsageOID.CLIENT_AUTH: CLIENT_AUTH}
 CURVES = {"secp256r1": "P256", "secp384r1": "P384", "secp521r1": "P521"}
 
 
@@ -77,9 +62,7 @@ def key_name(cert: x509.Certificate) -> str:
         return f"RSA-{k.key_size}"
     if isinstance(k, ec.EllipticCurvePublicKey):
         return f"EC-{CURVES.get(k.curve.name, k.curve.name)}"
-    if isinstance(k, ed25519.Ed25519PublicKey):
-        return "Ed25519"
-    return type(k).__name__
+    return type(k).__name__.removeprefix("_").removesuffix("PublicKey")
 
 
 def summarize(cert: x509.Certificate) -> Summary:
@@ -108,19 +91,12 @@ def summarize(cert: x509.Certificate) -> Summary:
 def _verifies(leaf: x509.Certificate, anchor: x509.Certificate) -> bool:
     """True if `leaf` alone chains to `anchor` as the sole trust anchor (root or not)."""
     s = summarize(leaf)
-    client = EKU_NAMES[ExtendedKeyUsageOID.CLIENT_AUTH] in s.ext_key_usage or not (s.dns or s.ips)
-    ee_policy = ExtensionPolicy.permit_all()
+    client = CLIENT_AUTH in s.ext_key_usage or not (s.dns or s.ips)
+    ee, ca = ExtensionPolicy.permit_all(), ExtensionPolicy.permit_all()
+    ca = ca.require_present(x509.BasicConstraints, Criticality.AGNOSTIC, None)
     if not client:
-        ee_policy = ee_policy.require_present(x509.SubjectAlternativeName, Criticality.AGNOSTIC, None)
-    builder = (
-        PolicyBuilder()
-        .store(Store([anchor]))
-        .time(datetime.now(UTC))
-        .extension_policies(
-            ca_policy=ExtensionPolicy.permit_all().require_present(x509.BasicConstraints, Criticality.AGNOSTIC, None),
-            ee_policy=ee_policy,
-        )
-    )
+        ee = ee.require_present(x509.SubjectAlternativeName, Criticality.AGNOSTIC, None)
+    builder = PolicyBuilder().store(Store([anchor])).time(datetime.now(UTC)).extension_policies(ca_policy=ca, ee_policy=ee)
     if client:
         verifier = builder.build_client_verifier()
     else:
@@ -136,12 +112,11 @@ def _verifies(leaf: x509.Certificate, anchor: x509.Certificate) -> bool:
 def chain_errors(
     chain: list[x509.Certificate], expected: x509.Certificate, others: dict[str, x509.Certificate]
 ) -> list[str]:
-    leaf, rest = chain[0], chain[1:]
+    leaf = chain[0]
     errors = []
     if not _verifies(leaf, expected):
         errors.append(f"does not verify against {expected.subject.rfc4514_string()}")
     errors += [f"also verifies against {name}" for name, ca in others.items() if _verifies(leaf, ca)]
-    errors += [f"chain cert {i} is not {expected.subject.rfc4514_string()}" for i, c in enumerate(rest, 1) if c != expected]
     return errors
 
 

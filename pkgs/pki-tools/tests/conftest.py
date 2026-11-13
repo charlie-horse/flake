@@ -1,5 +1,5 @@
 import ipaddress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -76,8 +76,10 @@ def leaf_specs(node: str) -> list[LeafSpec]:
 class Factory:
     def __init__(self):
         self.now = datetime.now(UTC).replace(microsecond=0)
-        self.root = self.ca("test root")
-        self.cas = {n: self.ca(f"neurosis {n} CA", self.root) for n in ("k8s", "etcd", "front-proxy", "workload")}
+        self.root_ca = self.ca("test root")
+        self.cas = {n: self.ca(f"neurosis {n} CA", self.root_ca) for n in ("k8s", "etcd", "front-proxy", "workload")}
+        self.root, self.workload = self.root_ca.cert, self.cas["workload"].cert
+        self.intermediates = {n: self.cas[n].cert for n in ("k8s", "etcd", "front-proxy")}
 
     def ca(self, cn: str, issuer: CA | None = None, key=None, subject: x509.Name | None = None) -> CA:
         key = key or ec.generate_private_key(ec.SECP384R1())
@@ -103,7 +105,7 @@ class Factory:
             .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key.public_key()), False)
         )
 
-    def leaf(self, ca: CA, spec: LeafSpec, key=None, days: int = 365, eku=None, orgs=None, dns=None):
+    def issue(self, ca: CA, spec: LeafSpec, key=None, days: int = 365, eku=None, orgs=None, dns=None):
         """Issue `spec` from `ca`; key/days/eku/orgs/dns override the spec. Returns (cert, key)."""
         key = key or rsa.generate_private_key(65537, 2048)
         dns = spec.dns if dns is None else dns
@@ -124,13 +126,34 @@ class Factory:
         specs = {s.stem: s for s in leaf_specs(node)}
         for s in specs.values():
             ca = self.cas[s.ca]
-            cert, key = self.leaf(ca, s)
+            cert, key = self.issue(ca, s)
             chained = style == "cert-manager" or s.profile != "client"
             (dest / f"{s.stem}.pem").write_bytes(pem(cert, ca.cert) if chained else pem(cert))
             (dest / f"{s.stem}-key.pem").write_bytes(key_pem(key))
         return specs
 
 
+    def leaf(self, name: str, node: str, ca: str, cn: str, days: int = 365, dns=None) -> tuple[bytes, bytes]:
+        """A Secret-style leaf: (tls.crt with the intermediate appended, tls.key)."""
+        spec = next((s for s in leaf_specs(node) if s.stem == name), LeafSpec(name, ca, "peer", cn, (), (node,), ()))
+        cert, key = self.issue(self.cas[ca], replace(spec, cn=cn), days=days, dns=dns)
+        return pem(cert, self.cas[ca].cert), key_pem(key)
+
+    def cross(self, ca: str) -> x509.Certificate:
+        """Same key and subject as intermediate `ca`, issued again by the root."""
+        return self.ca("", self.root_ca, key=self.cas[ca].key, subject=self.cas[ca].cert.subject).cert
+
+    @staticmethod
+    def pem(obj) -> bytes:
+        if isinstance(obj, CA):
+            obj = obj.cert
+        return pem(obj) if isinstance(obj, x509.Certificate) else key_pem(obj)
+
+
+def make_pki() -> Factory:
+    return Factory()
+
+
 @pytest.fixture(scope="session")
 def pki() -> Factory:
-    return Factory()
+    return make_pki()
