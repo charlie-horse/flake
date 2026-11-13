@@ -22,12 +22,10 @@
 # leaves ("trust": legacy leaves + new bundle, "final": new leaves). See
 # docs/history/cluster-handoff-2026-10.md for the order.
 #
-# Secrets: every key and cert is a STRING path under clusterNode.secretsDir.
-# With certSource "files" (rollout.certSource, the default) that is
-# cluster.secretsDir (/var/lib/kubernetes/secrets), put there by
-# `cluster-pki deploy` (pkgs/cluster-pki); with "sops" it is
-# /run/secrets/pki, filled by sops-nix (./pki-sops.nix). Nothing secret is
-# a Nix path, so nothing secret is ever copied into /nix/store. File names:
+# Secrets: every key and cert is a STRING path under clusterNode.secretsDir
+# (/var/lib/kubernetes/secrets from `cluster-pki deploy`, or /run/secrets/pki
+# with certSource "sops"). Nothing secret is a Nix path, so nothing secret is
+# ever copied into /nix/store. File names:
 #   ca.pem etcd-ca.pem front-proxy-ca.pem sa.pub sa.key
 #   <component>-<node>.pem / <component>-<node>-key.pem
 {

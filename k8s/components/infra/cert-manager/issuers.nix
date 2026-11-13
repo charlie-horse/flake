@@ -29,22 +29,8 @@
 # webhook is down, the fix for the webhook included. Here only this
 # Kustomization fails, and retries.
 #
-# Approval: cert-manager's auto-approver is off (approver-policy.nix), so
-# requests to `cluster-ca` need a CertificateRequestPolicy too:
-#
-#   CertificateRequestPolicy `cluster-ca`   selects ClusterIssuer cluster-ca
-#                                           in every namespace and allows
-#                                           any subject, SAN, usage, key and
-#                                           duration, but no CA certs (the
-#                                           intermediate is pathlen:0). The
-#                                           same as the auto-approver did
-#   ClusterRole/ClusterRoleBinding          `use` of it for cert-manager's
-#   `cert-manager-policy:cluster-ca`        controller (the requester of
-#                                           every Certificate's request)
-#
 # Only the charts' CRDs are read here (crds.nix, to type the objects
-# below); the charts themselves are rendered by chart.nix and
-# approver-policy.nix.
+# below); chart.nix and approver-policy.nix render the charts.
 {
   pkgs,
   catenix,
@@ -83,6 +69,7 @@ in
   # chart's default: the release namespace), where a ClusterIssuer reads it.
   resources."cert-manager.io".v1.ClusterIssuer.${caIssuer}.spec.ca.secretName = caSecret;
 
+  # Allows what cert-manager's auto-approver did, except CA certs (the intermediate is pathlen:0).
   resources."policy.cert-manager.io".v1alpha1.CertificateRequestPolicy.${caIssuer}.spec = {
     selector.issuerRef = {
       group = "cert-manager.io";

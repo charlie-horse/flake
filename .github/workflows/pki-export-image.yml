@@ -1,17 +1,4 @@
-# Build the pki-export image (pkgs/pki-export, the phase-2 export CronJob in
-# k8s/components/infra/cluster-pki/export.nix) and, on main, push it to GHCR.
-#
-#   build    (every PR and push touching its inputs) nix build
-#            .#packages.x86_64-linux.pki-export-image: the script's
-#            shellcheck runs in that build
-#   push     (main only) ghcr.io/<repo>/pki-export, tags <sha12> and main,
-#            and prints the digest. The CronJob pins it by digest
-#            (export.nix `digest`); updating the pin is a PR, so a new image
-#            never reaches the cluster by itself.
-#
-# amd64 only (the job's nodeSelector; k8s/render.nix exempts it from the
-# multi-arch check). The GHCR package must be public (no pull secret in
-# the cluster), like charlie-horse/flake/manifests (docs/ci.md).
+# docs/pki.md, "Phase 2 operations"
 name: pki-export-image
 
 on:

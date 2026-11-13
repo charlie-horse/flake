@@ -1,45 +1,3 @@
-# The bootstrap CAs as cert-manager Issuers, and every bootstrap leaf as a
-# Certificate: component `infra/cluster-pki-issuers` (deferred; its own
-# Flux Kustomization `cluster-pki-issuers`, components/flux/stages.nix).
-# docs/pki-migration-plan.md, phase 2, node P1.
-#
-#   Issuer k8s-ca, etcd-ca, front-proxy-ca
-#       CA issuers over the Secrets of the same names in `cluster-pki`
-#       (kubernetes.io/tls: tls.crt = the intermediate, cluster/pki/<name>.pem;
-#       tls.key; ca.crt = the root). They come from
-#       k8s/secrets/cluster-pki/<name>.sops.yaml (Kustomization `secrets`).
-#       Until those exist the Issuers, the Certificates and this
-#       Kustomization are NotReady; nothing else is affected.
-#
-#   Certificate <component>-<node>   (= its Secret)
-#       one per leaf cluster-pki makes (leaves.nix): same CN, O, DNS and IP
-#       SANs and key usages, RSA 2048 (PKCS#1, a new key at every
-#       renewal), 8760h, renewed 720h before expiry. Labels
-#       pki.neurosis/node and pki.neurosis/ca, on the Secret too. The
-#       Secret's tls.crt is the leaf then the intermediate (cluster-pki
-#       appends the intermediate only to server and peer leaves).
-#
-#   CertificateRequestPolicy cluster-pki-<component>-<node>
-#       one per leaf, selecting its Issuer in this namespace and allowing
-#       exactly that leaf: the CN (required), the O (required when the leaf
-#       has one, none otherwise), only its DNS and IP SANs, only its
-#       usages, RSA 2048, at most 8760h, no CA. Every other field (URIs,
-#       emails, OU, other subject fields, isCA) is denied. So the k8s CA
-#       signs O=system:masters only with CN=cluster-admin and
-#       system:node:<n> (O=system:nodes) only for the nodes in
-#       cluster/definition.nix, each with its own SANs. One policy per leaf,
-#       not per Issuer: a policy allows one CN and a set of O values
-#       independently, so a single per-Issuer policy could not tie
-#       system:masters to cluster-admin.
-#
-#   Role/RoleBinding cert-manager-policy:cluster-pki
-#       `use` of exactly those policies, in this namespace, for
-#       cert-manager's controller (the requester of every Certificate's
-#       CertificateRequest).
-#
-# Changing a leaf (cluster/definition.nix, e.g. apiserverExtraSANs) changes
-# its Certificate and its policy in the same render: cert-manager reissues
-# it, and the export job brings it to the hosts.
 {
   lib,
   pkgs,
@@ -86,7 +44,7 @@ let
   policyName = l: "cluster-pki-${l.name}";
   policyRole = "cert-manager-policy:${namespace}";
 
-  # `values` + `required`, or nothing (= none allowed) for an empty list.
+  # approver-policy denies any field the policy leaves out.
   exactly =
     values:
     lib.optionalAttrs (values != [ ]) {
@@ -117,6 +75,8 @@ let
     // lib.optionalAttrs (l.ipAddresses != [ ]) { inherit (l) ipAddresses; };
   };
 
+  # One per leaf: a policy allows CN and O independently, so a per-Issuer
+  # policy could not tie system:masters to cluster-admin.
   policy = l: {
     metadata.labels = labels l;
     spec = {

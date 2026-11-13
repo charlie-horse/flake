@@ -13,10 +13,6 @@
       pki = pkgs.callPackage ../pkgs/cluster-pki {
         definition = import ../cluster/definition.nix;
       };
-      # Phase-2 export job (docs/pki-migration-plan.md, P2). Its image
-      # (`pki-export-image`) is pushed to GHCR by
-      # .github/workflows/pki-export-image.yml; the CronJob is
-      # k8s/components/infra/cluster-pki/export.nix.
       pkiExport = pkgs.callPackage ../pkgs/pki-export { };
     in
     {
@@ -29,8 +25,6 @@
         # YubiKey root-CA ceremony tools, entered ad hoc as root on c4130
         # (`nix shell .#ca-ceremony-tools`; docs/pki-migration-plan.md).
         ca-ceremony-tools = pkgs.callPackage ../pkgs/ca-ceremony-tools { };
-        # cluster-pki leaves vs the cert-manager set of one node
-        # (phase 2 dry run, docs/pki-migration-plan.md).
         pki-diff = pkgs.callPackage ../pkgs/pki-diff { };
         pki-export = pkiExport;
         pki-export-image = pkiExport.image;

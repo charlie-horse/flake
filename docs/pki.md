@@ -23,6 +23,7 @@ nix run .#cluster-pki-deploy -- m2mini # stage m2mini's files, print sudo cmds
 - [cluster-pki usage](#cluster-pki-usage)
 - [Cut-over from the legacy PKI](#cut-over-from-the-legacy-pki)
 - [etcd CA rotation runbook](#etcd-ca-rotation-runbook-no-quorum-loss)
+- [Phase 2 operations](#phase-2-operations)
 
 ## Bootstrap PKI and workload PKI
 
@@ -651,3 +652,156 @@ used by the runbook):
 
 The same procedure works for the k8s CA, with the apiserver, kubelet and
 clients in place of the members, and for the front-proxy CA (apiserver only).
+
+## Phase 2 operations
+
+cert-manager issues the bootstrap leaves in the cluster
+([plan](pki-migration-plan.md), phase 2). Hosts keep using files until
+each one switches to `certSource = "sops"`.
+
+- Namespace `cluster-pki`: component `infra/cluster-pki`, applied by
+  `flux-system`. It holds the export job too.
+- Issuers, Certificates, policies: component `infra/cluster-pki-issuers`,
+  Kustomization `cluster-pki-issuers` (deferred, like cert-manager's
+  issuers).
+- The leaves come from `cluster/definition.nix` through
+  `k8s/components/infra/cluster-pki/leaves.nix`. They are the leaves
+  `cluster-pki` makes, flannel-* and addon-manager-* included.
+
+### Issuers and approver-policy
+
+- Issuers `k8s-ca`, `etcd-ca`, `front-proxy-ca` are CA issuers over the
+  Secrets of the same names in `cluster-pki`: `tls.crt` the intermediate
+  (`cluster/pki/<name>.pem`), `tls.key`, `ca.crt` the root. They come from
+  `k8s/secrets/cluster-pki/<name>.sops.yaml` (P6). Until then the Issuers,
+  the Certificates and `cluster-pki-issuers` are NotReady. Nothing else is
+  affected.
+- One Certificate per leaf, `<component>-<node>`, with a Secret of the same
+  name. Same CN, O, SANs and usages as `cluster-pki`. RSA 2048 (PKCS#1, a
+  new key at every renewal), 8760h, renewed 720h before expiry. Labels
+  `pki.neurosis/node` and `pki.neurosis/ca`, on the Secret too.
+- The Secret's `tls.crt` is the leaf then the intermediate, for every leaf.
+  `cluster-pki` appends the intermediate only to server and peer leaves.
+- cert-manager's own auto-approver is off (`disableAutoApproval`).
+  approver-policy approves a request when a policy whose selector matches
+  allows every field, and the requester may `use` that policy. The
+  requester is always cert-manager's controller.
+- `cluster-ca` (workloads) has one allow-all policy, minus CA certs. RBAC:
+  ClusterRole `cert-manager-policy:cluster-ca`.
+- `cluster-pki` has one policy per leaf, `cluster-pki-<component>-<node>`.
+  It allows exactly that leaf: the CN, the O if any, only its SANs and
+  usages, RSA 2048, at most 8760h, no CA. Everything else is denied. So the
+  k8s CA signs `O=system:masters` only with `CN=cluster-admin`, and
+  `system:node:<n>` only for the nodes in the definition. RBAC: Role
+  `cert-manager-policy:cluster-pki`.
+- approver-policy reads `*` as a wildcard. The render fails if a leaf value
+  contains one.
+- approver-policy's webhook validates the policies with failurePolicy
+  Fail, so the policies live in the deferred components. The webhook
+  serves its own cert (Secret `cert-manager-approver-policy-tls`, declared
+  empty by the chart, filled by the controller).
+- Changing a leaf in `cluster/definition.nix` changes its Certificate and
+  its policy in one render. cert-manager reissues it; the export job
+  brings it to the hosts.
+
+### Export job
+
+- CronJob `cluster-pki/pki-export`, daily at 09:41 New York time. Script:
+  `pkgs/pki-export/pki-export.sh`.
+- It gets each leaf Secret by name and writes `secrets/pki/<node>.yaml`:
+  certs in plaintext, keys sops-encrypted to the admins and that host. It
+  validates each node (chain, node, completeness, expiry). When
+  fingerprints differ from `main` it pushes `pki-renew/<date>` and opens a
+  PR. Merging is a human step.
+- Its Role allows `get` on the leaf Secrets only. It has no `list`: RBAC
+  cannot limit `list` by name. The CA Secrets in the same namespace stay
+  unreadable to it.
+- Non-root (65532), read-only root fs, no capabilities. `/tmp` is a
+  memory-backed emptyDir; the keys pass through it in plaintext. The
+  image holds no age identity.
+- The image is amd64 only. The job has an amd64 nodeSelector, and
+  `k8s/render.nix` exempts it from the multi-arch check.
+- Local runs: `nix build .#pki-export` (the script; `--from-dir`,
+  `--dry-run`). `nix build .#pki-export-image` is a `docker-archive`
+  stream: `./result | skopeo copy docker-archive:/dev/stdin …`.
+
+### Export job: GitHub token
+
+The job reads Secret `cluster-pki/pki-export-github`, key `token`, from
+`k8s/secrets/cluster-pki/pki-export-github.sops.yaml`. It is not in git
+yet. To create it (an admin, with the YubiKey):
+
+1. GitHub > Settings > Developer settings > Fine-grained tokens. Resource
+   owner charlie-horse, "Only select repositories": charlie-horse/flake.
+   Permissions: Contents read and write, Pull requests read and write
+   (Metadata read is implied). Nothing else. Expiry at most a year; put a
+   reminder in `docs/cluster.md`.
+2. From the dev shell, run
+   `sops k8s/secrets/cluster-pki/pki-export-github.sops.yaml`. Never put
+   the token on a command line; `sops` opens `$EDITOR`. Content:
+
+   ```yaml
+   apiVersion: v1
+   kind: Secret
+   metadata:
+     name: pki-export-github
+     namespace: cluster-pki
+   type: Opaque
+   stringData:
+     token: <the token>
+   ```
+
+   The `k8s/secrets` rule in `.sops.yaml` encrypts `stringData` to the
+   admins and Flux.
+3. Add a row to `docs/cluster.md`, "Secrets (all of them)".
+4. PR, merge. The Flux Kustomization `secrets` creates it.
+
+### Activating the export job
+
+The CronJob is suspended while `digest` in
+`k8s/components/infra/cluster-pki/export.nix` is `null`.
+
+1. The token Secret exists (above).
+2. The CA Secrets are merged and the Issuers are Ready (P6).
+3. `.github/workflows/pki-export-image.yml` builds the image on every PR
+   that touches it. On `main` it pushes
+   `ghcr.io/charlie-horse/flake/pki-export` with tags `<sha12>` and
+   `main`, and prints the digest in the step summary.
+4. The GHCR package must be public: the cluster has no pull secret (like
+   `charlie-horse/flake/manifests`, `docs/ci.md`).
+5. Set `digest = "sha256:…";` in `export.nix`. PR, merge. That unsuspends
+   the CronJob.
+
+A new image never reaches the cluster without a PR that moves the pin. To
+suspend the job again, set `digest = null;`.
+
+### Hosts on sops (`certSource`)
+
+- Set `rollout.certSource = "sops"` for the node in
+  `cluster/definition.nix` (`modules/cluster/pki-sops.nix`). It needs
+  etcdPhase `"final"` and a merged `secrets/pki/<node>.yaml`; both are
+  asserted.
+- Files are under `/run/secrets/pki` (sops-nix's ramfs, a new generation
+  at every activation, before any unit starts):
+  - `<component>-<node>.pem` / `-key.pem` from `secrets/pki/<node>.yaml`.
+  - `sa.key` / `sa.pub` (controlPlane) from the host's own
+    `secrets/<node>.yaml`, moved there by hand once.
+  - `ca.pem`, `etcd-ca.pem`, `front-proxy-ca.pem` from `cluster/pki/` in
+    git, as sops templates (0644 root).
+- The file set is what `cluster-pki deploy` installs, unused leaves
+  included. The module asserts `leaves.nix` agrees with SPECS in
+  `cluster-pki.sh`.
+- Owners and modes follow `cluster-pki`'s `node_files`. `restartUnits`
+  restarts the readers of a changed file; units not enabled on the host are
+  left out.
+- The values have no trailing newline (the export job writes `|-`). Every
+  reader (etcd, kube-*) is Go and parses PEM without one.
+
+### Comparing with cluster-pki (`pki-diff`)
+
+The dry run (P7) compares one node's `cluster-pki` leaves with the
+cert-manager set. It reads only the plaintext certs:
+
+```sh
+nix run .#pki-diff -- ~/.local/share/cluster-pki/neurosis secrets/pki/r440.yaml
+```

@@ -1,7 +1,5 @@
-# Shared by the cert-manager components: the chart releases (chart.nix and
-# approver-policy.nix render them; issuers.nix and components/infra/
-# cluster-pki only read their CRDs, through crds.nix, to type their custom
-# resources) and the names workloads use.
+# Shared by the cert-manager components and components/infra/cluster-pki:
+# the chart releases and the names workloads use.
 rec {
   namespace = "cert-manager";
 
@@ -10,16 +8,13 @@ rec {
     inherit namespace;
   };
 
-  # approver-policy (approver-policy.nix), in cert-manager's namespace.
   approverPolicyRelease = {
     name = "cert-manager-approver-policy";
     inherit namespace;
   };
 
-  # The cert-manager controller's ServiceAccount (the chart names it after
-  # the release). It creates the CertificateRequest of every Certificate,
-  # so it is the requester approver-policy checks for `use` of a
-  # CertificateRequestPolicy.
+  # Named after the release by the chart. It requests every Certificate, so
+  # approver-policy checks its `use` of a policy.
   controllerServiceAccount = release.name;
 
   # Workload certificates: `issuerRef: { kind: ClusterIssuer; name = caIssuer; }`.

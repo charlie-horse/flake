@@ -122,9 +122,8 @@ jobs:
           #    suffix) is refused; k8s/render.nix rejects the same files at
           #    render time. Only the file and the key path are printed,
           #    never a value.
-          #    secrets/pki/<node>.yaml (no subdirectories): a <stem>.pem
-          #    may be plaintext if it holds only CERTIFICATE blocks; every
-          #    other value, each -key.pem included, must be ENC[...].
+          #    secrets/pki/<node>.yaml: only a <stem>.pem of CERTIFICATE
+          #    blocks may be plaintext.
           while IFS= read -r -d '' f; do
             case "$f" in
               secrets/pki/*/*) mode=bad ;;
@@ -151,7 +150,6 @@ jobs:
           mode, name = sys.argv[1], sys.argv[2]
           raw = sys.stdin.read()
           enc = re.compile(r"^ENC\[[A-Z0-9_]+,data:.*\]$", re.S)
-          # pki: a plaintext value that is only CERTIFICATE blocks.
           cert = re.compile(r"-----BEGIN CERTIFICATE-----\r?\n"
                             r"[A-Za-z0-9+/=\r\n]+?-----END CERTIFICATE-----")
           def certs_only(v):
@@ -276,9 +274,7 @@ jobs:
                   continue
               want, have = rule_recipients(rule), file_recipients(meta)
               other = [k for k in ("pgp", "kms", "gcp_kms", "azure_kv", "hc_vault") if meta.get(k)]
-              # A rule with encrypted_regex (secrets/pki, k8s) must have
-              # been applied as is: otherwise the file was encrypted under
-              # another rule, or by hand.
+              # A mismatch means another rule, or a hand edit, encrypted the file.
               rx_want = rule.get("encrypted_regex")
               rx_have = meta.get("encrypted_regex")
               rx = rule.get("path_regex")

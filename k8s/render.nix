@@ -261,9 +261,7 @@ let
       pkgs.findutils
     ];
     text = ''
-      # Images pinned to amd64 nodes are exempt: the gpu node's device
-      # plugin, and pki-export (built for x86_64 only by
-      # .github/workflows/pki-export-image.yml; nodeSelector amd64).
+      # Images pinned to amd64 nodes are exempt (device plugin, pki-export).
       single_arch='^nvcr\.io/nvidia/k8s-device-plugin:|^ghcr\.io/charlie-horse/flake/pki-export[:@]'
       status=0
       images=$(find ${manifests} -name '*.yaml' -exec yq -N '.. | select(has("image")) | .image' {} + \

@@ -5,14 +5,10 @@
 #
 #   chart.nix      controller, webhook, cainjector and the CRDs (this
 #                  component, applied by Flux's `flux-system` Kustomization)
-#   approver-policy.nix
-#                  approver-policy and its CRD (this component): approves
-#                  CertificateRequests by CertificateRequestPolicy;
-#                  cert-manager's own auto-approver is off (chart.nix)
+#   approver-policy.nix  the only approver (this component)
 #   issuers.nix    the CA ClusterIssuer `cluster-ca` over the Secret
 #                  `cluster-ca` from sops (the workload intermediate under
-#                  the YubiKey root, docs/pki-migration-plan.md) and its
-#                  allow-all CertificateRequestPolicy. A component
+#                  the YubiKey root, docs/pki-migration-plan.md). A component
 #                  of its own, `infra/cert-manager-issuers`, applied by the
 #                  Kustomization
 #                  `cert-manager-issuers` after `flux-system`

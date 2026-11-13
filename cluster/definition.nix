@@ -71,13 +71,8 @@
 #                           peerClientCertAuth off, as today
 #                  "final"  new etcd-server/-peer/-client-apiserver leaves,
 #                           peerClientCertAuth on (end state)
-#       certSource "files"  certs and keys in secretsDir, from
-#                           `cluster-pki deploy` (default)
-#                  "sops"   from sops-nix in /run/secrets/pki: leaves from
-#                           secrets/pki/<n>.yaml, sa.key/sa.pub from
-#                           secrets/<n>.yaml, bundles from cluster/pki/
-#                           (modules/cluster/pki-sops.nix; needs etcdPhase
-#                           "final"; docs/pki-migration-plan.md, phase 2)
+#       certSource "files"  from `cluster-pki deploy` (default)
+#                  "sops"   modules/cluster/pki-sops.nix; needs etcdPhase "final"
 #   apiserverTailscaleService  optional string  name of the Tailscale Service
 #                        (svc:<name>) every controlPlane node hosts for the
 #                        apiserver port; clients use <name>.<domain>:6443.

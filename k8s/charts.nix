@@ -54,9 +54,7 @@ in
     hash = "sha256-kjGAYWkePhiNrUUdpesTcGa9jlpFk1/gZs8sztLElRw=";
   };
 
-  # cert-manager approver-policy v0.29.0 (CertificateRequestPolicy: which
-  # CertificateRequests get approved; cert-manager's own auto-approver is
-  # off). components/infra/cert-manager/approver-policy.nix.
+  # cert-manager approver-policy v0.29.0 (approves by CertificateRequestPolicy).
   cert-manager-approver-policy = fetch {
     repo = "https://charts.jetstack.io";
     name = "cert-manager-approver-policy";

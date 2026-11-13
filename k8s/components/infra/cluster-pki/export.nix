@@ -1,71 +1,14 @@
-# The phase-2 export job (docs/pki-migration-plan.md, P2), namespace
-# `cluster-pki`: once a day it copies the host leaves cert-manager issued
-# here into git as secrets/pki/<node>.yaml (certs plaintext, keys
-# sops-encrypted to the admins and that host) and opens a PR. Merging stays
-# a human step. The script is pkgs/pki-export/pki-export.sh.
-#
-# Imported by ./default.nix (component `infra/cluster-pki`, applied by
-# `flux-system`; nothing here goes through cert-manager's webhook). The
-# namespace comes from ./settings.nix, the Secret names from
-# ./leaves.nix (the same set issuers.nix makes Certificates for).
-#
-#   ServiceAccount pki-export
-#   Role/RoleBinding pki-export   `get` on Secrets, limited by resourceNames
-#                  to the leaf Secrets below. RBAC cannot select by label,
-#                  and `list` cannot be limited by name, so the job does not
-#                  list: it gets each leaf by name (PKI_EXPORT_SECRETS). The
-#                  CA Secrets (k8s-ca, etcd-ca, front-proxy-ca: intermediate
-#                  keys) in the same namespace stay unreadable to it.
-#   CronJob pki-export            daily; non-root, read-only root fs, no
-#                  capabilities; /tmp is a memory-backed emptyDir (the
-#                  leaf keys pass through it in plaintext before sops
-#                  encrypts them).
-#
-# The GitHub credential is the Secret `cluster-pki/pki-export-github`, key
-# `token`, from k8s/secrets/cluster-pki/pki-export-github.sops.yaml. Not in
-# git yet; to create it (an admin, with the YubiKey):
-#
-#   1. GitHub > Settings > Developer settings > Fine-grained tokens:
-#      resource owner charlie-horse, "Only select repositories":
-#      charlie-horse/flake; permissions Contents: Read and write, Pull
-#      requests: Read and write (Metadata: read is implied); nothing else.
-#      Expiry at most a year (put a reminder in docs/cluster.md).
-#   2. In the repo, from the dev shell (never paste the token on a command
-#      line; `sops` opens $EDITOR):
-#        sops k8s/secrets/cluster-pki/pki-export-github.sops.yaml
-#      with the content
-#        apiVersion: v1
-#        kind: Secret
-#        metadata:
-#          name: pki-export-github
-#          namespace: cluster-pki
-#        type: Opaque
-#        stringData:
-#          token: <the token>
-#      (the k8s/secrets rule in .sops.yaml encrypts stringData to the admins
-#      + flux). Add a row for it to docs/cluster.md, "Secrets (all of them)".
-#   3. PR, merge; the Flux Kustomization `secrets` creates it.
-#
-# The image is pkgs/pki-export's `image` (flake output
-# packages.x86_64-linux.pki-export-image), pushed to
-# ghcr.io/charlie-horse/flake/pki-export by
-# .github/workflows/pki-export-image.yml. It is amd64 only, so the job runs
-# on amd64 nodes (k8s/render.nix exempts it from the multi-arch check).
-# Until `digest` below is set from that workflow's output, the CronJob is
-# suspended.
+# Token, image digest and activation: docs/pki.md, "Phase 2 operations".
 { lib, cluster, ... }:
 let
   inherit (import ./settings.nix) namespace;
   name = "pki-export";
 
-  # sha256 digest printed by .github/workflows/pki-export-image.yml on main
-  # ("sha256:..."). null: CronJob suspended. Pin it after the token Secret
-  # exists and the Issuers are Ready (P6).
+  # From .github/workflows/pki-export-image.yml on main; null keeps the CronJob suspended.
   digest = null;
   imageRepo = "ghcr.io/charlie-horse/flake/pki-export";
   image = if digest == null then "${imageRepo}:main" else "${imageRepo}@${digest}";
 
-  # Every leaf Secret (== Certificate name, <component>-<node>).
   leafSecrets = map (l: l.name) (import ./leaves.nix { inherit lib cluster; });
 
   tokenDir = "/var/run/secrets/pki-export-github";
@@ -80,6 +23,7 @@ in
         {
           apiGroups = [ "" ];
           resources = [ "secrets" ];
+          # No `list`: RBAC can't restrict list by name, and the CA keys share this namespace.
           verbs = [ "get" ];
           resourceNames = leafSecrets;
         }
@@ -172,6 +116,7 @@ in
           volumes = [
             {
               name = "tmp";
+              # Leaf keys pass through /tmp in plaintext before sops encrypts them.
               emptyDir = {
                 medium = "Memory";
                 sizeLimit = "64Mi";
