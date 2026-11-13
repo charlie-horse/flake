@@ -199,7 +199,8 @@ Rollout (after the PR is merged):
 ## Binary cache
 
 r440's `/nix/store`, served read-only by harmonia (3.1.0) and signed with
-`r440-cache-1` (secret key `r440:/var/lib/secrets/harmonia.secret`; public
+`r440-cache-1` (secret key: sops `harmonia-signing-key` in
+`secrets/r440.yaml`, formerly `r440:/var/lib/secrets/harmonia.secret`; public
 half in `cluster/definition.nix`, `binaryCache.publicKey`), published as
 **https://cache.neuros.is** with HTTP basic auth. Server side:
 `hosts/r440/cache.nix`. Client side: `custom.nixCache`
@@ -214,9 +215,9 @@ client -> https://cache.neuros.is -> Cloudflare -> cloudflared (any node, hostNe
 
 | Client | netrc (`machine cache.neuros.is login <user> password <pw>`) |
 | --- | --- |
-| c4130 | `/var/lib/nix-cache/netrc` (root, 0600), by hand |
-| m2mini | `/var/lib/nix-cache/netrc` (root, 0600), by hand |
-| Famine | agenix `nix-cache-netrc` → `/run/agenix/nix-cache-netrc` |
+| c4130 | sops `nix-cache-netrc` in `secrets/c4130.yaml` → `/run/secrets/nix-cache-netrc` (root, 0600); formerly `/var/lib/nix-cache/netrc` |
+| m2mini | sops `nix-cache-netrc` in `secrets/m2mini.yaml` → same path |
+| Famine | sops `nix-cache-netrc` in `secrets/famine.yaml` → same path (the agenix one is lost; new user `famine`) |
 | GitHub Actions | secret `NIX_CACHE_NETRC` → `$RUNNER_TEMP` (docs/ci.md) |
 
 r440 itself does not use it (it is the cache). Builds still go to r440
@@ -241,7 +242,8 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
 - **Auth.** harmonia has no client authentication (TLS only), and Nix
   authenticates to an HTTP substituter only with netrc (basic auth; it
   cannot send custom headers, so Cloudflare Access service tokens are
-  out). nginx on r440 does `auth_basic` with `/var/lib/nix-cache/htpasswd`,
+  out). nginx on r440 does `auth_basic` with the sops secret
+  `nix-cache-htpasswd` (`/run/secrets/nix-cache-htpasswd`, root:nginx 0640),
   one user per client, and passes GET/HEAD to harmonia's unix socket
   (group nginx); other methods get 403.
 - **Why nginx on r440 and not in the tunnel's sidecar.** The sidecar runs
@@ -300,7 +302,7 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
    users="ci famine c4130 m2mini"
    for u in $users; do openssl rand -hex 32 > "nix-cache-$u.pw"; done
    for u in $users; do printf '%s:' "$u"; openssl passwd -6 -stdin < "nix-cache-$u.pw"; done \
-     | sudo install -m 0640 -o root -g nginx /dev/stdin /var/lib/nix-cache/htpasswd
+     > nix-cache.htpasswd   # becomes `nix-cache-htpasswd` in secrets/r440.yaml (sops)
    for u in $users; do
      { printf 'machine cache.neuros.is login %s password ' "$u"; cat "nix-cache-$u.pw"; } > "nix-cache-$u.netrc"
    done
@@ -324,27 +326,18 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
 5. **GitHub secret** `NIX_CACHE_NETRC` = the content of `nix-cache-ci.netrc`
    (Settings → Secrets and variables → Actions, or
    `gh secret set NIX_CACHE_NETRC --repo charlie-horse/flake < nix-cache-ci.netrc`).
-6. **Server netrc** (c4130, m2mini; no agenix on the servers). On each, as
-   charlie:
-
-   ```sh
-   sudo install -d -m 0700 /var/lib/nix-cache
-   sudo sh -c 'umask 077; cat > /var/lib/nix-cache/netrc'   # paste the host's line, Enter, ^D
-   ```
-
-   The line is in `r440:~/nix-cache-<host>.netrc`. A host whose file is
-   missing still works (cache.nixos.org only, with a warning).
+6. **Netrc** (c4130, m2mini, Famine): `sops secrets/<host>.yaml`, key
+   `nix-cache-netrc`, value the host's line from
+   `r440:~/nix-cache-<host>.netrc` (never on a command line). sops-nix
+   puts it at `/run/secrets/nix-cache-netrc` (root, 0600) on the next
+   switch. Until then Nix uses cache.nixos.org alone, with a warning.
 7. **m2mini:** switch (with its `--override-input`), `systemctl --failed`,
    the etcd check, then
-   `sudo nix store info --store https://cache.neuros.is --option netrc-file /var/lib/nix-cache/netrc`.
+   `sudo nix store info --store https://cache.neuros.is --option netrc-file /run/secrets/nix-cache-netrc`.
 8. **c4130:** GC first, outside 22:00–05:55 EST, switch, `systemctl
    --failed`, the etcd check; then the same `nix store info` check.
-9. **Famine:** in `modules/age/secrets`, `agenix -e nix-cache-netrc.age`
-   (the recipients are in `secrets.nix`), paste the line from
-   `nix-cache-famine.netrc`, commit the `.age` file (a PR), switch Famine.
-   Until the file is committed Famine looks for
-   `/var/lib/nix-cache/netrc`, which does not exist, and uses
-   cache.nixos.org alone.
+9. **Famine:** `nix-cache-netrc` in `secrets/famine.yaml` (step 6), a PR,
+   switch Famine.
 10. On r440: `shred -u ~/nix-cache-*.pw ~/nix-cache-*.netrc`.
 
 ## Secrets (all of them)
@@ -365,12 +358,11 @@ other secret lives outside git.
 | `flux-system/webhook-token` | Kubernetes Secret (no trailing newline) | by hand |
 | `FLUX_WEBHOOK_TOKEN`, `FLUX_WEBHOOK_URL` | GitHub Actions secrets | by hand (docs/ci.md) |
 | Cloudflare account cert (DNS routes) | `c4130:~charlie/.cloudflared/cert.pem` | `cloudflared tunnel login` |
-| harmonia signing key `r440-cache-1` | `r440:/var/lib/secrets/harmonia.secret` (root, 0600) | `nix key generate-secret` on r440 (exists) |
-| Binary cache users (htpasswd) | `r440:/var/lib/nix-cache/htpasswd` (root:nginx, 0640) | by hand ([Binary cache](#binary-cache)) |
-| Binary cache netrc, servers | `/var/lib/nix-cache/netrc` on c4130 and m2mini (root, 0600) | by hand (same) |
-| Binary cache netrc, Famine | agenix `modules/age/secrets/nix-cache-netrc.age` → `/run/agenix/nix-cache-netrc` | `agenix -e` (same; encrypted, so in git) |
+| harmonia signing key `r440-cache-1` | sops `harmonia-signing-key`, `secrets/r440.yaml` → `/run/secrets/harmonia-signing-key` (root, 0600); formerly `r440:/var/lib/secrets/harmonia.secret` | `nix key generate-secret` on r440 (exists) |
+| Binary cache users (htpasswd) | sops `nix-cache-htpasswd`, `secrets/r440.yaml` → `/run/secrets/nix-cache-htpasswd` (root:nginx, 0640); formerly `r440:/var/lib/nix-cache/htpasswd` | by hand ([Binary cache](#binary-cache)) |
+| Binary cache netrc, hosts | sops `nix-cache-netrc` in `secrets/{c4130,m2mini,famine}.yaml` → `/run/secrets/nix-cache-netrc` (root, 0600); formerly `/var/lib/nix-cache/netrc` on c4130 and m2mini, agenix on Famine (lost) | by hand (same) |
 | `NIX_CACHE_NETRC` | GitHub Actions secret | by hand (docs/ci.md) |
-| Remote-build SSH key `nixremote` | `c4130:/root/.ssh/nixremote` (root, 0600); public half authorized for user `nixremote` on r440 (`hosts/r440/builder.nix`) | `ssh-keygen` on c4130 (exists); used by `nix.buildMachines` in `hosts/c4130/builder.nix` (`ssh-ng://nixremote@10.25.0.2`) |
+| Remote-build SSH key `nixremote` | sops `nixremote-ssh-key`, `secrets/c4130.yaml` → `/run/secrets/nixremote-ssh-key` (root, 0600), formerly `c4130:/root/.ssh/nixremote`; public half authorized for user `nixremote` on r440 (`hosts/r440/builder.nix`) | `ssh-keygen` on c4130 (exists); used by `nix.buildMachines` in `hosts/c4130/builder.nix` (`ssh-ng://nixremote@10.25.0.2`) |
 | Tailscale auth key (reinstall only) | `/var/lib/tailscale/authkey` (root, 0600) on the server being enrolled; delete after enrolment | admin console: pre-approved, non-ephemeral, tagged `tag:node` ([Tailscale](#tailscale)); read by `tailscaled-autoconnect` (`modules/server/tailscale.nix`) |
 | charlie's password hash, m2mini | `m2mini:/var/lib/secrets/charlie.passwd` (root, 0600), `hashedPasswordFile` in `hosts/m2mini/configuration.nix`. **Missing as of 2026-11-12** (every switch warns `password file … does not exist`) | you: `mkpasswd -m yescrypt \| sudo install -D -m 0600 /dev/stdin /var/lib/secrets/charlie.passwd` |
 | Desktop secrets (agenix) | `modules/age/secrets/*.age`, encrypted in git (recipients: `modules/age/secrets/secrets.nix`); decrypted to `/run/agenix/` on the desktop. Famine: `login` (charlie's password hash, `custom.user.passwordFile`), `pam-yubikeys`, `ssh-yubikey-5`, `ssh-yubikey-5c`, `key-famine`, `nix-cache-netrc`. Pestilence only (archived): `key-pestilence`, `vpn-privkey`, `vpn-password`, `acme-cloudflare` | `agenix -e <name>.age` in `modules/age/secrets` |

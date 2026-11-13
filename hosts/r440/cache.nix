@@ -31,8 +31,9 @@
 #                         Was /var/lib/secrets/harmonia.secret.
 #   nix-cache-htpasswd    basic-auth users (root:nginx, 0640), one line per
 #                         client (ci, famine, c4130, m2mini, ...):
-#                         `<user>:<bcrypt hash>`. Missing file: every
-#                         request gets 500. Was /var/lib/nix-cache/htpasswd.
+#                         `<user>:<SHA-512 crypt hash>` (`openssl passwd
+#                         -6`). Missing file: every request gets 500. Was
+#                         /var/lib/nix-cache/htpasswd.
 # Shred both old files once the sops ones are live.
 #
 # Read-only: harmonia only serves; nginx rejects everything but GET/HEAD.

@@ -206,8 +206,8 @@ let
       "metadata.namespace/name must be $namespace/$name (its path)"
     check '(keys - ["apiVersion", "kind", "metadata", "type", "immutable", "data", "stringData", "sops"]) | length == 0' \
       "unexpected top-level field (allowed: apiVersion kind metadata type immutable data stringData sops)"
-    check '[(.data // {}), (.stringData // {}) | .[]] | length > 0' "no data or stringData"
-    check '[(.data // {}), (.stringData // {}) | .[]] | all_c(tag == "!!str" and test("^ENC\\[AES256_GCM,"))' \
+    check '[(.data // {})[], (.stringData // {})[]] | length > 0' "no data or stringData"
+    check '[(.data // {})[], (.stringData // {})[]] | all_c(tag == "!!str" and test("^ENC\\[AES256_GCM,"))' \
       "a data/stringData value is not sops-encrypted"
     check '.sops.mac | test("^ENC\\[AES256_GCM,")' "no sops MAC (not encrypted with sops?)"
     check '(.sops.age // []) | length > 0' "no age recipient"

@@ -35,12 +35,7 @@
   #  useXkbConfig = true; # use xkb.options in tty.
   #};
 
-  users.users.charlie = {
-    isNormalUser = true;
-    extraGroups = [ "wheel" ];
-    packages = with pkgs; [
-    ];
-  };
+  # charlie and admin: modules/server/users.nix, modules/system/admin.nix.
 
   environment.systemPackages = with pkgs; [
     neovim

@@ -45,12 +45,7 @@
   services.openssh.enable = true;
 
   users.groups.video = { };
-  users.users.charlie = {
-    isNormalUser = true;
-    extraGroups = [ "wheel" ]; # Enable ‘sudo’ for the user.
-    packages = with pkgs; [
-    ];
-  };
+  # charlie and admin: modules/server/users.nix, modules/system/admin.nix.
 
   environment.systemPackages = with pkgs; [
     pciutils

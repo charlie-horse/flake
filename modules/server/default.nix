@@ -9,6 +9,12 @@
     # r440's binary cache as a substituter (custom.nixCache.*, per host).
     # Shared with the desktops, which get modules/system wholesale.
     ../system/nix-cache.nix
+    # sops-nix (secrets/<host>.yaml, secrets/common.yaml) and the local
+    # accounts: admin (wheel), root locked, charlie unprivileged. The
+    # desktops get the first two with modules/ wholesale.
+    ../system/sops.nix
+    ../system/admin.nix
+    ./users.nix
   ];
 
   environment.systemPackages = [

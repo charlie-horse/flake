@@ -82,8 +82,9 @@ in
   };
   # Substitutes from r440 through https://cache.neuros.is like every other
   # host (modules/system/nix-cache.nix; netrc: sops key nix-cache-netrc,
-  # formerly /var/lib/nix-cache/netrc), no longer over the link. To go back to the direct path,
-  # revert this commit (it also restores harmonia's 10.25.0.2:5000).
+  # formerly /var/lib/nix-cache/netrc), no longer over the link. To go
+  # back to the direct path, revert commit 6e02db6 (it also restores
+  # harmonia's 10.25.0.2:5000).
   custom.nixCache.enable = true;
   # Root's own ssh (e.g. `nix store ping --store ssh-ng://nixremote@10.25.0.2`)
   # needs r440's host key too; the daemon uses publicHostKey above.
