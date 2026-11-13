@@ -139,7 +139,7 @@ def ownership_errors(stem: str, node: str, s: Summary, nodes: list[str]) -> list
 
 def key_matches(cert: x509.Certificate, key_pem: bytes) -> bool:
     try:
-        key = serialization.load_pem_private_key(key_pem, password=None)
+        key = serialization.load_pem_private_key(key_pem, None)
     except (ValueError, TypeError):
         return False
     spki = serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
