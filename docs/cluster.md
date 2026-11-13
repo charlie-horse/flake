@@ -357,7 +357,12 @@ other secret lives outside git.
 | --- | --- | --- |
 | Cluster PKI (CA keys + leaves) | `r440:~/.local/share/cluster-pki/neurosis` (back it up) | `cluster-pki` (docs/pki.md) |
 | Node keys and certs | `/var/lib/kubernetes/secrets/` on each node | `cluster-pki deploy` |
-| `cert-manager/cluster-ca` (workload root CA key) | Kubernetes Secret | cert-manager, in the cluster (declared in `k8s/`; never by hand, never copied) |
+| `cert-manager/cluster-ca` (workload intermediate CA key), **pending ceremony** | Kubernetes Secret (`tls.crt` = intermediate + root, `tls.key`, `ca.crt` = root); never copied anywhere else | out-of-band at the ceremony: key made in tmpfs on c4130, signed by the YubiKey root, then the tmpfs is shredded (docs/pki-migration-plan.md, nodes F and G). Live until then: a self-signed root made by cert-manager (declared in `k8s/`) |
+| YubiKey root CA key, **pending ceremony** | c4130's YubiKey, PIV slot 9c; non-exportable, no backup | generated on the card at the ceremony (docs/pki.md, "YubiKey root CA") |
+| YubiKey PIN, **pending ceremony** | TBD by Charlie (password manager) | `ykman piv access change-pin` at the ceremony |
+| YubiKey PUK, **pending ceremony** | TBD by Charlie (password manager) | `ykman piv access change-puk` at the ceremony |
+| YubiKey PIV management key, **pending ceremony** | on the card, PIN-protected; no other copy | `ykman piv access change-management-key --generate --protect` at the ceremony |
+| Root CA cert and attestations (public, not secret), **pending ceremony** | `cluster/pki/` in git | the ceremony (docs/pki.md, "YubiKey root CA") |
 | `authentik/authentik-secrets` | Kubernetes Secret | by hand (k8s/README.md, authentik) |
 | `headlamp/headlamp-oidc` | Kubernetes Secret | by hand (Headlamp section) |
 | `open-webui/open-webui-secrets` | Kubernetes Secret | by hand (Open WebUI section) |
