@@ -8,11 +8,14 @@
 #     -> nginx on r440 (basic auth) -> harmonia
 #
 # The credential is a netrc file (`netrc-file`, read by the nix-daemon as
-# root), never in git, the store or a command line:
+# root), never in plaintext in git, the store or a command line:
 #   machine cache.neuros.is login <user> password <password>
-# Desktops: agenix (Famine: modules/age/secrets.nix). Servers (no agenix):
-# a root-only file made by hand, /var/lib/nix-cache/netrc by default
-# (docs/cluster.md, "Binary cache").
+# It is the sops secret `nix-cache-netrc` in each host's
+# secrets/<hostname>.yaml (sops-nix, decrypted to /run/secrets/
+# nix-cache-netrc, root 0600), on servers and desktops alike. Formerly a
+# hand-made /var/lib/nix-cache/netrc on the servers and agenix on Famine;
+# shred the old servers' file once the sops one is live (docs/cluster.md,
+# "Binary cache").
 #
 # Read-only: harmonia serves r440's /nix/store; nothing can be pushed.
 #
@@ -61,7 +64,8 @@ in
 
     netrcFile = mkOption {
       type = types.str;
-      default = "/var/lib/nix-cache/netrc";
+      default = config.sops.secrets.nix-cache-netrc.path;
+      defaultText = lib.literalExpression "config.sops.secrets.nix-cache-netrc.path";
       description = ''
         Runtime path of the netrc file with the basic-auth credential (read
         by the nix-daemon as root; mode 0400/0600). A string, so the file is
@@ -78,6 +82,14 @@ in
         message = "custom.nixCache.netrcFile must not be a Nix store path (it holds a password).";
       }
     ];
+    # Key `nix-cache-netrc` of the host's sops file (sops.defaultSopsFile).
+    # No restartUnits: Nix reads netrc-file on every download, so a new
+    # value applies without restarting nix-daemon.
+    sops.secrets.nix-cache-netrc = {
+      owner = "root";
+      group = "root";
+      mode = "0600";
+    };
     nix.settings = {
       substituters = [ "https://${cache.host}?priority=${toString cfg.priority}" ];
       trusted-public-keys = [ cache.publicKey ];

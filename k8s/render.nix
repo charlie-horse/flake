@@ -8,8 +8,11 @@
 #   cluster             cluster/definition.nix, evaluated
 #   kubeVersion         `helm template --kube-version` for the charts
 #   components          component name -> module
-#   deferred            { dir, modules }: deferred components, rendered
-#                       under <dir>/ (k8s/default.nix, k8s/README.md)
+#   deferred            { dir, modules, secrets }: deferred components,
+#                       rendered under <dir>/, and the sops-encrypted
+#                       Secrets ({ name, src }), copied verbatim to
+#                       <dir>/<secrets.name>/ (k8s/default.nix,
+#                       k8s/README.md)
 #
 # Returns { manifests, checkImages, components } (k8s/default.nix
 # describes them).
@@ -29,6 +32,41 @@ let
   # `deferred` module argument; components/flux/stages.nix).
   deferredComponents = lib.attrNames deferred.modules;
 
+  # sops-encrypted Secrets: <src>/<namespace>/<name>.sops.yaml, nothing
+  # else. Never evaluated or re-serialised (the sops MAC covers the values
+  # as written): `manifests` copies each file as is, after checking that it
+  # is one encrypted Secret named after its path.
+  secretsDir = "${deferred.dir}/${deferred.secrets.name}";
+  dnsLabel = "[a-z0-9]([-a-z0-9]*[a-z0-9])?";
+  secretFiles =
+    let
+      src = deferred.secrets.src;
+      prefix = toString src + "/";
+    in
+    lib.optionals (builtins.pathExists src) (
+      map (
+        source:
+        let
+          rel = lib.removePrefix prefix (toString source);
+          parts = builtins.match "(${dnsLabel})/(${dnsLabel}(\\.${dnsLabel})*)\\.sops\\.yaml" rel;
+        in
+        assert lib.assertMsg (
+          parts != null
+        ) "k8s render: ${rel} in the secrets directory is not <namespace>/<name>.sops.yaml";
+        rec {
+          # (match groups: dnsLabel has one of its own, so the name is 2)
+          namespace = lib.elemAt parts 0;
+          name = lib.elemAt parts 2;
+          path = "${secretsDir}/${rel}";
+          # This file alone, not the whole flake source it sits in.
+          file = builtins.path {
+            path = source;
+            name = "${namespace}-${name}.sops.yaml";
+          };
+        }
+      ) (lib.filesystem.listFilesRecursive src)
+    );
+
   # Every component is a catenix configuration of its own. Module arguments:
   # cluster, kubeVersion, deferred ({ dir, components }), catenix (its lib),
   # k8sLib (./lib.nix), charts (./charts.nix), pkgs.
@@ -44,6 +82,13 @@ let
         deferred = {
           inherit (deferred) dir;
           components = deferredComponents;
+          # components/flux/secrets.nix: the Kustomization exists only
+          # while there is at least one Secret to apply.
+          secrets = {
+            inherit (deferred.secrets) name;
+            path = secretsDir;
+            enable = secretFiles != [ ];
+          };
         };
         catenix = catenix.lib;
         k8sLib = import ./lib.nix { inherit lib cluster; };
@@ -61,6 +106,14 @@ let
     assert lib.assertMsg (lib.allUnique (
       map baseNameOf deferredComponents
     )) "k8s render: deferred components need distinct last path elements (their Kustomization names)";
+    assert lib.assertMsg (
+      !lib.any (
+        n:
+        n == deferred.secrets.name
+        || lib.hasPrefix "${deferred.secrets.name}/" n
+        || baseNameOf n == deferred.secrets.name
+      ) deferredComponents
+    ) "k8s render: no deferred component may be named ${deferred.secrets.name}[/...] or end in /${deferred.secrets.name} (the secrets Kustomization)";
     lib.mapAttrs (_: evalComponent) (components // deferred.modules);
 
   # A component's directory in the render.
@@ -133,7 +186,37 @@ let
       }
     ) (lib.groupBy (m: m.kind) config.config.build.manifests);
 
-  # The tree: every component's files, plus the deferred fence.
+  # Checks one sops-encrypted Secret (read only; the file is copied as is):
+  # a single v1 Secret whose namespace and name match its path, only the
+  # usual Secret fields, every data/stringData value encrypted, sops
+  # metadata with an age recipient and a MAC, encrypted_regex
+  # ^(data|stringData)$ (so metadata stays readable for kustomize and Flux).
+  checkSecret = pkgs.writeShellScript "check-sops-secret" ''
+    set -euo pipefail
+    file=$1 namespace=$2 name=$3
+    yq=${lib.getExe pkgs.yq-go}
+    fail() {
+      echo "k8s render: secrets/$namespace/$name.sops.yaml: $*" >&2
+      exit 1
+    }
+    [ "$($yq ea '[.] | length' "$file")" = 1 ] || fail "not exactly one YAML document"
+    check() { $yq -e "$1" "$file" >/dev/null 2>&1 || fail "$2"; }
+    check '.apiVersion == "v1" and .kind == "Secret"' "not a v1 Secret"
+    check ".metadata.namespace == \"$namespace\" and .metadata.name == \"$name\"" \
+      "metadata.namespace/name must be $namespace/$name (its path)"
+    check '(keys - ["apiVersion", "kind", "metadata", "type", "immutable", "data", "stringData", "sops"]) | length == 0' \
+      "unexpected top-level field (allowed: apiVersion kind metadata type immutable data stringData sops)"
+    check '[(.data // {}), (.stringData // {}) | .[]] | length > 0' "no data or stringData"
+    check '[(.data // {}), (.stringData // {}) | .[]] | all_c(tag == "!!str" and test("^ENC\\[AES256_GCM,"))' \
+      "a data/stringData value is not sops-encrypted"
+    check '.sops.mac | test("^ENC\\[AES256_GCM,")' "no sops MAC (not encrypted with sops?)"
+    check '(.sops.age // []) | length > 0' "no age recipient"
+    check '.sops.encrypted_regex == "^(data|stringData)$"' \
+      "sops.encrypted_regex must be ^(data|stringData)$ (.sops.yaml creation rule)"
+  '';
+
+  # The tree: every component's files, the deferred fence and the
+  # encrypted Secrets (checked, then copied byte for byte).
   manifests = pkgs.runCommand "k8s-manifests" { } (
     lib.concatMapStrings (f: ''
       mkdir -p "$(dirname "$out/${f.path}")"
@@ -146,6 +229,10 @@ let
       mkdir -p "$out/${deferred.dir}"
       cp ${deferredFence} "$out/${deferred.dir}/kustomization.yaml"
     ''
+    + lib.concatMapStrings (s: ''
+      ${checkSecret} ${s.file} ${s.namespace} ${s.name}
+      install -D -m 0444 ${s.file} "$out/${s.path}"
+    '') secretFiles
   );
 
   # Every image in the tree must be a manifest list with linux/amd64 and

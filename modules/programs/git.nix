@@ -11,11 +11,12 @@ let
   inherit (lib.generators)
     toGitINI
     ;
-  inherit (config.age)
+  # sops secrets from modules/system/yubikey.nix.
+  inherit (config.sops)
     secrets
     ;
   inherit (config.custom)
-    age
+    yubikey
     ;
 
   systemConfig = {
@@ -40,7 +41,7 @@ let
     user.email = "charliesyvertsen06@icloud.com";
   }
   // (
-    if age.enable then
+    if yubikey.enable then
       {
         alias.yk5 = "config --replace-all user.signingkey ${secrets.ssh-yubikey-5.path}";
         alias.yk5c = "config --replace-all user.signingkey ${secrets.ssh-yubikey-5c.path}";

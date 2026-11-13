@@ -23,11 +23,18 @@
     generators.url = "github:nix-community/nixos-generators";
     generators.inputs.nixpkgs.follows = "nixpkgs-unstable";
 
-    agenix.url = "github:ryantm/agenix";
-    agenix.inputs.nixpkgs.follows = "nixpkgs-unstable";
-
     aagl.url = "github:ezKEa/aagl-gtk-on-nix";
     aagl.inputs.nixpkgs.follows = "nixpkgs-unstable";
+
+    # ---- Secrets (every host) --------------------------------------------
+    # sops-nix (modules/system/sops.nix): secrets/*.yaml, encrypted to the
+    # hosts' SSH host keys (via ssh-to-age) and the admins' age keys, see
+    # .sops.yaml. Follows `nixpkgs` (26.05) for the servers; on Famine
+    # (nixpkgs-unstable) only its NixOS module is used, whose packages come
+    # from the host's own pkgs, so the follows does not pull 26.05 there.
+    # `nix flake update sops-nix` to move it.
+    sops-nix.url = "github:Mic92/sops-nix";
+    sops-nix.inputs.nixpkgs.follows = "nixpkgs";
 
     # ---- Servers (mkServer: c4130, r440, m2mini) -------------------------
     # All on `nixpkgs` (nixos-26.05).
