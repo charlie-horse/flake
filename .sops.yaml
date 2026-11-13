@@ -34,7 +34,7 @@ creation_rules:
   # public, so PR diffs and CI can read them) and <stem>-key.pem (encrypted).
   # Written by the export job from public recipients only. Kept first so no
   # broader secrets/ rule can ever take these paths. CI: checks.yml,
-  # pki-files (.github/scripts/pki-files.py).
+  # secrets-guard.
   - path_regex: ^secrets/pki/c4130\.yaml$
     encrypted_regex: -key\.pem$
     key_groups:
