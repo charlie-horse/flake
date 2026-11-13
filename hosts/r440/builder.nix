@@ -47,6 +47,9 @@ in
     "ens3f*"
     "bond0"
   ];
+  # c4130's end of the link as a name for its pinned host key
+  # (modules/programs/ssh.nix), e.g. `ssh admin@10.25.0.1`.
+  programs.ssh.knownHosts.c4130.hostNames = [ "10.25.0.1" ];
 
   # --- Remote builder ----------------------------------------------------
   users.users.nixremote = {

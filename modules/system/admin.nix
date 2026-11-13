@@ -4,7 +4,9 @@
 #
 #   admin  the only account in wheel. Logs in with a FIDO2 resident key
 #          (sk-ssh-ed25519, on the YubiKey) over SSH; sudo asks for its
-#          password. Its one source of truth is the PLAINTEXT sops key
+#          password (or, with custom.auth.hardwareFactor, for the key
+#          instead; modules/system/auth). The password's one source of
+#          truth is the PLAINTEXT sops key
 #          `admin-password` in secrets/common.yaml (read it with
 #          `sops -d --extract '["admin-password"]' secrets/common.yaml`).
 #          The host decrypts it to /run/secrets-for-users/admin-password
@@ -74,12 +76,6 @@ in
     users.root.hashedPassword = lib.mkIf (!config.users.mutableUsers) "!";
   };
 
-  # sudo for wheel (= admin) always asks for admin's password.
-  security.sudo.wheelNeedsPassword = true;
-  assertions = [
-    {
-      assertion = config.security.sudo.wheelNeedsPassword;
-      message = "modules/system/admin.nix: sudo must ask wheel (admin) for its password.";
-    }
-  ];
+  # sudo, polkit, console and sshd policy (admin's password, or the
+  # hardware factor): modules/system/auth.
 }

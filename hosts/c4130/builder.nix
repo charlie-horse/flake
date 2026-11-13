@@ -87,9 +87,10 @@ in
   # harmonia's 10.25.0.2:5000).
   custom.nixCache.enable = true;
   # Root's own ssh (e.g. `nix store ping --store ssh-ng://nixremote@10.25.0.2`)
-  # needs r440's host key too; the daemon uses publicHostKey above.
-  programs.ssh.knownHosts.r440-builder = {
-    hostNames = [ r440 ];
-    publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKEBW4ZqM6suV2KILiqUgRSOiXs14BvUaZNp3fkE3AuG";
-  };
+  # needs r440's host key too; the daemon uses publicHostKey above. The key
+  # is r440's entry from modules/programs/ssh.nix (cluster/definition.nix,
+  # nodes.r440.sshHostKey); this adds the link address to its names. The
+  # cluster Host block there matches names only, so this ssh keeps its own
+  # user and key.
+  programs.ssh.knownHosts.r440.hostNames = [ r440 ];
 }

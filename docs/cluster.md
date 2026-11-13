@@ -107,6 +107,54 @@ nix build --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s.manife
   `https://kube-api.leaffish-monster.ts.net:6443` from anywhere on the
   tailnet (Tailscale Service, below).
 
+### SSH between the hosts
+
+Every host (the servers and Famine) has the same ssh client config,
+`modules/programs/ssh.nix`, so `ssh c4130` works without options, from a
+desktop and from one server to the next:
+
+- `/etc/ssh/ssh_config` has a `Host` block for `c4130 r440 m2mini` and their
+  `*.leaffish-monster.ts.net` names (names only, no IPs): `User admin`,
+  `ForwardAgent yes`, `IdentitiesOnly yes`, and an `IdentityFile` that holds
+  only the **public** half of the YubiKey's `ssh:admin` resident key (taken
+  from admin's authorized keys, `modules/system/admin.nix`). With a public
+  `IdentityFile`, ssh offers exactly that key from the agent, local or
+  forwarded, and no other. No key handle is deployed anywhere.
+- `/etc/ssh/ssh_known_hosts` pins each server's ed25519 host key
+  (`cluster/definition.nix`, `nodes.<n>.sshHostKey`) for its name, FQDN,
+  LAN and tailnet address (plus the bond0 addresses 10.25.0.1/.2). Tailscale
+  SSH presents the same host keys. After a reinstall, update `sshHostKey`
+  and the host's `.sops.yaml` anchor together.
+- The agent must hold the `ssh:admin` key: on Linux `ssh-add -K` with the
+  YubiKey plugged in (or `ssh-keygen -K` once, then `ssh-add` the
+  `id_ed25519_sk_rk_admin` file it writes). The servers run no agent of
+  their own; they use the forwarded one (sudo's hardware factor needs it
+  too, [auth.md](auth.md)).
+- By IP (e.g. over the LAN when Tailscale is down) the block does not
+  apply: `ssh -A admin@10.0.0.95`. c4130's remote builds
+  (`nixremote@10.25.0.2`, `hosts/c4130/builder.nix`) keep their own user
+  and key for the same reason.
+- Agent forwarding lets root on the host you are on use your key while you
+  are connected (relay caveat in [auth.md](auth.md)).
+
+**Windows** (Win32-OpenSSH 8.9 or newer): set the `ssh-agent` service to
+Automatic and start it, then in `%USERPROFILE%\.ssh`, with the YubiKey
+plugged in, run `ssh-keygen -K` and `ssh-add .\id_ed25519_sk_rk_admin`
+(details: [auth.md](auth.md), "Clients: forwarding the agent"). In
+`%USERPROFILE%\.ssh\config`:
+
+```
+Host c4130 r440 m2mini c4130.leaffish-monster.ts.net r440.leaffish-monster.ts.net m2mini.leaffish-monster.ts.net
+  User admin
+  ForwardAgent yes
+  IdentitiesOnly yes
+  IdentityFile ~/.ssh/id_ed25519_sk_rk_admin.pub
+```
+
+and copy the three host-key lines from any server's
+`/etc/ssh/ssh_known_hosts` into `%USERPROFILE%\.ssh\known_hosts`, or check
+the fingerprint at the first connection against `sshHostKey`.
+
 ## Tailscale
 
 All three servers' Tailscale prefs are in Nix:
@@ -388,12 +436,12 @@ idle. The offline backup age key works anywhere without any of this
 | `NIX_CACHE_NETRC` | GitHub Actions secret | by hand (docs/ci.md) |
 | Remote-build SSH key `nixremote` | sops `nixremote-ssh-key`, `secrets/c4130.yaml` → `/run/secrets/nixremote-ssh-key` (root, 0600), formerly `c4130:/root/.ssh/nixremote`; public half authorized for user `nixremote` on r440 (`hosts/r440/builder.nix`) | `ssh-keygen` on c4130 (exists); used by `nix.buildMachines` in `hosts/c4130/builder.nix` (`ssh-ng://nixremote@10.25.0.2`) |
 | Tailscale auth key (reinstall only) | `/var/lib/tailscale/authkey` (root, 0600) on the server being enrolled; delete after enrolment | admin console: pre-approved, non-ephemeral, tagged `tag:node` ([Tailscale](#tailscale)); read by `tailscaled-autoconnect` (`modules/server/tailscale.nix`) |
-| Admin password (`admin`, the only wheel account after stage 2, next to charlie before; sudo asks for it) | sops `admin-password` (**plaintext**, the one source of truth) in `secrets/common.yaml` → `/run/secrets-for-users/admin-password` (`neededForUsers`: ramfs, root 0400), every host. At each activation the host derives the yescrypt hash from it (`mkpasswd -m yescrypt --stdin`, reusing the current `/etc/shadow` hash while it still matches) into `/run/sops-password-hashes/admin` (root 0600, tmpfs), admin's `hashedPasswordFile` (`custom.sopsPasswords`, `modules/system/sops.nix`; set in `modules/system/admin.nix`). While a server is in stage 1 of [Removing charlie from the servers](#removing-charlie-from-the-servers-2026-11) (mutable users) that hash is written to `/etc/shadow` only when admin is created; a later change of `admin-password` reaches a stage-1 server only after stage 2 (or `sudo passwd admin` there). Lockout risk: a host that cannot decrypt `common.yaml` has no admin password, and after stage 2 root is locked and charlie gone (in stage 1 charlie's sudo still works); guarded by CI (recipients vs `.sops.yaml`) and the pre-switch check `sopsDecrypt`, which refuses the switch; a failed derivation at activation keeps the previous hash | you: `sops secrets/common.yaml`, edit `admin-password`, switch every host |
+| Admin password (`admin`, the only wheel account after stage 2, next to charlie before; sudo asks for it; with `custom.auth.hardwareFactor` on, sudo asks for a FIDO2 key instead and the console for both, [docs/auth.md](auth.md)) | sops `admin-password` (**plaintext**, the one source of truth) in `secrets/common.yaml` → `/run/secrets-for-users/admin-password` (`neededForUsers`: ramfs, root 0400), every host. At each activation the host derives the yescrypt hash from it (`mkpasswd -m yescrypt --stdin`, reusing the current `/etc/shadow` hash while it still matches) into `/run/sops-password-hashes/admin` (root 0600, tmpfs), admin's `hashedPasswordFile` (`custom.sopsPasswords`, `modules/system/sops.nix`; set in `modules/system/admin.nix`). While a server is in stage 1 of [Removing charlie from the servers](#removing-charlie-from-the-servers-2026-11) (mutable users) that hash is written to `/etc/shadow` only when admin is created; a later change of `admin-password` reaches a stage-1 server only after stage 2 (or `sudo passwd admin` there). Lockout risk: a host that cannot decrypt `common.yaml` has no admin password, and after stage 2 root is locked and charlie gone (in stage 1 charlie's sudo still works); guarded by CI (recipients vs `.sops.yaml`) and the pre-switch check `sopsDecrypt`, which refuses the switch; a failed derivation at activation keeps the previous hash | you: `sops secrets/common.yaml`, edit `admin-password`, switch every host |
 | charlie's password, Famine only | sops `charlie-password` (plaintext) in `secrets/famine.yaml` → `/run/secrets-for-users/charlie-password` (`neededForUsers`); the host derives `/run/sops-password-hashes/charlie` from it at activation, like admin's (`custom.sopsPasswords` in `modules/system/user.nix`; for the greeter and hyprlock, no sudo). Servers: charlie's password is the hash he set with `passwd`, kept in `/etc/shadow` (mutable users) until stage 2 removes him; the user holds the plaintext (offline, not in sops or the cloud environment) ([Removing charlie from the servers](#removing-charlie-from-the-servers-2026-11)); m2mini's old `/var/lib/secrets/charlie.passwd` is unused (it applied only when charlie was created), delete it in stage 2 | you: `sops secrets/famine.yaml`, edit `charlie-password` |
 | sops-nix host identities | each host's SSH ed25519 host key `/etc/ssh/ssh_host_ed25519_key` (never in git); its `ssh-to-age` recipient is an anchor in `.sops.yaml`. Famine (no sshd) gets it from the `sopsHostKey` activation script (`modules/system/sops.nix`). A reinstalled host has a new key: update `.sops.yaml` and `sops updatekeys` before its first switch | sshd / activation |
-| sops admin identities | YubiKey 5 serial 19830800 (normally plugged into c4130; used ad hoc, see above): age-plugin-yubikey key in PIV slot 82 (`admin_yubikey` in `.sops.yaml`; PIN policy once, touch cached), plus the offline passphrase-protected backup age key file (`admin_backup`, stored offline with its passphrase). Both are recipients of every file. The same YubiKey holds the FIDO2 resident key `ssh:admin` (admin's SSH login). PIV and FIDO2 PINs are held by the user, offline (never in the cloud environment or in git); the PIV management key is random and PIN-protected on the key | `age-plugin-yubikey --generate`, `age-keygen \| age -p`, `ssh-keygen -t ed25519-sk -O resident` |
+| sops admin identities | YubiKey 5 serial 19830800 (travels with the user, never parked in a host; plugged in only deliberately and briefly, used ad hoc, see above): age-plugin-yubikey key in PIV slot 82 (`admin_yubikey` in `.sops.yaml`; PIN policy once, touch cached), plus the offline passphrase-protected backup age key file (`admin_backup`, stored offline with its passphrase). Both are recipients of every file. The same YubiKey holds the FIDO2 resident key `ssh:admin` (admin's SSH login). PIV and FIDO2 PINs are held by the user, offline (never in the cloud environment or in git); the PIV management key is random and PIN-protected on the key | `age-plugin-yubikey --generate`, `age-keygen \| age -p`, `ssh-keygen -t ed25519-sk -O resident` |
 | YubiKey PIV PUK (serial 19830800) | sops `yubikey-19830800-piv-puk` in `secrets/admin.yaml` (admin keys only, never on a host). Unblocks the PIV PIN after 3 wrong tries | random, set 2026-11-13 |
-| Desktop YubiKey files | sops `pam-yubikeys`, `ssh-yubikey-5` in `secrets/famine.yaml` (`modules/system/yubikey.nix`, off until they exist). The old agenix files (`modules/age`, removed) and their keys are lost, as are Pestilence's agenix-only `key-pestilence`, `vpn-privkey`, `vpn-password`, `acme-cloudflare` | remake at Famine with the YubiKey ([docs/famine-sops.md](famine-sops.md)) |
+| Desktop YubiKey files | sops `pam-yubikeys` in `secrets/famine.yaml` (`modules/system/yubikey.nix`, off until it exists). No separate ssh identity: ssh and git signing use the `ssh:admin` key from the agent (dropped `ssh-yubikey-5`, 2026-11-13). The old agenix files (`modules/age`, removed) and their keys are lost, as are Pestilence's agenix-only `key-pestilence`, `vpn-privkey`, `vpn-password`, `acme-cloudflare` | remake at Famine with the YubiKey ([docs/famine-sops.md](famine-sops.md)) |
 | Pestilence Transmission `rpc-password` | **plaintext in git**, `hosts/Pestilence/servarr.nix` (archived host; excluded from the format check so the secrets guard stays quiet) | rotate it and move it to sops before restoring Pestilence |
 | Cloud-session secrets | env vars of the Claude Code cloud environment: `TAIL_AUTH_KEY` (joins the session to the tailnet), and nothing else: no sudo password (admin's or charlie's) and no YubiKey PIN (`SERVER_PASSWORD` was removed 2026-11-13). The user runs every sudo command on the host | environment settings (CLAUDE.md, "Access from a cloud session") |
 | Backups of charlie's server homes (temporary) | `r440:/var/backups/charlie-home/<host>.tar.zst` (root, 0600; dir 0700); they hold whatever charlie had: the cluster PKI (r440), the Cloudflare account cert (c4130), legacy `tls/` keys, SSH keys | [Removing charlie from the servers](#removing-charlie-from-the-servers-2026-11); delete them once the user OKs it |
