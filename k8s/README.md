@@ -13,6 +13,7 @@ applies ([Deployment](#deployment)).
 | `lib.nix` | helpers for the components (module argument `k8sLib`): `localVolume`, `nodeTolerations`, `fixedServiceIP` |
 | `components/infra/` | cluster plumbing, one file per component (a directory when split by concern, e.g. `cert-manager/`) |
 | `components/flux/` | Flux itself: `install.nix` (chart), `sync.nix` (OCIRepository + Kustomization `flux-system`), `stages.nix` (a Kustomization per deferred component), `receiver.nix` (push webhook) |
+| `secrets/` | sops-encrypted Secrets, `<namespace>/<name>.sops.yaml`, copied verbatim into the render ([Secrets](#secrets)) |
 | `components/apps/` | applications; small ones are a file, larger ones a directory split by concern (e.g. `authentik/`: `chart.nix`, `postgres.nix`, `backup.nix`, `blueprints/*.yaml`) |
 | (render) | `nix build .#k8s.manifests`: `<component>/<plural kind>.yaml`, namespaces and CRDs as `00-`/`01-` files; deferred components under `deferred/<component>/` ([Deferred components](#deferred-components)); rules in `render.nix`. Built by CI, never committed. |
 
@@ -37,7 +38,7 @@ with one line in `components` in `default.nix` (or in `deferred.modules`,
 | `infra/nvidia-device-plugin` | NVIDIA device plugin on `nvidia.com/gpu.present=true` nodes, `runtimeClassName: nvidia`, `DEVICE_ID_STRATEGY=index` (matches the host's index-named CDI spec) | nvidia-device-plugin chart 0.20.1 |
 | `infra/cert-manager` | cert-manager v1.21.3 (namespace `cert-manager`, enforce `restricted`): CRDs, controller and cainjector (1 replica each), webhook (2 replicas, PDB); r440 and m2mini ([cert-manager](#cert-manager)) | jetstack cert-manager chart v1.21.3 |
 | `infra/cert-manager-issuers` (deferred: `deferred/infra/cert-manager-issuers/`) | the workload CA: ClusterIssuer `selfsigned`, root Certificate `cert-manager/cluster-ca` (ECDSA P-384, 10 y), CA ClusterIssuer **`cluster-ca`**; applied by the Kustomization `cert-manager-issuers` | hand-written (`components/infra/cert-manager/issuers.nix`) |
-| `flux` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers; OCIRepository `flux-system-oci` (the signed GHCR artifact) + Kustomization `flux-system`, one Kustomization per deferred component (`cert-manager-issuers`); Receiver `ghcr` (push webhook) | fluxcd-community flux2 chart 2.19.1 |
+| `flux` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers; OCIRepository `flux-system-oci` (the signed GHCR artifact) + Kustomization `flux-system`, one Kustomization per deferred component (`cert-manager-issuers`), Kustomization `secrets` (sops decryption, [Secrets](#secrets)); Receiver `ghcr` (push webhook) | fluxcd-community flux2 chart 2.19.1 |
 | `apps/cloudflared` | the single Cloudflare tunnel `cluster`: cloudflared, one replica per node (hostNetwork), nginx sidecar that sets `X-Forwarded-For` from `Cf-Connecting-Ip`; routes auth/k8s/chat, the Flux webhook host (`/hook/` only) and `cache.neuros.is` (r440's Nix cache, outside the cluster) | hand-written |
 | `apps/authentik` | authentik (SSO/OIDC): one server + one worker per node, PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprints (one file per OIDC client: `kubernetes`, `headlamp`, `open-webui`). Secrets come from a hand-made Secret ([below](#authentik)) | authentik chart 2026.8.5 + hand-written |
 | `apps/headlamp` | Headlamp web UI (namespace `headlamp`, enforce `restricted`): 1 replica on amd64 (r440), Service `headlamp` at fixed ClusterIP 10.96.0.21, OIDC login via authentik's confidential client `headlamp`; its ServiceAccount has no RBAC (users act with their own token). Client secret from a hand-made Secret ([below](#headlamp)) | headlamp chart 0.46.0 |
@@ -109,7 +110,72 @@ Such objects go in a *deferred* component (`deferred.modules` in
   webhook answers) and `wait: true` (Ready only when its objects are).
 
 A failure there stays there: `flux-system` keeps applying the rest.
-Today the only one is `infra/cert-manager-issuers`.
+Today the only one is `infra/cert-manager-issuers`. The encrypted Secrets
+use the same fence ([Secrets](#secrets)).
+
+## Secrets
+
+Every Kubernetes Secret the apps need is a sops-encrypted manifest in git,
+`k8s/secrets/<namespace>/<name>.sops.yaml`, decrypted in the cluster by
+kustomize-controller. Not the Secrets the cluster makes itself
+(`cert-manager/cluster-ca`, the webhook's own CA) and not the node PKI.
+
+- **Render.** `render.nix` copies each file byte for byte (never parsed
+  into Nix or re-serialised: the sops MAC covers the values as written) to
+  `deferred/secrets/<namespace>/<name>.sops.yaml`, after checking it: one
+  v1 Secret, `metadata.namespace`/`name` equal to its path, only
+  `apiVersion kind metadata type immutable data stringData sops` at the
+  top, every `data`/`stringData` value `ENC[…]`, an age recipient and a
+  MAC, `encrypted_regex: ^(data|stringData)$`, **keys sorted**. Anything
+  else in `k8s/secrets/` fails the render. catenix never sees these files.
+- **Apply.** The Kustomization `secrets` (`components/flux/secrets.nix`;
+  only rendered while `k8s/secrets/` has a file) applies
+  `./deferred/secrets` from the same signed artifact, `dependsOn:
+  flux-system` (the namespaces), with `decryption: { provider: sops,
+  secretRef: { name: sops-age } }`. `flux-system` never decrypts anything,
+  so a missing key or a bad file fails only `secrets`. `prune: true`:
+  deleting a file deletes its Secret.
+- **The one bootstrap secret** is `flux-system/sops-age`, Flux's age
+  private key (recipient `&flux` in `/.sops.yaml`). Made once by hand,
+  never in git. On a machine holding the key file:
+  `kubectl -n flux-system create secret generic sops-age --from-file=age.agekey=/dev/stdin < <key file>`
+  (the key name must end in `.agekey`). Until it exists the Kustomization
+  `secrets` is not Ready and the Secrets keep their last applied values.
+
+### Adding or changing one
+
+`/.sops.yaml` encrypts `k8s/**.sops.yaml` to the admins and Flux, values
+under `data`/`stringData` only. sops' MAC covers every value in document
+order, and kustomize sorts keys before kustomize-controller decrypts, so
+**sort the keys before encrypting** or the cluster sees "MAC mismatch"
+(the render refuses unsorted files). From a live Secret, without writing
+plaintext to disk:
+
+```sh
+f=k8s/secrets/<namespace>/<name>.sops.yaml
+kubectl -n <namespace> get secret <name> -o yaml \
+  | yq '.metadata |= {"name": .name, "namespace": .namespace} | sort_keys(..)' \
+  | sops encrypt --filename-override "$f" --input-type yaml --output-type yaml /dev/stdin > "$f.tmp" \
+  && mv "$f.tmp" "$f"
+```
+
+Template (before encryption; keys sorted, `data` base64 of the exact bytes,
+so no stray trailing newline):
+
+```yaml
+apiVersion: v1
+data:
+  KEY: <base64>
+kind: Secret
+metadata:
+  name: <name>
+  namespace: <namespace>
+type: Opaque
+```
+
+Edit later with `sops "$f"` (keep keys sorted). A Secret that existed
+before (made by hand) is adopted by the first apply (server-side apply,
+forced ownership), not recreated.
 
 ## Bootstrap (fresh cluster, operator with an admin kubeconfig)
 
@@ -132,6 +198,8 @@ In every component, `00-namespaces.yaml` and
 `01-customresourcedefinitions.yaml` sort first, so `kubectl apply -R`
 creates them before the objects that need them. Flux's custom resources
 also need their CRDs *established*, hence the separate step and the wait.
+Then create `flux-system/sops-age` ([Secrets](#secrets)) so the
+Kustomization `secrets` can decrypt.
 The apps and `deferred/` need no manual apply: Flux brings them up (never
 `kubectl apply -R -f $R` on the whole tree: `deferred/kustomization.yaml`
 is not a Kubernetes object).
