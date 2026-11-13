@@ -120,8 +120,9 @@ use the same fence ([Secrets](#secrets)).
 Every Kubernetes Secret the apps need is a sops-encrypted manifest in git,
 `k8s/secrets/<namespace>/<name>.sops.yaml`, decrypted in the cluster by
 kustomize-controller. Not the Secrets the cluster makes itself (the
-cert-manager webhook's own CA) and not the node PKI. `cert-manager/cluster-ca`
-(the workload intermediate) is in sops like the app Secrets. The
+cert-manager webhook's own CA) and not the node leaves. `cert-manager/cluster-ca`
+(the workload intermediate) and the three bootstrap intermediates in
+`cluster-pki` are in sops like the app Secrets. The
 one exception is the bootstrap key `flux-system/sops-age`
 ([below](#the-bootstrap-key-flux-systemsops-age)). Inventory of every
 secret: docs/cluster.md, "Secrets (all of them)".
@@ -133,6 +134,9 @@ secret: docs/cluster.md, "Secrets (all of them)".
 | `open-webui/open-webui-secrets` | `OAUTH_CLIENT_SECRET`, `WEBUI_SECRET_KEY` ([Open WebUI](#open-webui)) | `deploy/open-webui` (env) |
 | `cloudflared/tunnel-credentials` | `credentials.json` ([Cloudflare tunnel](#cloudflare-tunnel)) | `deploy/cloudflared` (file, read at start) |
 | `cert-manager/cluster-ca` (`type: kubernetes.io/tls`) | `ca.crt` (the root), `tls.crt` (intermediate + root), `tls.key` ([cert-manager](#cert-manager)) | nothing to restart: the ClusterIssuer reads it on each signature |
+| `cluster-pki/k8s-ca` (`type: kubernetes.io/tls`) | `ca.crt` (the root), `tls.crt` (the k8s intermediate), `tls.key` (docs/pki.md, "Phase 2 operations") | nothing to restart: the Issuer `k8s-ca` reads it on each signature |
+| `cluster-pki/etcd-ca` (`type: kubernetes.io/tls`) | `ca.crt` (the root), `tls.crt` (the etcd intermediate), `tls.key` (docs/pki.md, "Phase 2 operations") | nothing to restart: the Issuer `etcd-ca` reads it on each signature |
+| `cluster-pki/front-proxy-ca` (`type: kubernetes.io/tls`) | `ca.crt` (the root), `tls.crt` (the front-proxy intermediate), `tls.key` (docs/pki.md, "Phase 2 operations") | nothing to restart: the Issuer `front-proxy-ca` reads it on each signature |
 | `flux-system/webhook-token` | `token`, no trailing newline (the Receiver's HMAC key; `components/flux/receiver.nix`) | nothing to restart; then update the GitHub secrets `FLUX_WEBHOOK_TOKEN` and `FLUX_WEBHOOK_URL` (the path is derived from the token: docs/ci.md) |
 
 - **Render.** `render.nix` copies each file byte for byte (never parsed
