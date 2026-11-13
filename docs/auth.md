@@ -125,9 +125,9 @@ What counts as an rssh failure (all are ignored, then u2f runs):
 pam_u2f fails at once when no FIDO device is plugged into the host. Its
 loop has no wait (pam_u2f 1.4.0 `util.c`, `do_authentication`), so on a
 host without a plugged-in key, sudo over SSH without an agent fails
-quickly. With a key plugged into the host (the YubiKey normally sits in
-c4130), u2f prints `Please touch the FIDO authenticator.` and waits for a
-touch on that key.
+quickly. While a key is plugged into the host (only ever deliberately and
+for a moment; see [Caveats](#caveats)), u2f prints `Please touch the FIDO
+authenticator.` and waits for a touch on that key.
 
 On failure sudo still retries the stack three times and then says
 `3 incorrect password attempts`, although no password was asked for.
@@ -320,11 +320,13 @@ These cases are why the second key is a hard prerequisite.
 
 ## Caveats
 
-- **The parked key is a u2f path for any admin shell.** The YubiKey
-  normally sits in c4130. Anyone with an admin shell there (Tailscale SSH
-  needs only tailnet identity) gets a working u2f path, and only a
-  physical touch on c4130 is missing. Unplug the key from a host whose
-  sudo should need your client-side touch only.
+- **A key plugged into a host is a u2f path for any admin shell there.**
+  The YubiKey (serial 19830800) travels with the user and is never parked
+  in a host. Plugging it (or the second key) into a host, for the console
+  or for sops work, is a deliberate, temporary act. While it is plugged in,
+  any admin shell on that host (Tailscale SSH needs only tailnet identity)
+  gets a touch-only u2f path to sudo: nothing but a physical touch is
+  missing. Unplug it as soon as you are done.
 - **pam_rssh 1.2.0 does not check the FIDO user-presence bit.** The touch
   is enforced by the client, because the key was made without
   `no-touch-required`.
