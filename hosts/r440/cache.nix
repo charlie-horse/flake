@@ -25,12 +25,16 @@
 # masqueraded to those IPs), and keeps the htpasswd in one file on the one
 # host that serves the store (no Kubernetes Secret).
 #
-# Secrets, never in git, the store or a command line (docs/cluster.md):
-#   /var/lib/secrets/harmonia.secret  signing key (root, 0600; existing)
-#   /var/lib/nix-cache/htpasswd       basic-auth users (root:nginx, 0640),
-#                                     one line per client (ci, famine,
-#                                     c4130, m2mini, ...): `<user>:<hash>`.
-#                                     Missing file: every request gets 500.
+# Secrets: sops-nix, keys of secrets/r440.yaml (encrypted in git; never
+# in plaintext in git, the store or a command line; docs/cluster.md):
+#   harmonia-signing-key  signing key `r440-cache-1:<base64>` (root, 0600).
+#                         Was /var/lib/secrets/harmonia.secret.
+#   nix-cache-htpasswd    basic-auth users (root:nginx, 0640), one line per
+#                         client (ci, famine, c4130, m2mini, ...):
+#                         `<user>:<SHA-512 crypt hash>` (`openssl passwd
+#                         -6`). Missing file: every request gets 500. Was
+#                         /var/lib/nix-cache/htpasswd.
+# Shred both old files once the sops ones are live.
 #
 # Read-only: harmonia only serves; nginx rejects everything but GET/HEAD.
 {
@@ -45,17 +49,36 @@ let
   # harmonia -> nginx. In /run itself: /run/harmonia is the service's
   # RuntimeDirectory and is removed when it stops.
   socket = "/run/harmonia-cache.sock";
-  htpasswdDir = "/var/lib/nix-cache";
 
   # Same sources as the cluster ports (modules/cluster/firewall.nix).
   nodeSources = lib.unique (lib.mapAttrsToList (_: n: n.lanIP) cluster.nodes ++ [ cluster.vip ]);
 in
 {
+  # --- secrets -------------------------------------------------------------
+  sops.secrets = {
+    # Read once at start (systemd LoadCredential), hence the restart.
+    harmonia-signing-key = {
+      owner = "root";
+      group = "root";
+      mode = "0600";
+      restartUnits = [ "harmonia.service" ];
+    };
+    # nginx opens auth_basic_user_file on every request; the reload is
+    # only belt and braces.
+    nix-cache-htpasswd = {
+      owner = "root";
+      group = config.services.nginx.group;
+      mode = "0640";
+      reloadUnits = [ "nginx.service" ];
+    };
+  };
+
   # --- harmonia ----------------------------------------------------------
-  # Signing key generated on r440 (never leaves it): see the switch steps.
+  # Signing key `r440-cache-1`; its public half is cluster.binaryCache.
+  # publicKey (cluster/definition.nix).
   services.harmonia.cache = {
     enable = true;
-    signKeyPaths = [ "/var/lib/secrets/harmonia.secret" ];
+    signKeyPaths = [ config.sops.secrets.harmonia-signing-key.path ];
     # The default for clients that set none; ours set ?priority=
     # (modules/system/nix-cache.nix).
     settings.priority = 30;
@@ -87,7 +110,7 @@ in
         # Nix asks for thousands of .narinfo files; r440's root is a slow HDD.
         access_log off;
         auth_basic "nix cache";
-        auth_basic_user_file ${htpasswdDir}/htpasswd;
+        auth_basic_user_file ${config.sops.secrets.nix-cache-htpasswd.path};
         # Never in a shared cache (Cloudflare's edge included), even
         # though every response needs the password.
         add_header Cache-Control "private, no-store" always;
@@ -114,10 +137,6 @@ in
       };
     };
   };
-  systemd.tmpfiles.rules = [
-    "d ${htpasswdDir} 0750 root ${config.services.nginx.group} -"
-  ];
-
   # --- firewall ------------------------------------------------------------
   networking.firewall.extraCommands = lib.concatMapStrings (src: ''
     iptables -A nixos-fw -p tcp -s ${src} --dport ${toString cache.port} -j nixos-fw-accept

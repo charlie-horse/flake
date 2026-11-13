@@ -37,9 +37,9 @@ There is one root CA with two branches. The branches never share an
 intermediate.
 
 ```
-neurosis Root CA 2026          YubiKey slot 9c on c4130, P-384, 20 y, pathlen:1
+neurosis Root CA 2026          admin YubiKey (19830800) slot 9c, P-384, 20 y, pathlen:1
 ├── workload branch (in the cluster)
-│   └── neurosis workload CA       Secret cert-manager/cluster-ca, P-384, 2 y, pathlen:0
+│   └── neurosis workload CA       Secret cert-manager/cluster-ca (sops), P-384, 2 y, pathlen:0
 │         └── workload leaves      ClusterIssuer cluster-ca
 └── bootstrap branch (cluster-pki on r440)
     ├── neurosis k8s CA            5 y, pathlen:0 → apiserver, kubelet, admin, ...
@@ -51,8 +51,8 @@ neurosis Root CA 2026          YubiKey slot 9c on c4130, P-384, 20 y, pathlen:1
 | --- | --- | --- |
 | For | etcd, kube-apiserver, controller-manager, scheduler, kubelet, kube-proxy, flannel client, front-proxy, service-account keys, admin kubeconfig | TLS for workloads in the cluster |
 | Made by | `cluster-pki` on r440 (this document) | cert-manager in the cluster (`k8s/components/infra/cert-manager/`, [k8s/README.md](../k8s/README.md#cert-manager)) |
-| CAs, *live* | k8s, etcd, front-proxy, each self-signed; keys only in `r440:~/.local/share/cluster-pki/neurosis` | `cluster-ca` (root Certificate from a `selfSigned` ClusterIssuer), key only in the Secret `cert-manager/cluster-ca` |
-| CAs, *pending* | the same three as intermediates signed by the root (`cluster-pki --ca-csr`, then `--ca-import`); keys still only on r440 | `cluster-ca` becomes the workload intermediate signed by the root. Its Secret is created out-of-band at the ceremony; the ClusterIssuer name stays the same |
+| CAs, *live* | k8s, etcd, front-proxy, each self-signed; keys only in `r440:~admin/.local/share/cluster-pki/neurosis` | `cluster-ca` (root Certificate from a `selfSigned` ClusterIssuer), key only in the Secret `cert-manager/cluster-ca` |
+| CAs, *pending* | the same three as intermediates signed by the root (`cluster-pki --ca-csr`, then `--ca-import`); keys still only on r440 | `cluster-ca` becomes the workload intermediate signed by the root. Its key is sops-encrypted in git (`k8s/secrets/cert-manager/cluster-ca.sops.yaml`) and the Flux Kustomization `secrets` applies the Secret; the ClusterIssuer name stays the same |
 | Trusts | its own intermediate only ([anchor rule](#the-anchor-rule)) | the root |
 | Delivered as | files in `/var/lib/kubernetes/secrets/` (`cluster-pki-deploy`) | Secrets, issued on request (`issuerRef: {kind: ClusterIssuer, name: cluster-ca}`) |
 
@@ -74,16 +74,17 @@ leaves into the cluster is a later phase with its own prerequisites (plan,
 **Why the workload branch has its own intermediate.** The bootstrap CA keys
 never leave r440 (CLAUDE.md). A cert-manager `CA` issuer needs its key in a
 Secret, i.e. in etcd on all three nodes, readable by anyone with Secret
-access in `cert-manager`. The k8s CA in particular signs `system:masters`
+access in `cert-manager` (and, once it is in sops, by anyone holding Flux's
+age key or an admin sops identity). The k8s CA in particular signs `system:masters`
 and `system:node:*` client certs, so its key in the cluster would hand out
 cluster-admin. The workload intermediate signs nothing the apiserver or
 etcd trust, so a leak of it compromises workload TLS only. That holds only
 because of the anchor rule.
 
 **Workload intermediate renewal is manual** (*pending*). cert-manager does
-not renew a CA Secret it did not issue. Re-sign it with the root about 60
-days before its 2-year expiry. Leaf durations must stay under its remaining
-life.
+not renew a CA Secret it did not issue. About 60 days before its 2-year
+expiry, sign a new one with the root and replace the sops file (PR, merge;
+Flux applies it). Leaf durations must stay under its remaining life.
 
 ### The anchor rule
 
@@ -110,39 +111,44 @@ anchor, that chain does not verify.
 
 ## YubiKey root CA
 
-*Pending ceremony.* Nothing in this section exists yet. The ceremony is
-node F of the [migration plan](pki-migration-plan.md#ceremony-node-f), run
-on c4130 with Charlie physically present.
+*Pending ceremony.* The root key and cert do not exist yet. The ceremony is
+node F of the [migration plan](pki-migration-plan.md#ceremony-node-f).
+
+The root key goes on the **admin YubiKey** (YubiKey 5, serial 19830800),
+the card that already holds the sops admin age key in PIV slot 82 and the
+FIDO2 key `ssh:admin` ([cluster.md, Secrets](cluster.md#secrets-all-of-them),
+[auth.md](auth.md)). The root is a second PIV use on that card.
 
 | | |
 | --- | --- |
-| Card | the YubiKey plugged into c4130 (firmware 5.x or later, for P-384 and attestation) |
-| Slot | PIV **9c** (Digital Signature): the only signature slot, and its PIN is required before every signature. Why not 9a/9d/9e: plan, "Why slot 9c" |
+| Card | admin YubiKey, serial 19830800. It travels with the user and is never parked in a host |
+| Slot | PIV **9c** (Digital Signature): the only signature slot, and its PIN is required before every signature. Why not 9a/9d/9e: plan, "Why slot 9c". Slot 82 (sops) is never touched |
 | Key | ECDSA P-384, generated on the card, not exportable |
-| Policies | `--pin-policy ALWAYS --touch-policy ALWAYS`: one signature per PIN entry plus a physical touch. Nobody can sign remotely, not even root on c4130 |
+| Policies | `--pin-policy ALWAYS --touch-policy ALWAYS`: one signature per PIN entry plus a physical touch. Nobody signs without the user, not even root on the host it is plugged into |
 | Root cert | `CN=neurosis Root CA 2026, O=neurosis`, 20 y, `CA:TRUE, pathlen:1`, `keyCertSign, cRLSign`. Also imported into slot 9c |
 | Signs | the four intermediates only: workload (every 2 y), k8s, etcd, front-proxy (every 5 y, or on rotation) |
 | In git (public) | `cluster/pki/`: the root cert (`root-ca.pem`, which `cluster-pki --ca-import` checks against), the slot attestation (`attest-9c.pem`) and the card's attestation cert (`attest-f9.pem`). The attestation proves the key was generated on the card and cannot be exported. The card serial and root fingerprint are recorded with them |
+| Where it runs | ad hoc, on c4130 or any machine with the card plugged in, like sops on c4130: as root via `sudo -i`, tools from `nix shell` (the ceremony tools package, pending, Linus), a temporary `pcscd --foreground --auto-exit` ([cluster.md, Secrets](cluster.md#secrets-all-of-them)). The user runs every step; a cloud session holds no PIN and runs no sudo |
 
 Rules:
 
-- **Never run `ykman piv reset`.** It wipes slot 9c, and with it the root
-  key. There is no copy.
-- **PIN and PUK.** Both are changed from the defaults at the ceremony and
-  stored offline (where: [cluster.md, Secrets](cluster.md#secrets-all-of-them)).
-  Three wrong PINs block the PIN; the PUK unblocks it. Three wrong PUKs
-  leave only a reset, which loses the key. Type the PIN at the prompt.
-  Never put it on a command line, in shell history or in a file.
-- **Management key.** Generated at the ceremony and stored on the card,
-  PIN-protected (`change-management-key --generate --protect`). No other
-  copy.
+- **Never run `ykman piv reset`.** It wipes every PIV slot: the root key in
+  9c and the sops key in 82. The root key has no copy.
+- **PIN, PUK and management key are already set** for the sops key and are
+  not changed by the ceremony. The PIN is held by the user, offline. The
+  PUK is in sops (`secrets/admin.yaml`). The management key is random and
+  PIN-protected on the card, so `ykman` asks for the PIN when it writes
+  slot 9c. Type the PIN at the prompt; never put it on a command line, in
+  shell history or in a file.
 - **No backup (accepted risk).** If the card is lost, broken or reset, the
   root is gone and every intermediate must be re-rooted under a new one.
   Nothing breaks at once: the bootstrap bundles anchor on their 5-year
   intermediates, and the workload intermediate lasts 2 years.
-- Consider keeping the card unplugged between ceremonies. Touch-always
-  stops remote signing, but a plugged-in card can still be pulled, or its
-  PIN guessed against the retry counter.
+- **One card holds the sops admin identity and the root.** Losing it costs
+  both. sops survives through `admin_backup` (a recipient of every file).
+  A blocked PIN is unblocked with the PUK; while the PIN is blocked the
+  card can't decrypt, so read the PUK from `secrets/admin.yaml` with
+  `admin_backup`.
 
 ## Inventory of the legacy PKI (2026-10-31)
 
@@ -267,8 +273,11 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
 ### On the operator machine: `./pki-out/` (gitignored, mode 0700)
 
 The operator machine is r440, whose `/etc/nixos` is the checkout of this
-repo. The live PKI there is `--out ~/.local/share/cluster-pki/neurosis`
-(outside the checkout), run as `nix run /etc/nixos#cluster-pki -- --out …`.
+repo. The live PKI there is `~admin/.local/share/cluster-pki/neurosis`
+(outside the checkout; in charlie's home until stage 2 of charlie's removal,
+docs/cluster.md), used as admin with
+`nix run /etc/nixos#cluster-pki -- --out ~/.local/share/cluster-pki/neurosis`.
+Nothing in the tool defaults to it: without `--out` it writes `./pki-out`.
 
 **CA subjects and the cluster name.** cluster-pki puts `cluster.name` into
 a CA's subject (`O=<name>, OU=cluster-pki, CN=<name> <ca> CA <date>`) only
@@ -357,8 +366,11 @@ cluster-pki-deploy <node> [--host H] [--staging DIR] [--dry-run]
 
 1. Verifies every leaf for the node against its bundle on the local machine.
 2. Streams the files with `tar | ssh` to `~/<staging>/<node>/` (default
-   `cluster-pki-staging`, mode 0700/0600). This works with fish as the
-   login shell, and needs neither rsync nor sudo.
+   `cluster-pki-staging`, mode 0700/0600), as the same user on the node
+   (admin: plain `ssh <node>` from admin on r440, through Tailscale SSH;
+   the tailnet SSH policy must allow admin from r440 to the node).
+   This works with fish as the login shell (admin's on m2mini), and needs
+   neither rsync nor sudo.
 3. Prints the exact `sudo install -m … -o … -g …` commands to paste into
    `ssh -t <node> bash`, then the restart and health-check commands. It
    never runs sudo itself.

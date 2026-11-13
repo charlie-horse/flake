@@ -1,8 +1,10 @@
 # GPU window on c4130: vllm.service is stopped at 22:00 and started again at
-# 05:55 (America/New_York), so charlie can use both V100s in between.
+# 05:55 (America/New_York), so the login users (admin, plus charlie while
+# custom.server.legacyCharlie.enable is on, modules/server/legacy-charlie.nix)
+# can use both V100s in between.
 #
 # - gpu-window-start: stops vllm.service (and nothing else).
-# - gpu-window-end:   kills the GPU processes owned by user `charlie`, then
+# - gpu-window-end:   kills the GPU processes owned by those users, then
 #                     starts vllm.service. 06:00 is the deadline.
 #
 # Both are oneshot services run by timers with Persistent = false, so a
@@ -17,7 +19,7 @@
 #   reboot between 22:00 and 06:00 starts vllm.service again (it is enabled),
 #   and the GPUs are then taken. Stop it again by hand, or switch outside the
 #   window.
-# - "charlie's" GPU processes means PIDs in user-<uid>.slice (a login session,
+# - A user's GPU processes means PIDs in user-<uid>.slice (a login session,
 #   tmux, a user service). A GPU pod run by kubelet as the same uid is in a
 #   kubepods cgroup, is not matched, and is only logged as skipped.
 {
@@ -27,7 +29,11 @@
   ...
 }:
 let
-  gpuUser = "charlie";
+  gpuUsers = [
+    "admin"
+  ]
+  ++ lib.optional config.custom.server.legacyCharlie.enable "charlie";
+  gpuUserList = lib.concatStringsSep " " gpuUsers;
   nvidiaSmi = "${config.hardware.nvidia.package.bin}/bin/nvidia-smi";
   systemctl = "${config.systemd.package}/bin/systemctl";
 
@@ -36,24 +42,31 @@ let
     rc=0
 
     # PIDs of compute processes on the GPUs, then keep only those owned by
-    # ${gpuUser}. A failing nvidia-smi is an error, but vllm.service is still
-    # started below.
+    # ${gpuUserList}. A failing nvidia-smi is an error, but vllm.service is
+    # still started below.
     if ! pids=$(${nvidiaSmi} --query-compute-apps=pid --format=csv,noheader,nounits); then
       echo "nvidia-smi failed; GPU processes not checked" >&2
       rc=1
       pids=""
     fi
 
-    # Kill only PIDs in ${gpuUser}'s user slice (user-<uid>.slice). The owner
-    # alone is not enough: a GPU pod from kubelet's device plugin can run as
-    # the same uid. Every other GPU PID is logged and left alone.
-    uid=$(${pkgs.coreutils}/bin/id -u ${gpuUser}) || { echo "no user ${gpuUser}" >&2; uid=""; rc=1; }
+    # Kill only PIDs in the owner's own user slice (user-<uid>.slice). The
+    # owner alone is not enough: a GPU pod from kubelet's device plugin can
+    # run as the same uid. Every other GPU PID is logged and left alone.
+    for u in ${gpuUserList}; do
+      ${pkgs.coreutils}/bin/id -u "$u" >/dev/null || { echo "no user $u" >&2; rc=1; }
+    done
     mine=""
     for pid in $pids; do
       owner=$(${pkgs.coreutils}/bin/stat -c %U "/proc/$pid" 2>/dev/null) || continue
       cg=$(${pkgs.coreutils}/bin/cat "/proc/$pid/cgroup" 2>/dev/null) || continue
-      if [ -n "$uid" ] && [ "$owner" = "${gpuUser}" ] && \
-         printf '%s\n' "$cg" | ${pkgs.gnugrep}/bin/grep -q "/user.slice/user-$uid.slice/"; then
+      match=""
+      for u in ${gpuUserList}; do
+        [ "$owner" = "$u" ] || continue
+        uid=$(${pkgs.coreutils}/bin/id -u "$u" 2>/dev/null) || continue
+        printf '%s\n' "$cg" | ${pkgs.gnugrep}/bin/grep -q "/user.slice/user-$uid.slice/" && match=1
+      done
+      if [ -n "$match" ]; then
         mine="$mine $pid"
       else
         echo "skipping GPU pid $pid (owner $owner, cgroup $(printf '%s' "$cg" | ${pkgs.coreutils}/bin/head -n1))"
@@ -61,7 +74,7 @@ let
     done
 
     if [ -n "$mine" ]; then
-      echo "stopping ${gpuUser}'s GPU processes:$mine"
+      echo "stopping login users' GPU processes:$mine"
       kill -TERM $mine 2>/dev/null || true
       for _ in $(seq 1 15); do
         alive=""
@@ -91,7 +104,7 @@ in
   };
 
   systemd.services.gpu-window-end = {
-    description = "GPU window: stop ${gpuUser}'s GPU processes, start vllm.service";
+    description = "GPU window: stop the GPU processes of ${gpuUserList}, start vllm.service";
     serviceConfig = {
       Type = "oneshot";
       ExecStart = endScript;

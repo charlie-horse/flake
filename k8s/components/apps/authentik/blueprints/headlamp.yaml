@@ -2,9 +2,9 @@
 # Headlamp forwards the ID token to the apiserver, which trusts this
 # provider's issuer (.../application/o/headlamp/) with audience `headlamp`
 # (cluster/definition.nix oidc.extraIssuers). authentik generates the client
-# secret; it goes into the hand-made Secret headlamp/headlamp-oidc
-# (k8s/README.md), never into git. @HEADLAMP_HOST@ is filled in by
-# blueprints.nix.
+# secret; it goes into the Secret headlamp/headlamp-oidc, sops-encrypted
+# in k8s/secrets/ (k8s/README.md, "Headlamp"), never into git in the clear.
+# @HEADLAMP_HOST@ is filled in by blueprints.nix.
 version: 1
 metadata:
   name: neurosis - headlamp OIDC

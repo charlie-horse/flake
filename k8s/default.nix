@@ -8,7 +8,9 @@
 # A function of { inputs, pkgs, lib } returning
 #
 #   manifests     the rendered tree: <component>/<plural kind>.yaml
-#                 (deferred components: deferred/<component>/...)
+#                 (deferred components: deferred/<component>/...;
+#                 sops-encrypted Secrets, copied verbatim from ./secrets:
+#                 deferred/secrets/<namespace>/<name>.sops.yaml)
 #   checkImages   a script: every image in the tree must be a manifest list
 #                 with linux/amd64 and linux/arm64 (network; not sandboxed)
 #   components    the evaluated catenix configurations (for `nix eval`)
@@ -79,6 +81,16 @@ let
     dir = "deferred";
     modules = {
       "infra/cert-manager-issuers" = ./components/infra/cert-manager/issuers.nix;
+    };
+    # sops-encrypted Secrets: every ./secrets/<namespace>/<name>.sops.yaml
+    # is copied verbatim (never parsed or re-serialised: that would break
+    # the sops MAC) to <dir>/<name>/<namespace>/<name>.sops.yaml and applied
+    # by the Kustomization `<name>`, which decrypts them with the age key
+    # in flux-system/sops-age (components/flux/secrets.nix, k8s/README.md
+    # "Secrets").
+    secrets = {
+      name = "secrets";
+      src = ./secrets;
     };
   };
 in

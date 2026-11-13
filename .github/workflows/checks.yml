@@ -3,7 +3,9 @@
 # (the c4130 closure alone is CUDA + torch + vLLM, far beyond a hosted
 # runner), never renders k8s (render.yml does) and never writes.
 #
-#   secrets-guard  keys, kubeconfigs or plaintext passwords in the diff
+#   secrets-guard  keys, kubeconfigs or plaintext passwords in the diff;
+#                  sops files (secrets/, k8s/**/*.sops.yaml) fully encrypted,
+#                  and each encrypted to exactly its .sops.yaml recipients
 #   flake-check    every flake output evaluates (nothing heavy is built)
 #   eval-hosts     each server's toplevel drvPath evaluates, for its system
 #   format         every tracked .nix file is nixfmt-formatted (`nix fmt`)
@@ -43,7 +45,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Fail on keys, kubeconfigs or plaintext passwords in the diff
+      - name: Fail on keys, kubeconfigs, plaintext passwords or unencrypted sops files
         env:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
@@ -106,13 +108,172 @@ jobs:
             status=1
           done < "$hits"
 
+          # 3. sops files: secrets/*.yaml and k8s/**/*.sops.yaml (.sops.yaml
+          #    at the root holds the recipients). Each added/modified one
+          #    must be fully sops-encrypted, checked on the whole file at
+          #    $head (not just the diff): a top-level `sops:` block with
+          #    `mac: ENC[...]` and at least one recipient, every value
+          #    outside it `ENC[...]`, every comment `#ENC[...]`. k8s files
+          #    may have only the top-level keys apiVersion kind metadata
+          #    type data stringData sops (the same set as checkSecret in
+          #    k8s/render.nix; k8s/README.md, "Secrets"), the first four in
+          #    the clear (Flux needs them), data/stringData encrypted.
+          #    Anything else under secrets/ or k8s/secrets/ (no .sops.yaml
+          #    suffix) is refused; k8s/render.nix rejects the same files at
+          #    render time. Only the file and the key path are printed,
+          #    never a value.
+          while IFS= read -r -d '' f; do
+            case "$f" in
+              secrets/*/*) mode=bad ;;
+              secrets/*.yaml) mode=strict ;;
+              secrets/*) mode=bad ;;
+              k8s/*.sops.yaml) mode=k8s ;;
+              k8s/secrets/*) mode=badk8s ;;
+              *) continue ;;
+            esac
+            if [ "$mode" = bad ]; then
+              echo "::error file=$f::only sops-encrypted secrets/<name>.yaml files belong in secrets/"
+              status=1
+              continue
+            fi
+            if [ "$mode" = badk8s ]; then
+              echo "::error file=$f::only sops-encrypted k8s/secrets/<namespace>/<name>.sops.yaml files belong in k8s/secrets/"
+              status=1
+              continue
+            fi
+            if ! git show "$head:$f" | python3 -I -c '
+          import re, sys, yaml
+          mode, name = sys.argv[1], sys.argv[2]
+          raw = sys.stdin.read()
+          enc = re.compile(r"^ENC\[[A-Z0-9_]+,data:.*\]$", re.S)
+          bad = []
+          for i, line in enumerate(raw.splitlines(), 1):
+              t = line.strip()
+              if t.startswith("#") and not t.startswith("#ENC["):
+                  bad.append(f"line {i}: plaintext comment")
+          try:
+              docs = list(yaml.safe_load_all(raw))
+          except yaml.YAMLError:
+              docs = None
+          if not docs or len(docs) != 1 or not isinstance(docs[0], dict):
+              print(f"{name}: not a single YAML mapping (sops-encrypted?)")
+              sys.exit(1)
+          doc = docs[0]
+          meta = doc.get("sops")
+          if not isinstance(meta, dict) or not enc.match(str(meta.get("mac", ""))):
+              bad.append("no sops block with mac: ENC[...]")
+          elif not any(meta.get(k) for k in ("age", "pgp", "kms", "gcp_kms", "azure_kv", "hc_vault")):
+              bad.append("sops block has no recipients")
+          clear = ("apiVersion", "kind", "metadata", "type") if mode == "k8s" else ()
+          # k8s: the same top-level key set as checkSecret in k8s/render.nix.
+          allowed = clear + ("data", "stringData", "sops")
+          if mode == "k8s":
+              names = " ".join(allowed)
+              for k in doc:
+                  if k not in allowed:
+                      bad.append(f"top-level key {k} not allowed (allowed: {names})")
+          def walk(v, path):
+              if isinstance(v, dict):
+                  for k, x in v.items():
+                      walk(x, path + [str(k)])
+              elif isinstance(v, list):
+                  for j, x in enumerate(v):
+                      walk(x, path + [str(j)])
+              elif v is not None and not (isinstance(v, str) and enc.match(v)):
+                  bad.append("unencrypted value at " + ".".join(path))
+          for k, v in doc.items():
+              if k == "sops" or k in clear or (mode == "k8s" and k not in allowed):
+                  continue
+              walk(v, [str(k)])
+          for b in bad:
+              print(f"{name}: {b}")
+          sys.exit(1 if bad else 0)
+          ' "$mode" "$f"; then
+              echo "::error file=$f::not fully sops-encrypted (see above; encrypt with sops, rules in .sops.yaml)"
+              status=1
+            fi
+          done < <(git diff --name-only -z --diff-filter=ACMRT "$base" "$head")
+
           if [ "$status" -ne 0 ]; then
-            echo "Secrets belong in /var/lib/kubernetes/secrets on the hosts" \
-              "(see docs/pki.md), never in git or the Nix store." >&2
+            echo "Secrets go in git only sops-encrypted (secrets/*.yaml," \
+              "k8s/**/*.sops.yaml; docs/cluster.md), cluster PKI in" \
+              "/var/lib/kubernetes/secrets (docs/pki.md); never plaintext" \
+              "in git or the Nix store." >&2
           else
             echo "no secrets found"
           fi
           exit "$status"
+
+      # Every sops file in the tree (not just the diff: a .sops.yaml change
+      # alone can break files nobody touched) must be encrypted to exactly
+      # the age recipients of the first .sops.yaml creation rule whose
+      # path_regex matches it, as sops itself picks the rule. A mismatch
+      # means the file was not re-wrapped (`sops updatekeys <file>`) after
+      # a recipient change, so a host would fail to decrypt it (and come up
+      # without admin's password); the host-side pre-switch check
+      # (modules/system/sops.nix) would then refuse to switch. Uses only
+      # public keys. PyYAML resolves the .sops.yaml anchors (*c4130, ...).
+      - name: sops files are encrypted to their .sops.yaml recipients
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016 # Python program, backticks in messages
+          git ls-files -z -- 'secrets/*.yaml' 'k8s/secrets/**/*.sops.yaml' \
+            | python3 -I -c '
+          import re, sys, yaml
+          raw = open(".sops.yaml").read()
+          cfg = yaml.safe_load(raw)
+          # age1... -> anchor name, for readable messages.
+          names = {k: n for n, k in re.findall(r"&(\S+)\s+(age1[0-9a-z]+)", raw)}
+          def label(r):
+              return f"{names[r]} ({r})" if r in names else r
+          def ages(v):
+              if not v:
+                  return set()
+              if isinstance(v, str):
+                  v = v.split(",")
+              return {a.strip() for a in v if a.strip()}
+          def rule_recipients(rule):
+              rs = ages(rule.get("age"))
+              for g in rule.get("key_groups") or []:
+                  rs |= ages(g.get("age"))
+              return rs
+          def file_recipients(meta):
+              entries = list(meta.get("age") or [])
+              for g in meta.get("key_groups") or []:
+                  entries += g.get("age") or []
+              return {e["recipient"].strip() for e in entries}
+          files = [f for f in sys.stdin.read().split("\0") if f]
+          if not files:
+              print("no sops files found")
+              sys.exit(1)
+          status = 0
+          for f in sorted(files):
+              rule = next((r for r in cfg.get("creation_rules") or []
+                           if re.search(r.get("path_regex", ""), f)), None)
+              if rule is None:
+                  print(f"::error file={f}::no creation rule in .sops.yaml matches {f}")
+                  status = 1
+                  continue
+              meta = (yaml.safe_load(open(f)) or {}).get("sops")
+              if not isinstance(meta, dict):
+                  print(f"::error file={f}::no sops metadata (not encrypted?)")
+                  status = 1
+                  continue
+              want, have = rule_recipients(rule), file_recipients(meta)
+              other = [k for k in ("pgp", "kms", "gcp_kms", "azure_kv", "hc_vault") if meta.get(k)]
+              if want == have and not other:
+                  print(f"ok  {f}: {len(have)} recipients")
+                  continue
+              status = 1
+              rx = rule.get("path_regex")
+              msg = [f"recipients differ from .sops.yaml rule {rx}"]
+              msg += [f"missing {label(r)}" for r in sorted(want - have)]
+              msg += [f"extra {label(r)}" for r in sorted(have - want)]
+              msg += [f"unexpected {k} keys" for k in other]
+              print(f"::error file={f}::" + "; ".join(msg)
+                    + f". Run `sops updatekeys {f}` (dev shell) and commit it.")
+          sys.exit(status)
+          '
 
   # ------------------------------------------------------------------------
   flake-check:

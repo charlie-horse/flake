@@ -11,12 +11,11 @@ let
   inherit (lib.generators)
     toGitINI
     ;
-  inherit (config.age)
-    secrets
-    ;
-  inherit (config.custom)
-    age
-    ;
+  # The ssh:admin FIDO2 key (admin's sk- authorized key,
+  # modules/system/admin.nix): git signs through the ssh agent with it.
+  signingKey =
+    lib.findFirst (lib.hasPrefix "sk-") null
+      config.users.users.admin.openssh.authorizedKeys.keys;
 
   systemConfig = {
     url."git@github.com:".insteadOf = [
@@ -36,18 +35,16 @@ let
     status.short = true;
   };
   userConfig = {
-    user.name = "Charlie Syvertsen";
-    user.email = "charliesyvertsen06@icloud.com";
-  }
-  // (
-    if age.enable then
-      {
-        alias.yk5 = "config --replace-all user.signingkey ${secrets.ssh-yubikey-5.path}";
-        alias.yk5c = "config --replace-all user.signingkey ${secrets.ssh-yubikey-5c.path}";
-      }
-    else
-      { }
-  );
+    user = {
+      name = "Charlie Syvertsen";
+      email = "charliesyvertsen06@icloud.com";
+    }
+    # Sign with the ssh:admin key from the agent (gpg.format = ssh above;
+    # `key::` = a literal public key, no key file needed).
+    // lib.optionalAttrs (signingKey != null) {
+      signingkey = "key::${signingKey}";
+    };
+  };
 in
 mkMerge [
   {

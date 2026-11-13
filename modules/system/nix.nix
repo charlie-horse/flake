@@ -11,21 +11,25 @@ in
   nix.gc.automatic = true;
   nix.nixPath = [ "nixpkgs=${nixpkgs}" ];
   environment.variables.NIXPKGS_ALLOW_UNFREE = "1";
-  nix.settings =
-    let
-      users = [
-        "root"
-        user.name
-      ];
-    in
-    {
-      experimental-features = [
-        "flakes"
-        "nix-command"
-      ];
-      auto-optimise-store = true;
-      trusted-users = users;
-      allowed-users = users;
-    };
+  nix.settings = {
+    experimental-features = [
+      "flakes"
+      "nix-command"
+    ];
+    auto-optimise-store = true;
+    # trusted-users is root-equivalent (it can import unsigned store paths
+    # and set any nix option), so it follows wheel: root and admin only.
+    # The desktop user is not in wheel (modules/system/user.nix) and may
+    # only use the daemon.
+    trusted-users = [
+      "root"
+      "admin"
+    ];
+    allowed-users = [
+      "root"
+      "admin"
+      user.name
+    ];
+  };
   system.stateVersion = "23.05";
 }

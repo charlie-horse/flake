@@ -33,6 +33,12 @@
 #     lanIP              string  LAN address (node InternalIP, VRRP, VXLAN)
 #     lanInterface       string  LAN NIC (VRRP interface)
 #     tailnetIP          string  Tailscale address (what <name> resolves to)
+#     sshHostKey         string  public half of /etc/ssh/ssh_host_ed25519_key
+#                        ("ssh-ed25519 AAAA...", no comment). Pinned in
+#                        every host's ssh_known_hosts (modules/programs/
+#                        ssh.nix); Tailscale SSH presents the same key. Its
+#                        ssh-to-age is the host's anchor in .sops.yaml, so a
+#                        reinstalled host changes both.
 #     roles              list of "etcd" | "controlPlane" | "worker"
 #     gpu                bool    NVIDIA GPUs (container toolkit, nvidia
 #                                RuntimeClass handler, gpu.present label)
@@ -162,7 +168,8 @@
   # r440's Nix binary cache (harmonia). Not a Service: the tunnel's nginx
   # sidecar forwards to http://<nodes.r440.lanIP>:<port>, where nginx on
   # r440 asks for HTTP basic auth (hosts/r440/cache.nix). The signing key
-  # stays on r440 (/var/lib/secrets/harmonia.secret); this is its public half.
+  # stays on r440 (sops key harmonia-signing-key in secrets/r440.yaml; was
+  # /var/lib/secrets/harmonia.secret); this is its public half.
   binaryCache = {
     host = "cache.neuros.is";
     node = "r440";
@@ -194,6 +201,7 @@
       lanIP = "10.0.0.95";
       lanInterface = "eno1";
       tailnetIP = "100.74.71.16";
+      sshHostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDUwlxfYy40XJz4tlWpAIyHjnK0lODwr/1kUgYfGElz7";
       roles = [
         "etcd"
         "controlPlane"
@@ -244,6 +252,7 @@
       lanIP = "10.0.0.239";
       lanInterface = "eno1";
       tailnetIP = "100.81.238.37";
+      sshHostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKEBW4ZqM6suV2KILiqUgRSOiXs14BvUaZNp3fkE3AuG";
       roles = [
         "etcd"
         "controlPlane"
@@ -266,6 +275,7 @@
       lanIP = "10.0.0.147";
       lanInterface = "end0";
       tailnetIP = "100.71.194.116";
+      sshHostKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICzEbLMGd6J5cm5Gsxuvr/YOAk2PkrbUXS4w12HUFr7v";
       roles = [
         "etcd"
         "controlPlane"

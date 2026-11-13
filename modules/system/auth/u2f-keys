@@ -1,0 +1,10 @@
+# pam_u2f mapping for custom.auth.hardwareFactor
+# (modules/system/auth/default.nix). Public data (key handles and public
+# keys), safe in git.
+#
+# YubiKey 19830800 registered 2026-11-13 (one credential). The second
+# FIDO2 key is still missing, so enabling custom.auth.hardwareFactor
+# still fails evaluation: append its credential to the SAME line with
+# `pamu2fcfg -n -u admin -o pam://neurosis -i pam://neurosis`
+# (docs/auth.md, "Registering the keys").
+admin:qT9NNgWFHgJQlCuqbEdcMhEnU1XQEtHmD2CCMDSPFLuvBcbFGMPOTuIGCwcFVTs9ss9TXxkg+3jWszaoCOVMHA==,aOx/l/lzPWfDqLn1T+Q/58nKzgdxweTadB/BKDEyzcyGFkaGxnAIYPvS1SEHUzRCSQMHUvE8v8Ja4QZex/jj3Q==,es256,+presence
