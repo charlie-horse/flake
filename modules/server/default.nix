@@ -18,12 +18,20 @@
     # Authentication policy (sshd keys only, sudo, polkit, console; the
     # hardware factor): one module for every host, docs/auth.md.
     ../system/auth
+    # The ssh client (cluster Host block, known host keys), shared with the
+    # desktops.
+    ../programs/ssh.nix
     # charlie next to admin, mutable users, root untouched until
     # custom.server.legacyCharlie.enable is turned off; then admin is the
     # only login and root is locked (docs/cluster.md, "Removing charlie
     # from the servers").
     ./legacy-charlie.nix
   ];
+
+  # No local ssh-agent: on a server, ssh and sudo (pam_rssh) use the agent
+  # forwarded from the client; a local, empty agent would take its place
+  # whenever none is forwarded.
+  programs.ssh.startAgent = false;
 
   environment.systemPackages = [
     # /etc/nixos is a checkout of this flake on the servers.

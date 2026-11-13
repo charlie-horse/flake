@@ -107,6 +107,54 @@ nix build --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s.manife
   `https://kube-api.leaffish-monster.ts.net:6443` from anywhere on the
   tailnet (Tailscale Service, below).
 
+### SSH between the hosts
+
+Every host (the servers and Famine) has the same ssh client config,
+`modules/programs/ssh.nix`, so `ssh c4130` works without options, from a
+desktop and from one server to the next:
+
+- `/etc/ssh/ssh_config` has a `Host` block for `c4130 r440 m2mini` and their
+  `*.leaffish-monster.ts.net` names (names only, no IPs): `User admin`,
+  `ForwardAgent yes`, `IdentitiesOnly yes`, and an `IdentityFile` that holds
+  only the **public** half of the YubiKey's `ssh:admin` resident key (taken
+  from admin's authorized keys, `modules/system/admin.nix`). With a public
+  `IdentityFile`, ssh offers exactly that key from the agent, local or
+  forwarded, and no other. No key handle is deployed anywhere.
+- `/etc/ssh/ssh_known_hosts` pins each server's ed25519 host key
+  (`cluster/definition.nix`, `nodes.<n>.sshHostKey`) for its name, FQDN,
+  LAN and tailnet address (plus the bond0 addresses 10.25.0.1/.2). Tailscale
+  SSH presents the same host keys. After a reinstall, update `sshHostKey`
+  and the host's `.sops.yaml` anchor together.
+- The agent must hold the `ssh:admin` key: on Linux `ssh-add -K` with the
+  YubiKey plugged in (or `ssh-keygen -K` once, then `ssh-add` the
+  `id_ed25519_sk_rk_admin` file it writes). The servers run no agent of
+  their own; they use the forwarded one (sudo's hardware factor needs it
+  too, [auth.md](auth.md)).
+- By IP (e.g. over the LAN when Tailscale is down) the block does not
+  apply: `ssh -A admin@10.0.0.95`. c4130's remote builds
+  (`nixremote@10.25.0.2`, `hosts/c4130/builder.nix`) keep their own user
+  and key for the same reason.
+- Agent forwarding lets root on the host you are on use your key while you
+  are connected (relay caveat in [auth.md](auth.md)).
+
+**Windows** (Win32-OpenSSH 8.9 or newer): set the `ssh-agent` service to
+Automatic and start it, then in `%USERPROFILE%\.ssh`, with the YubiKey
+plugged in, run `ssh-keygen -K` and `ssh-add .\id_ed25519_sk_rk_admin`
+(details: [auth.md](auth.md), "Clients: forwarding the agent"). In
+`%USERPROFILE%\.ssh\config`:
+
+```
+Host c4130 r440 m2mini c4130.leaffish-monster.ts.net r440.leaffish-monster.ts.net m2mini.leaffish-monster.ts.net
+  User admin
+  ForwardAgent yes
+  IdentitiesOnly yes
+  IdentityFile ~/.ssh/id_ed25519_sk_rk_admin.pub
+```
+
+and copy the three host-key lines from any server's
+`/etc/ssh/ssh_known_hosts` into `%USERPROFILE%\.ssh\known_hosts`, or check
+the fingerprint at the first connection against `sshHostKey`.
+
 ## Tailscale
 
 All three servers' Tailscale prefs are in Nix:
