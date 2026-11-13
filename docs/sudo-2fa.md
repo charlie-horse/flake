@@ -239,11 +239,13 @@ sudo on every host that has this on.
 
 ## Limits and caveats
 
-- **sshd still accepts admin's password.** `services.openssh` on the servers
-  keeps NixOS's defaults (`PasswordAuthentication` and
-  `KbdInteractiveAuthentication` true), so a leaked password still gives an
-  admin *shell* over plain SSH (LAN, port 22), though no root. Turning both
-  off in `modules/server` closes that; it is not part of this module.
+- **sshd is keys only** on the servers (`modules/server/default.nix`:
+  `PasswordAuthentication` and `KbdInteractiveAuthentication` off), so a
+  leaked password gives no shell over plain SSH either.
+- **Prerequisite: a second FIDO2 key.** Both factors and admin's SSH login
+  live on YubiKey #19830800. Do not enable `custom.sudo2fa` on any host until
+  a second key is registered for u2f (`u2fKeysFile`), rssh (`rsshKeys`) and
+  admin's `openssh.authorizedKeys` (decided 2026-11).
 - Console login as admin needs only the password (by design, for
   recovery); sudo on the console then needs the YubiKey touch.
 - pam_rssh 1.2.0 does not check the user-presence bit of the FIDO signature;

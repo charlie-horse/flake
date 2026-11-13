@@ -23,6 +23,13 @@
     ./legacy-charlie.nix
   ];
 
+  # sshd: keys only. A leaked admin password must not give a shell over
+  # plain SSH (LAN, port 22); Tailscale SSH does not use sshd's auth.
+  services.openssh.settings = {
+    PasswordAuthentication = false;
+    KbdInteractiveAuthentication = false;
+  };
+
   environment.systemPackages = [
     # /etc/nixos is a checkout of this flake on the servers.
     pkgs.git
