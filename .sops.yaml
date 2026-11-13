@@ -16,9 +16,13 @@ keys:
   - &c4130 age1jkfgs08xx6h07x0feqxxh2urnngpu5unt40hrs74t8pz37m3qags2mamet
   - &r440 age13g3xjkuy4fuvc7lusza526vl47ljyc5qx0452dq2z7hufhr45egq9wssep
   - &m2mini age1f25zd3jg5k8unh27rnmrlejmh8lxp2tep33rt5hp25d7k98773uqsdr0pn
-  - &famine TODO-famine-age-recipient # ssh-to-age of Famine's ssh_host_ed25519_key.pub
+  # Famine: not a recipient yet (offline; its host key is created on first
+  # activation). Before Famine's first sops switch: generate the key there
+  # (`sudo ssh-keygen -A`), add `- &famine <ssh-to-age of it>` here, add
+  # *famine to the common.yaml and famine.yaml rules, then `sops updatekeys`
+  # both files. Until then Famine cannot decrypt and must not switch.
   # Flux (in-cluster decryption of k8s secrets).
-  - &flux TODO-flux-age-recipient
+  - &flux age1ynj83hcd8zmscx4us80q6hqzxmr0d69hv3vr8extl5kvjqd92agqypgdux # flux-system/sops-age
 
 creation_rules:
   # Every host.
@@ -30,7 +34,6 @@ creation_rules:
           - *c4130
           - *r440
           - *m2mini
-          - *famine
   # One host each (sops.defaultSopsFile = secrets/<lowercase hostname>.yaml).
   - path_regex: ^secrets/c4130\.yaml$
     key_groups:
@@ -43,12 +46,12 @@ creation_rules:
       - age: [*admin_yubikey, *admin_backup, *m2mini]
   - path_regex: ^secrets/famine\.yaml$
     key_groups:
-      - age: [*admin_yubikey, *admin_backup, *famine]
+      - age: [*admin_yubikey, *admin_backup]
   # Kubernetes secrets decrypted in-cluster by Flux (kustomize-controller's
   # sops decryption). Only the values under data/stringData are encrypted.
-  # NOTE: path pattern agreed with the k8s side (Linus); adjust if the
-  # encrypted manifests end up elsewhere.
-  - path_regex: ^k8s/.*\.sops\.yaml$
+  # Layout enforced by k8s/render.nix: k8s/secrets/<namespace>/<name>.sops.yaml.
+  # Sort keys before encrypting (see k8s/README.md, "Secrets").
+  - path_regex: (^|/)k8s/secrets/[^/]+/[^/]+\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:
       - age: [*admin_yubikey, *admin_backup, *flux]
