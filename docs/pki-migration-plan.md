@@ -86,7 +86,7 @@ D docs ────────┘
 | **D** docs | `pki.md`: rewrite the two-PKI table into one root and two branches. `cluster.md` Secrets table: add rows for the YubiKey PIN, PUK and management key (where they live), the workload intermediate Secret, and the root cert in git (public). | PR |
 | **E** rehearsal | Run the full ceremony script against a **software** P-384 key (tmpfs) on r440. Confirm that `step certificate sign --kms` (or the `openssl x509 -req -provider pkcs11` fallback) produces the right extensions, and that etcd, the apiserver and the kubelet accept intermediate-anchored bundles in a kind/test env. | Script known good |
 | **F** ceremony | On c4130, **with you physically there** (touch). Steps below. | Root cert, attestation, 4 signed intermediates |
-| **G** workload cutover | Create Secret `cert-manager/cluster-ca`, merge C, check that Flux reconciles `cert-manager-issuers`, issue a test Certificate, `openssl verify -CAfile root.pem`. | |
+| **G** workload cutover | Create Secret `cert-manager/cluster-ca`, merge C, check that Flux reconciles `cert-manager-issuers`, issue a test Certificate, `openssl verify -CAfile root-ca.pem`. | |
 | **H** bootstrap rotation | Existing `--rotate-ca` flow, one CA at a time: front-proxy (lowest risk), then k8s, then etcd (per-node runbook). One host at a time, etcd health check after each. | All bootstrap certs chain to the root |
 
 Rough effort: A–D about 2–3 h of agent time in parallel. E about 1 h.
@@ -118,7 +118,7 @@ the PIN in shell history or on a command line.
    - workload: key and CSR generated on c4130 in tmpfs;
    - k8s, etcd, front-proxy: CSRs from `cluster-pki --ca-csr` on r440,
      copied over (CSRs are public).
-7. Commit `root.pem`, `attest-9c.pem` and `attest-f9.pem` to
+7. Commit `root-ca.pem`, `attest-9c.pem` and `attest-f9.pem` to
    `cluster/pki/` (public). Hand the workload key straight to
    `kubectl create secret tls`, then shred the tmpfs. Copy the three
    bootstrap intermediate certs back to r440 and run `--ca-import`.
