@@ -3,9 +3,12 @@
 # next poll. Reached through the tunnel at https://<cluster.fluxWebhook.host>
 # /hook/<path> (apps/cloudflared lets only /hook/ through for that host).
 #
-# The token is NOT in git: Secret flux-system/webhook-token, key `token`,
-# made by hand without a trailing newline (it is the HMAC key verbatim, and
-# the webhook path is derived from it: see k8s/README.md).
+# The token: Secret flux-system/webhook-token, key `token`, no trailing
+# newline (it is the HMAC key verbatim, and the webhook path is derived from
+# it), sops-encrypted in k8s/secrets/flux-system/webhook-token.sops.yaml and
+# applied by the Kustomization `secrets` (secrets.nix; k8s/README.md,
+# "Secrets"). Changing it means updating the GitHub secrets
+# FLUX_WEBHOOK_TOKEN and FLUX_WEBHOOK_URL too (docs/ci.md).
 { ... }:
 {
   resources."notification.toolkit.fluxcd.io".v1.Receiver.ghcr = {

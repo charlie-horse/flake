@@ -3,7 +3,7 @@
 # ./deferred/secrets/) from the same signed artifact as `flux-system`, and
 # decrypts them in kustomize-controller with the age key in the Secret
 # flux-system/sops-age (key `age.agekey`). That Secret is the one bootstrap
-# secret, made once by hand (k8s/README.md, "Secrets").
+# secret, made once by hand (k8s/README.md, "The bootstrap key").
 #
 # A Kustomization of its own, fenced off from `flux-system` like the deferred
 # components (stages.nix): a missing sops-age, a file encrypted to the

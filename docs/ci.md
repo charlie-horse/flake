@@ -79,10 +79,12 @@ The guard scans only the diff: the PR's merge-base to head, or on a push
   `secrets/*.yaml` and `k8s/**/*.sops.yaml` is checked as a whole (at the
   head commit, not just the diff). It needs a top-level `sops:` block with
   `mac: ENC[...]` and at least one recipient; every value outside that block
-  must be `ENC[...]` and every comment `#ENC[...]`. A k8s file may keep
-  `apiVersion`, `kind`, `type` and `metadata` in the clear (Flux reads them);
-  everything else (`data`, `stringData`, ...) must be encrypted. Any other
-  file under `secrets/` (a subdirectory, a non-`.yaml` file) fails.
+  must be `ENC[...]` and every comment `#ENC[...]`. A k8s file may have
+  only the top-level keys `apiVersion kind metadata type data stringData
+  sops` (the same set the render's `checkSecret` allows; k8s/README.md,
+  "Secrets"), the first four in the clear (Flux reads them), `data` and
+  `stringData` encrypted. Any other file under `secrets/` (a subdirectory,
+  a non-`.yaml` file) fails.
   Recipients: `.sops.yaml`.
 
 A second step checks **every** sops file in the tree (not only the diff,

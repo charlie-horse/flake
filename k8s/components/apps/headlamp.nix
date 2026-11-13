@@ -15,18 +15,17 @@
 # unsafeUseServiceAccountToken stays off. (The token is still mounted:
 # in-cluster mode reads the apiserver address and CA from it.)
 #
-# The client secret is NOT in git. The pod reads it from the Secret
-# `headlamp-oidc` (created once by hand, never by Flux), key
+# The client secret: the pod reads it from the Secret `headlamp-oidc`,
+# sops-encrypted in git (k8s/secrets/headlamp/headlamp-oidc.sops.yaml) and
+# applied by the Flux Kustomization `secrets` (k8s/README.md, "Secrets",
+# "Headlamp"), key
 #   OIDC_CLIENT_SECRET   the `headlamp` provider's client secret, copied
 #                        from authentik (Applications -> Providers ->
 #                        headlamp); generate nothing here
-# Client id, issuer, scopes and callback are plain env values below. Create
-# it with the value on stdin, never on a command line:
-#   (the namespace comes from Flux; this file must be applied first)
-#   kubectl -n headlamp create secret generic headlamp-oidc --from-env-file=/dev/stdin
-#   (then type or paste `OIDC_CLIENT_SECRET=<secret>`, Enter, Ctrl-D)
-# Until it exists the pod stays in CreateContainerConfigError, nothing else
-# breaks.
+# Client id, issuer, scopes and callback are plain env values below. The
+# value is read at start: restart the Deployment after a change. Until the
+# Secret is applied the pod stays in CreateContainerConfigError, nothing
+# else breaks.
 #
 # Pod security: the namespace enforces `restricted` (the image runs as uid
 # 100; non-root, seccomp RuntimeDefault, all capabilities dropped, no

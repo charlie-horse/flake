@@ -20,8 +20,9 @@ in
   # Unlike mkHost it does NOT import ../../modules wholesale (desktop,
   # home-manager, ...): a server gets only its host dir, the shared
   # cluster module (modules/cluster), the server baseline (modules/server:
-  # git, cloudflared, tailscale, sops-nix, the admin account; no other
-  # login account) and whatever `modules` adds.
+  # git, cloudflared, tailscale, sops-nix, the admin account, and charlie
+  # while custom.server.legacyCharlie.enable is on) and whatever `modules`
+  # adds.
   #
   #   mkServer {
   #       path = ./hosts/c4130;         # host dir (or file)

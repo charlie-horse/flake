@@ -346,7 +346,9 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
 The one inventory of every secret this repo depends on. Other docs keep
 their setup steps but point here. sops-encrypted files are in git
 (`secrets/*.yaml`, recipients in `.sops.yaml`, sops-nix:
-`modules/system/sops.nix`); every other secret lives outside git.
+`modules/system/sops.nix`; the cluster's app Secrets in
+`k8s/secrets/<namespace>/<name>.sops.yaml`, applied by Flux:
+k8s/README.md, "Secrets"); every other secret lives outside git.
 
 **Editing or re-wrapping a sops file with the YubiKey** is ad hoc: no host
 has sops, age-plugin-yubikey or pcscd installed permanently. On any machine
@@ -369,11 +371,12 @@ idle. The offline backup age key works anywhere without any of this
 | Cluster PKI (CA keys + leaves) | `r440:~admin/.local/share/cluster-pki/neurosis` (back it up; charlie's until 2026-11) | `cluster-pki` (docs/pki.md) |
 | Node keys and certs | `/var/lib/kubernetes/secrets/` on each node | `cluster-pki deploy` |
 | `cert-manager/cluster-ca` (workload root CA key) | Kubernetes Secret | cert-manager, in the cluster (declared in `k8s/`; never by hand, never copied) |
-| `authentik/authentik-secrets` | Kubernetes Secret | by hand (k8s/README.md, authentik) |
-| `headlamp/headlamp-oidc` | Kubernetes Secret | by hand (Headlamp section) |
-| `open-webui/open-webui-secrets` | Kubernetes Secret | by hand (Open WebUI section) |
-| `cloudflared/tunnel-credentials` | Kubernetes Secret | by hand (Cloudflare tunnel section) |
-| `flux-system/webhook-token` | Kubernetes Secret (no trailing newline) | by hand |
+| `authentik/authentik-secrets` | sops file `k8s/secrets/authentik/authentik-secrets.sops.yaml` in git (admins + `&flux`) → Kubernetes Secret, applied by the Flux Kustomization `secrets` (owns it: prune, hand edits reverted within 10 min) | you: `sops k8s/secrets/authentik/authentik-secrets.sops.yaml`, PR, merge, restart its readers (k8s/README.md, "Secrets", "authentik") |
+| `headlamp/headlamp-oidc` | sops file `k8s/secrets/headlamp/headlamp-oidc.sops.yaml` in git (admins + `&flux`) → Kubernetes Secret, applied by the Flux Kustomization `secrets` (owns it: prune, hand edits reverted within 10 min) | you: `sops k8s/secrets/headlamp/headlamp-oidc.sops.yaml`, PR, merge, restart its readers (k8s/README.md, "Secrets", "Headlamp") |
+| `open-webui/open-webui-secrets` | sops file `k8s/secrets/open-webui/open-webui-secrets.sops.yaml` in git (admins + `&flux`) → Kubernetes Secret, applied by the Flux Kustomization `secrets` (owns it: prune, hand edits reverted within 10 min) | you: `sops k8s/secrets/open-webui/open-webui-secrets.sops.yaml`, PR, merge, restart its readers (k8s/README.md, "Secrets", "Open WebUI") |
+| `cloudflared/tunnel-credentials` | sops file `k8s/secrets/cloudflared/tunnel-credentials.sops.yaml` in git (admins + `&flux`) → Kubernetes Secret, applied by the Flux Kustomization `secrets` (owns it: prune, hand edits reverted within 10 min) | you: `sops k8s/secrets/cloudflared/tunnel-credentials.sops.yaml`, PR, merge, restart its readers (k8s/README.md, "Secrets", "Cloudflare tunnel") |
+| `flux-system/webhook-token` (key `token`, no trailing newline) | sops file `k8s/secrets/flux-system/webhook-token.sops.yaml` in git (admins + `&flux`) → Kubernetes Secret, applied by the Flux Kustomization `secrets` (owns it: prune, hand edits reverted within 10 min) | you: `sops k8s/secrets/flux-system/webhook-token.sops.yaml`, PR, merge (nothing to restart), then update the GitHub secrets below (k8s/README.md, "Secrets") |
+| `flux-system/sops-age` (Flux's age private key, recipient `&flux` in `.sops.yaml`) | Kubernetes Secret only (and so etcd and its backups); never in git, never on disk, never copied out | by hand, once per cluster: `age-keygen` piped into `kubectl -n flux-system create secret generic sops-age --from-file=age.agekey=/dev/stdin` (k8s/README.md, "The bootstrap key"). Lost (or a new cluster): make a new one, set `&flux` to its recipient and `sops updatekeys` every `k8s/secrets/*/*.sops.yaml` with an admin key, PR, merge; until then the Kustomization `secrets` fails and the live Secrets keep their last values |
 | `FLUX_WEBHOOK_TOKEN`, `FLUX_WEBHOOK_URL` | GitHub Actions secrets | by hand (docs/ci.md) |
 | Cloudflare account cert (DNS routes) | `c4130:~admin/.cloudflared/cert.pem` (charlie's until 2026-11) | `cloudflared tunnel login` |
 | harmonia signing key `r440-cache-1` | sops `harmonia-signing-key`, `secrets/r440.yaml` → `/run/secrets/harmonia-signing-key` (root, 0600); formerly `r440:/var/lib/secrets/harmonia.secret` | `nix key generate-secret` on r440 (exists) |

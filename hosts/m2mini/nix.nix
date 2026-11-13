@@ -3,9 +3,12 @@ let
   inherit (lib)
     mkForce
     ;
-  # The login account that may use (and is trusted by) the Nix daemon;
-  # charlie until 2026-11.
-  user = config.users.users.admin;
+  # The login accounts that may use (and are trusted by) the Nix daemon:
+  # admin, and charlie while custom.server.legacyCharlie is on.
+  logins = [
+    "admin"
+  ]
+  ++ lib.optional config.custom.server.legacyCharlie.enable "charlie";
 in
 {
   environment.variables.NIXPKGS_ALLOW_UNFREE = "1";
@@ -17,10 +20,7 @@ in
     gc.automatic = true;
     settings =
       let
-        users = [
-          "root"
-          user.name
-        ];
+        users = [ "root" ] ++ logins;
       in
       {
         experimental-features = [

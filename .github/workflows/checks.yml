@@ -114,10 +114,12 @@ jobs:
           #    $head (not just the diff): a top-level `sops:` block with
           #    `mac: ENC[...]` and at least one recipient, every value
           #    outside it `ENC[...]`, every comment `#ENC[...]`. k8s files
-          #    may keep apiVersion, kind, type and metadata in the clear
-          #    (Flux needs them); all else, i.e. data/stringData, must be
-          #    encrypted. Anything else under secrets/ is refused. Only the
-          #    file and the key path are printed, never a value.
+          #    may have only the top-level keys apiVersion kind metadata
+          #    type data stringData sops (the same set as checkSecret in
+          #    k8s/render.nix; k8s/README.md, "Secrets"), the first four in
+          #    the clear (Flux needs them), data/stringData encrypted.
+          #    Anything else under secrets/ is refused. Only the file and
+          #    the key path are printed, never a value.
           while IFS= read -r -d '' f; do
             case "$f" in
               secrets/*/*) mode=bad ;;
@@ -154,7 +156,14 @@ jobs:
               bad.append("no sops block with mac: ENC[...]")
           elif not any(meta.get(k) for k in ("age", "pgp", "kms", "gcp_kms", "azure_kv", "hc_vault")):
               bad.append("sops block has no recipients")
-          clear = ("apiVersion", "kind", "type", "metadata") if mode == "k8s" else ()
+          clear = ("apiVersion", "kind", "metadata", "type") if mode == "k8s" else ()
+          # k8s: the same top-level key set as checkSecret in k8s/render.nix.
+          allowed = clear + ("data", "stringData", "sops")
+          if mode == "k8s":
+              names = " ".join(allowed)
+              for k in doc:
+                  if k not in allowed:
+                      bad.append(f"top-level key {k} not allowed (allowed: {names})")
           def walk(v, path):
               if isinstance(v, dict):
                   for k, x in v.items():
@@ -165,7 +174,7 @@ jobs:
               elif v is not None and not (isinstance(v, str) and enc.match(v)):
                   bad.append("unencrypted value at " + ".".join(path))
           for k, v in doc.items():
-              if k == "sops" or k in clear:
+              if k == "sops" or k in clear or (mode == "k8s" and k not in allowed):
                   continue
               walk(v, [str(k)])
           for b in bad:

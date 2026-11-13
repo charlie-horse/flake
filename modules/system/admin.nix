@@ -9,18 +9,25 @@
 #          `sops -d --extract '["admin-password"]' secrets/common.yaml`).
 #          The host decrypts it to /run/secrets-for-users/admin-password
 #          (neededForUsers: ramfs, root 0400) and derives the yescrypt
-#          hash from it at activation into
-#          /run/secrets-for-users/admin-password-hash, admin's
-#          hashedPasswordFile (custom.sopsPasswords, modules/system/sops.nix).
+#          hash from it at activation into /run/sops-password-hashes/admin,
+#          admin's hashedPasswordFile (custom.sopsPasswords,
+#          modules/system/sops.nix).
 #          To change it, edit `admin-password` and switch every host.
-#   root   locked (no password, no keys); become root with `sudo -i` as
-#          admin.
-#   charlie exists only on desktops (modules/system/user.nix); the
-#          servers have no other login account.
+#   root   locked (no password, no keys) wherever users are immutable;
+#          become root with `sudo -i` as admin.
+#   charlie on desktops (modules/system/user.nix); on the servers only
+#          while custom.server.legacyCharlie.enable is on
+#          (modules/server/legacy-charlie.nix).
 #
-# users.mutableUsers = false: /etc/passwd, /etc/shadow and /etc/group are
+# users.mutableUsers = false (mkDefault: desktops, and servers once
+# legacyCharlie is off): /etc/passwd, /etc/shadow and /etc/group are
 # rebuilt from this config at every activation. Passwords set with
 # `passwd` and accounts made with `useradd` do not survive a switch.
+# Servers with legacyCharlie on are mutable (stage 1 of the move to admin):
+# existing /etc/shadow entries are kept, root's "!" is not applied, and
+# admin's hashedPasswordFile is used only when admin is CREATED; a later
+# change of admin-password does not reach /etc/shadow there until
+# legacyCharlie is off (or `passwd admin`).
 #
 # LOCKOUT WARNING: if the host cannot decrypt secrets/common.yaml (its
 # ssh-to-age recipient missing from .sops.yaml, or the file not re-encrypted
@@ -31,7 +38,12 @@
 # `sopsDecrypt` decrypts every sops file the new generation uses with the
 # host key and refuses the switch if any fails. If decryption still fails
 # at activation, the previous admin hash in /etc/shadow is kept.
-{ config, inputs, ... }:
+{
+  config,
+  lib,
+  inputs,
+  ...
+}:
 let
   # FIDO2 resident keys allowed to log in as admin (one per line).
   adminAuthorizedKeys = [
@@ -40,11 +52,15 @@ let
 in
 {
   # sops.secrets.admin-password (neededForUsers) and its derived hash.
-  # Through inputs.self: mkHost's store copy of modules/ has no ../secrets.
-  custom.sopsPasswords.admin.sopsFile = "${inputs.self}/secrets/common.yaml";
+  # builtins.path: only this file goes to the store, not the flake source
+  # (modules/system/sops.nix, header).
+  custom.sopsPasswords.admin.sopsFile = builtins.path {
+    path = "${inputs.self}/secrets/common.yaml";
+    name = "common.yaml";
+  };
 
   users = {
-    mutableUsers = false;
+    mutableUsers = lib.mkDefault false;
 
     users.admin = {
       isNormalUser = true;
@@ -54,7 +70,8 @@ in
       openssh.authorizedKeys.keys = adminAuthorizedKeys;
     };
 
-    users.root.hashedPassword = "!";
+    # Only applied to an existing root when users are immutable.
+    users.root.hashedPassword = lib.mkIf (!config.users.mutableUsers) "!";
   };
 
   # sudo for wheel (= admin) always asks for admin's password.

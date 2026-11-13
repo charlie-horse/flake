@@ -189,8 +189,11 @@ let
     ) (lib.groupBy (m: m.kind) config.config.build.manifests);
 
   # Checks one sops-encrypted Secret (read only; the file is copied as is):
-  # a single v1 Secret whose namespace and name match its path, only the
-  # usual Secret fields, every data/stringData value encrypted, sops
+  # a single v1 Secret whose namespace and name match its path, top-level
+  # keys only apiVersion kind metadata type data stringData sops (the same
+  # set as checks.yml's secrets-guard; no `immutable`: Flux could not
+  # rotate such a Secret, k8s/README.md, "Secrets"), every data/stringData
+  # value encrypted, sops
   # metadata with an age recipient and a MAC, encrypted_regex
   # ^(data|stringData)$ (so metadata stays readable for kustomize and Flux),
   # keys sorted.
@@ -207,8 +210,8 @@ let
     check '.apiVersion == "v1" and .kind == "Secret"' "not a v1 Secret"
     check ".metadata.namespace == \"$namespace\" and .metadata.name == \"$name\"" \
       "metadata.namespace/name must be $namespace/$name (its path)"
-    check '(keys - ["apiVersion", "kind", "metadata", "type", "immutable", "data", "stringData", "sops"]) | length == 0' \
-      "unexpected top-level field (allowed: apiVersion kind metadata type immutable data stringData sops)"
+    check '(keys - ["apiVersion", "kind", "metadata", "type", "data", "stringData", "sops"]) | length == 0' \
+      "top-level key not allowed (allowed: apiVersion kind metadata type data stringData sops)"
     check '[(.data // {})[], (.stringData // {})[]] | length > 0' "no data or stringData"
     check '[(.data // {})[], (.stringData // {})[]] | all_c(tag == "!!str" and test("^ENC\\[AES256_GCM,"))' \
       "a data/stringData value is not sops-encrypted"

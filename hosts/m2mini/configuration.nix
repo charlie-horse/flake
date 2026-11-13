@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ config, lib, ... }:
 {
   # Ported from m2mini:/etc/nixos/m2mini.nix. The apple-silicon module is
   # imported by the flake (inputs.apple-silicon-m2mini), the peripheral
@@ -14,15 +14,26 @@
   time.timeZone = lib.mkDefault "America/New_York";
   i18n.defaultLocale = "en_US.UTF-8";
 
-  # The only login is admin (modules/system/admin.nix, via modules/server;
-  # users are immutable). charlie was removed from the servers in 2026-11
-  # (docs/cluster.md, "Removing charlie from the servers"); what it had
-  # here that is still wanted moved to admin: dialout (serial adapters)
-  # here, fish in ./shell.nix, Nix trust in ./nix.nix. charlie's fixed uid
-  # 1000 stays reserved in /var/lib/nixos/uid-map, so admin keeps its own
-  # uid. The old hash file /var/lib/secrets/charlie.passwd is unused;
-  # delete it. Never put a plaintext `password = ...` here, in any form.
+  # Logins: admin (modules/system/admin.nix, via modules/server), plus
+  # charlie while custom.server.legacyCharlie.enable is on (stage 1 of
+  # docs/cluster.md, "Removing charlie from the servers"; mutable users,
+  # modules/server/legacy-charlie.nix). Stage 1 keeps charlie exactly as he
+  # was before the sops switch (uid 1000, wheel, dialout; fish in
+  # ./shell.nix, Nix trust in ./nix.nix), minus the hashedPasswordFile:
+  # with mutable users it only applied when charlie was created, so his
+  # /etc/shadow entry is unchanged. Once legacyCharlie is off, charlie is
+  # gone and what is still wanted is admin's: dialout (serial adapters)
+  # here, fish and Nix trust. charlie's uid 1000 then stays reserved in
+  # /var/lib/nixos/uid-map; admin keeps its own uid. The old hash file
+  # /var/lib/secrets/charlie.passwd is unused; delete it in stage 2. Never
+  # put a plaintext `password = ...` here, in any form.
   users.users.admin.extraGroups = [ "dialout" ];
+  users.users.charlie = lib.mkIf config.custom.server.legacyCharlie.enable {
+    uid = 1000;
+    group = "users";
+    # wheel: modules/server/legacy-charlie.nix.
+    extraGroups = [ "dialout" ];
+  };
 
   services.openssh.enable = true;
   networking.firewall.allowedTCPPorts = [

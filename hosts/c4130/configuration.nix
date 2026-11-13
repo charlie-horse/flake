@@ -45,7 +45,9 @@
   services.openssh.enable = true;
 
   users.groups.video = { };
-  # The only login is admin (modules/system/admin.nix, via modules/server).
+  # Logins: admin (modules/system/admin.nix), plus charlie (wheel, as
+  # before the sops switch) while custom.server.legacyCharlie.enable is on
+  # (modules/server/legacy-charlie.nix); both via modules/server.
 
   environment.systemPackages = with pkgs; [
     pciutils

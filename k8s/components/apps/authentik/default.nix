@@ -7,9 +7,11 @@
 #   backup.nix      daily `pg_dump -Fc` CronJob to r440 (14 kept)
 #   blueprints.nix  OIDC clients and groups (blueprints/*.yaml)
 #
-# Secrets are NOT in git: the hand-made Secret `authentik-secrets`
-# (settings.nix; k8s/README.md). Until it exists the pods wait in
-# CreateContainerConfigError; nothing else breaks.
+# Secrets: the Secret `authentik-secrets` (settings.nix), sops-encrypted in
+# git (k8s/secrets/authentik/authentik-secrets.sops.yaml) and applied by the
+# Flux Kustomization `secrets` (k8s/README.md, "Secrets", "authentik").
+# Until it is applied the pods wait in CreateContainerConfigError; nothing
+# else breaks.
 #
 # Public at https://auth.neuros.is (cluster.authentik.host) through the
 # cluster's tunnel (apps/cloudflared) to Service authentik-server at the
