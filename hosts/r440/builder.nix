@@ -3,8 +3,9 @@
 # ./cache.nix (https://cache.neuros.is for every host, c4130 included).
 { lib, ... }:
 let
-  # c4130 root's builder key: /root/.ssh/nixremote.pub on c4130 (see the
-  # switch steps). Only `nix-daemon --stdio` may run with it.
+  # Public half of c4130's builder key (private half: sops key
+  # nixremote-ssh-key in secrets/c4130.yaml; was /root/.ssh/nixremote on
+  # c4130). Only `nix-daemon --stdio` may run with it.
   c4130BuilderKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDXr3aoLaBGm+3dzLd3GmtM3URqjiJLX6Wy7Ox6YC3k+ root@c4130";
 
   # Concurrent builds x cores. Each CUDA tree runs min(NIX_BUILD_CORES, 16)

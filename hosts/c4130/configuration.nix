@@ -45,12 +45,9 @@
   services.openssh.enable = true;
 
   users.groups.video = { };
-  users.users.charlie = {
-    isNormalUser = true;
-    extraGroups = [ "wheel" ]; # Enable ‘sudo’ for the user.
-    packages = with pkgs; [
-    ];
-  };
+  # Logins: admin (modules/system/admin.nix), plus charlie (wheel, as
+  # before the sops switch) while custom.server.legacyCharlie.enable is on
+  # (modules/server/legacy-charlie.nix); both via modules/server.
 
   environment.systemPackages = with pkgs; [
     pciutils

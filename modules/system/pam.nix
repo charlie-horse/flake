@@ -1,3 +1,5 @@
+# pam_u2f (YubiKeys) for login and sudo; the mappings are the sops secret
+# pam-yubikeys (modules/system/yubikey.nix). Off until that exists.
 { lib, config, ... }:
 let
   inherit (lib)
@@ -6,11 +8,11 @@ let
   inherit (config.custom.user)
     mkOutOfStoreSymlink
     ;
-  inherit (config.age)
+  inherit (config.sops)
     secrets
     ;
 in
-mkIf config.custom.age.enable {
+mkIf config.custom.yubikey.enable {
   security.pam = {
     u2f = {
       enable = true;

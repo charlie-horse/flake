@@ -52,13 +52,18 @@ in
     star-citizen.enable = true;
 
     # r440's binary cache, https://cache.neuros.is (modules/system/
-    # nix-cache.nix), after cache.nixos.org. The netrc is the agenix secret
-    # nix-cache-netrc (modules/age/secrets.nix); until that is committed,
-    # the default path does not exist and Nix uses cache.nixos.org alone.
-    nixCache = {
-      enable = true;
-      netrcFile = lib.mkIf (config.age.secrets ? nix-cache-netrc) config.age.secrets.nix-cache-netrc.path;
-    };
+    # nix-cache.nix), after cache.nixos.org. The netrc is the sops key
+    # nix-cache-netrc in secrets/famine.yaml (the old agenix one is lost):
+    # a new htpasswd user `famine` on r440 (nix-cache-htpasswd in
+    # secrets/r440.yaml) and its netrc line here.
+    nixCache.enable = true;
+
+    # TODO(famine-yubikey): the pam_u2f mappings and the ed25519-sk ssh
+    # key (the agenix pam-yubikeys, ssh-yubikey-5) are lost. Remake them
+    # at Famine with the YubiKey 5 plugged in (how:
+    # modules/system/yubikey.nix), add them to secrets/famine.yaml, then
+    # set this to true. Until then login/sudo take the password only.
+    yubikey.enable = false;
   };
 
   programs.dconf.enable = true;

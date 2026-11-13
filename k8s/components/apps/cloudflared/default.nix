@@ -21,9 +21,11 @@
 # deployment.nix); the containers themselves run unprivileged, read-only
 # and without capabilities.
 #
-# The tunnel credential is NOT in git: Secret cloudflared/tunnel-credentials,
-# key credentials.json (the JSON `cloudflared tunnel create` writes), made
-# once by hand (k8s/README.md, "Cloudflare tunnel"). DNS: each hostname is a
+# The tunnel credential: Secret cloudflared/tunnel-credentials, key
+# credentials.json (the JSON `cloudflared tunnel create` writes),
+# sops-encrypted in git (k8s/secrets/cloudflared/tunnel-credentials.sops.yaml)
+# and applied by the Flux Kustomization `secrets` (k8s/README.md, "Secrets",
+# "Cloudflare tunnel"); read at start. DNS: each hostname is a
 # proxied CNAME to <tunnel id>.cfargotunnel.com:
 #   cloudflared tunnel route dns --overwrite-dns <tunnel id> <hostname>
 { ... }:

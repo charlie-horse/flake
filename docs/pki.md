@@ -29,7 +29,7 @@ There are two PKIs, and they never share a CA.
 | --- | --- | --- |
 | For | etcd, kube-apiserver, controller-manager, scheduler, kubelet, kube-proxy, flannel client, front-proxy, service-account keys, admin kubeconfig | TLS for workloads in the cluster |
 | Made by | `cluster-pki` on r440 (this document) | cert-manager in the cluster (`k8s/components/infra/cert-manager/`, [k8s/README.md](../k8s/README.md#cert-manager)) |
-| CAs | k8s, etcd, front-proxy; keys only in `r440:~/.local/share/cluster-pki/neurosis` | `cluster-ca` (root Certificate from a `selfSigned` ClusterIssuer), key only in the Secret `cert-manager/cluster-ca` |
+| CAs | k8s, etcd, front-proxy; keys only in `r440:~admin/.local/share/cluster-pki/neurosis` | `cluster-ca` (root Certificate from a `selfSigned` ClusterIssuer), key only in the Secret `cert-manager/cluster-ca` |
 | Delivered as | files in `/var/lib/kubernetes/secrets/` (`cluster-pki-deploy`) | Secrets, issued on request (`issuerRef: {kind: ClusterIssuer, name: cluster-ca}`) |
 
 **Why the bootstrap PKI stays files.** cert-manager is a set of pods. Pods
@@ -174,8 +174,11 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
 ### On the operator machine: `./pki-out/` (gitignored, mode 0700)
 
 The operator machine is r440, whose `/etc/nixos` is the checkout of this
-repo. The live PKI there is `--out ~/.local/share/cluster-pki/neurosis`
-(outside the checkout), run as `nix run /etc/nixos#cluster-pki -- --out …`.
+repo. The live PKI there is `~admin/.local/share/cluster-pki/neurosis`
+(outside the checkout; in charlie's home until stage 2 of charlie's removal,
+docs/cluster.md), used as admin with
+`nix run /etc/nixos#cluster-pki -- --out ~/.local/share/cluster-pki/neurosis`.
+Nothing in the tool defaults to it: without `--out` it writes `./pki-out`.
 
 **CA subjects and the cluster name.** cluster-pki puts `cluster.name` into
 a CA's subject (`O=<name>, OU=cluster-pki, CN=<name> <ca> CA <date>`) only
@@ -264,8 +267,11 @@ cluster-pki-deploy <node> [--host H] [--staging DIR] [--dry-run]
 
 1. Verifies every leaf for the node against its bundle on the local machine.
 2. Streams the files with `tar | ssh` to `~/<staging>/<node>/` (default
-   `cluster-pki-staging`, mode 0700/0600). This works with fish as the
-   login shell, and needs neither rsync nor sudo.
+   `cluster-pki-staging`, mode 0700/0600), as the same user on the node
+   (admin: plain `ssh <node>` from admin on r440, through Tailscale SSH;
+   the tailnet SSH policy must allow admin from r440 to the node).
+   This works with fish as the login shell (admin's on m2mini), and needs
+   neither rsync nor sudo.
 3. Prints the exact `sudo install -m … -o … -g …` commands to paste into
    `ssh -t <node> bash`, then the restart and health-check commands. It
    never runs sudo itself.

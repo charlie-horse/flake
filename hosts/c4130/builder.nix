@@ -41,14 +41,24 @@ in
   '';
 
   # --- Remote builder ----------------------------------------------------
+  # OpenSSH private key (ed25519, the whole `-----BEGIN OPENSSH PRIVATE
+  # KEY-----` file, with its trailing newline). The nix-daemon's ssh reads
+  # it on every connection: no restart needed.
+  sops.secrets.nixremote-ssh-key = {
+    owner = "root";
+    group = "root";
+    mode = "0600";
+  };
   nix.distributedBuilds = true;
   nix.buildMachines = [
     {
       hostName = r440;
       protocol = "ssh-ng";
       sshUser = "nixremote";
-      # Generated on c4130 by the user (switch steps); readable by root only.
-      sshKey = "/root/.ssh/nixremote";
+      # sops key nixremote-ssh-key (secrets/c4130.yaml), root 0600; was
+      # /root/.ssh/nixremote (generated on c4130). Its public half is
+      # c4130BuilderKey in hosts/r440/builder.nix.
+      sshKey = config.sops.secrets.nixremote-ssh-key.path;
       # base64 of r440's /etc/ssh/ssh_host_ed25519_key.pub
       publicHostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUtFQlc0WnFNNnN1VjJLSUxpcVVnUlNPaVhzMTRCdlVhWk5wM2ZrRTNBdUcgcm9vdEByNDQwCg==";
       systems = [ "x86_64-linux" ];
@@ -71,9 +81,10 @@ in
     builders-use-substitutes = true;
   };
   # Substitutes from r440 through https://cache.neuros.is like every other
-  # host (modules/system/nix-cache.nix; netrc /var/lib/nix-cache/netrc,
-  # made by hand), no longer over the link. To go back to the direct path,
-  # revert this commit (it also restores harmonia's 10.25.0.2:5000).
+  # host (modules/system/nix-cache.nix; netrc: sops key nix-cache-netrc,
+  # formerly /var/lib/nix-cache/netrc), no longer over the link. To go
+  # back to the direct path, revert commit 6e02db6 (it also restores
+  # harmonia's 10.25.0.2:5000).
   custom.nixCache.enable = true;
   # Root's own ssh (e.g. `nix store ping --store ssh-ng://nixremote@10.25.0.2`)
   # needs r440's host key too; the daemon uses publicHostKey above.

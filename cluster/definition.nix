@@ -162,7 +162,8 @@
   # r440's Nix binary cache (harmonia). Not a Service: the tunnel's nginx
   # sidecar forwards to http://<nodes.r440.lanIP>:<port>, where nginx on
   # r440 asks for HTTP basic auth (hosts/r440/cache.nix). The signing key
-  # stays on r440 (/var/lib/secrets/harmonia.secret); this is its public half.
+  # stays on r440 (sops key harmonia-signing-key in secrets/r440.yaml; was
+  # /var/lib/secrets/harmonia.secret); this is its public half.
   binaryCache = {
     host = "cache.neuros.is";
     node = "r440";
