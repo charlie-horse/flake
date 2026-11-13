@@ -29,8 +29,22 @@
 # webhook is down, the fix for the webhook included. Here only this
 # Kustomization fails, and retries.
 #
-# Only the chart's CRDs are read here (to type the objects below); the chart
-# itself is rendered by chart.nix.
+# Approval: cert-manager's auto-approver is off (approver-policy.nix), so
+# requests to `cluster-ca` need a CertificateRequestPolicy too:
+#
+#   CertificateRequestPolicy `cluster-ca`   selects ClusterIssuer cluster-ca
+#                                           in every namespace and allows
+#                                           any subject, SAN, usage, key and
+#                                           duration, but no CA certs (the
+#                                           intermediate is pathlen:0). The
+#                                           same as the auto-approver did
+#   ClusterRole/ClusterRoleBinding          `use` of it for cert-manager's
+#   `cert-manager-policy:cluster-ca`        controller (the requester of
+#                                           every Certificate's request)
+#
+# Only the charts' CRDs are read here (crds.nix, to type the objects
+# below); the charts themselves are rendered by chart.nix and
+# approver-policy.nix.
 {
   pkgs,
   catenix,
@@ -40,29 +54,101 @@
 }:
 let
   inherit (import ./settings.nix)
-    release
+    namespace
     caIssuer
     caSecret
+    controllerServiceAccount
     ;
 
-  crds = builtins.filter (m: m.kind or null == "CustomResourceDefinition") (
-    builtins.fromJSON (
-      builtins.readFile (
-        catenix.helmTemplate pkgs {
-          inherit kubeVersion release;
-          chart = charts.cert-manager;
-          values.crds.enabled = true;
-        }
-      )
-    )
-  );
+  crds = import ./crds.nix {
+    inherit
+      pkgs
+      catenix
+      charts
+      kubeVersion
+      ;
+  };
+
+  any = {
+    values = [ "*" ];
+  };
+  policyRole = "cert-manager-policy:${caIssuer}";
 in
 {
-  imports = [ (catenix.crdModule crds) ];
+  imports = [ (catenix.crdModule (crds.certManager ++ crds.approverPolicy)) ];
 
   validation.strict = true;
 
   # The Secret lives in cert-manager's cluster resource namespace (the
   # chart's default: the release namespace), where a ClusterIssuer reads it.
   resources."cert-manager.io".v1.ClusterIssuer.${caIssuer}.spec.ca.secretName = caSecret;
+
+  resources."policy.cert-manager.io".v1alpha1.CertificateRequestPolicy.${caIssuer}.spec = {
+    selector.issuerRef = {
+      group = "cert-manager.io";
+      kind = "ClusterIssuer";
+      name = caIssuer;
+    };
+    allowed = {
+      commonName.value = "*";
+      dnsNames = any;
+      ipAddresses = any;
+      uris = any;
+      emailAddresses = any;
+      subject = {
+        organizations = any;
+        organizationalUnits = any;
+        countries = any;
+        localities = any;
+        provinces = any;
+        streetAddresses = any;
+        postalCodes = any;
+        serialNumber.value = "*";
+      };
+      isCA = false;
+      usages = [
+        "signing"
+        "digital signature"
+        "content commitment"
+        "key encipherment"
+        "key agreement"
+        "data encipherment"
+        "server auth"
+        "client auth"
+        "code signing"
+        "email protection"
+        "s/mime"
+        "ipsec end system"
+        "ipsec tunnel"
+        "ipsec user"
+        "timestamping"
+        "ocsp signing"
+      ];
+    };
+  };
+
+  resources."rbac.authorization.k8s.io".v1 = {
+    ClusterRole.${policyRole}.rules = [
+      {
+        apiGroups = [ "policy.cert-manager.io" ];
+        resources = [ "certificaterequestpolicies" ];
+        verbs = [ "use" ];
+        resourceNames = [ caIssuer ];
+      }
+    ];
+    ClusterRoleBinding.${policyRole} = {
+      roleRef = {
+        apiGroup = "rbac.authorization.k8s.io";
+        kind = "ClusterRole";
+        name = policyRole;
+      };
+      subjects = [
+        {
+          kind = "ServiceAccount";
+          name = controllerServiceAccount;
+          inherit namespace;
+        }
+      ];
+    };
+  };
 }
