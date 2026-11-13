@@ -27,6 +27,9 @@
   # /var/lib/nixos/uid-map; admin keeps its own uid. The old hash file
   # /var/lib/secrets/charlie.passwd is unused; delete it in stage 2. Never
   # put a plaintext `password = ...` here, in any form.
+  # Stage 2 of the charlie removal (docs/cluster.md): charlie is gone here.
+  custom.server.legacyCharlie.enable = false;
+
   users.users.admin.extraGroups = [ "dialout" ];
   users.users.charlie = lib.mkIf config.custom.server.legacyCharlie.enable {
     uid = 1000;
