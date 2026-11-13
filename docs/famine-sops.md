@@ -45,9 +45,9 @@ needs the PIV PIN and a touch:
    `sops updatekeys -y secrets/common.yaml secrets/famine.yaml`
 3. **YubiKey secrets (optional, needs the YubiKey 5 at Famine).**
    - `pam-yubikeys`: run `pamu2fcfg -o pam://sortofasian -i pam://sortofasian`.
-   - `ssh-yubikey-5`: if the key is resident, run `ssh-keygen -K`; otherwise
-     make a new `ssh-keygen -t ed25519-sk -O resident` key and update GitHub.
-   - Add the two values with `sops secrets/famine.yaml`, then set
+   - ssh and git signing need no secret: they use the `ssh:admin` key from
+     the agent (`ssh-keygen -K` + `ssh-add` where the YubiKey is plugged in).
+   - Add the value with `sops secrets/famine.yaml`, then set
      `custom.yubikey.enable = true` in `hosts/Famine/default.nix`. The
      comments in `modules/system/yubikey.nix` give the exact formats.
 4. **Check that decryption works (automatic, optional by hand).** The

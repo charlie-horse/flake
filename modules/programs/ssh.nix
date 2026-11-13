@@ -29,10 +29,7 @@
 #                        its name, FQDN, LAN and tailnet address; host
 #                        configs add more names (the bond0 link,
 #                        hosts/*/builder.nix).
-#   desktops             with custom.yubikey.enable, the sops key file
-#                        ssh-yubikey-5 as an identity for every host and
-#                        agent forwarding everywhere (as before), and a
-#                        per-user ssh-agent (programs.ssh.startAgent; the
+#   desktops             a per-user ssh-agent (programs.ssh.startAgent; the
 #                        servers turn it off in modules/server/default.nix,
 #                        they use the forwarded agent).
 {
@@ -81,8 +78,6 @@ let
     i: key: pkgs.writeText "admin-sk-${toString i}.pub" "${key}\n"
   ) adminSkKeys;
 
-  # modules/system/yubikey.nix exists on the desktops only.
-  yubikey = config.custom.yubikey.enable or false;
 in
 {
   config = {
@@ -97,10 +92,6 @@ in
       # Global options must come before the first Host line (ssh_config
       # applies the first value it finds; extraConfig precedes nixpkgs'
       # `Host *` block).
-      (mkIf yubikey (mkBefore ''
-        ForwardAgent yes
-        IdentityFile = ${config.sops.secrets.ssh-yubikey-5.path}
-      ''))
       (mkAfter ''
         # Cluster nodes (modules/programs/ssh.nix): admin, the YubiKey's
         # ssh:admin key from the agent, agent forwarded for sudo (docs/auth.md).

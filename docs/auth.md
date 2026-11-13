@@ -29,7 +29,7 @@ once. Accounts (admin, root locked, charlie on Famine) are separate, in
 | `custom.auth.desktopU2f.enable` | `false`; set by `custom.yubikey.enable` | Famine: pam_u2f as an alternative to the password |
 
 `custom.yubikey.enable` (`modules/system/yubikey.nix`) still owns the desktop
-YubiKey sops secrets (`pam-yubikeys`, `ssh-yubikey-5`) and links
+YubiKey sops secret `pam-yubikeys` and links
 `pam-yubikeys` to `~/.config/Yubico/u2f_keys`. It turns on
 `custom.auth.desktopU2f` for the PAM side. sudo always has
 `wheelNeedsPassword = true`: sudo authenticates wheel through PAM. With the

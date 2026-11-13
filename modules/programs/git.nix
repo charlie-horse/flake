@@ -11,13 +11,11 @@ let
   inherit (lib.generators)
     toGitINI
     ;
-  # sops secrets from modules/system/yubikey.nix.
-  inherit (config.sops)
-    secrets
-    ;
-  inherit (config.custom)
-    yubikey
-    ;
+  # The ssh:admin FIDO2 key (admin's sk- authorized key,
+  # modules/system/admin.nix): git signs through the ssh agent with it.
+  signingKey =
+    lib.findFirst (lib.hasPrefix "sk-") null
+      config.users.users.admin.openssh.authorizedKeys.keys;
 
   systemConfig = {
     url."git@github.com:".insteadOf = [
@@ -41,9 +39,10 @@ let
       name = "Charlie Syvertsen";
       email = "charliesyvertsen06@icloud.com";
     }
-    # Sign with the YubiKey 5's ed25519-sk key (gpg.format = ssh above).
-    // lib.optionalAttrs yubikey.enable {
-      signingkey = secrets.ssh-yubikey-5.path;
+    # Sign with the ssh:admin key from the agent (gpg.format = ssh above;
+    # `key::` = a literal public key, no key file needed).
+    // lib.optionalAttrs (signingKey != null) {
+      signingkey = "key::${signingKey}";
     };
   };
 in
