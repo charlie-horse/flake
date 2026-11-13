@@ -9,7 +9,7 @@ c4130 is one of the three NixOS 26.05 servers (c4130, r440, m2mini) that run the
 - `sudo` needs charlie's password. Ask the user for it, and pass it on stdin (`sudo -S`), never on a command line. Secrets never go in git or on a command line. Every secret and where it lives: `docs/cluster.md`, "Secrets (all of them)"; add a row there for any new one.
 - `/etc/nixos` is writable by charlie, so `git pull` and building need no sudo; `nixos-rebuild switch` and `journalctl -u vllm` do.
 - etcd and the k8s apiserver also run on this box (3-member etcd with r440 and m2mini). Switch one host at a time and run the etcd health check from `docs/cluster.md` after each. `switch` exiting with status 4 means a unit failed; read `systemctl --failed`. Leave etcd alone unless the user asks.
-- The cluster PKI (CA keys) lives only on r440 (`~/.local/share/cluster-pki/neurosis`); never copy it elsewhere or into git.
+- The cluster PKI (CA keys) lives only on r440 (`~/.local/share/cluster-pki/neurosis`); never copy it elsewhere or into git. The root CA key is meant to live on c4130's YubiKey, PIV slot 9c (status: `docs/pki.md`, "YubiKey root CA"); never run `ykman piv reset` there.
 
 ## Deploying
 - Change or re-lock in this repo on a branch → CI → merge. Then on the host: `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#<host>` (m2mini adds `--override-input m2mini-vendorfw path:/boot/vendorfw`).

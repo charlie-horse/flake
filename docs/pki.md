@@ -7,6 +7,8 @@ of it is generated on the **operator machine** by `cluster-pki` from
 Nothing secret is ever a Nix path, in git, or in `/nix/store`: NixOS modules
 reference string paths under `/var/lib/kubernetes/secrets/`. The inventory of
 every secret (PKI and the rest) is `docs/cluster.md`, "Secrets (all of them)".
+The target design puts those CAs under one YubiKey root; it is not live yet
+(see the next section and the [migration plan](pki-migration-plan.md)).
 
 ```sh
 nix run .#cluster-pki                  # create/refresh everything in ./pki-out
@@ -15,6 +17,7 @@ nix run .#cluster-pki-deploy -- m2mini # stage m2mini's files, print sudo cmds
 ```
 
 - [Bootstrap PKI and workload PKI](#bootstrap-pki-and-workload-pki)
+- [YubiKey root CA](#yubikey-root-ca) (pending)
 - [Inventory of the legacy PKI](#inventory-of-the-legacy-pki-2026-10-31)
 - [New layout](#new-layout)
 - [cluster-pki usage](#cluster-pki-usage)
@@ -23,14 +26,38 @@ nix run .#cluster-pki-deploy -- m2mini # stage m2mini's files, print sudo cmds
 
 ## Bootstrap PKI and workload PKI
 
-There are two PKIs, and they never share a CA.
+**Status (2026-11-13): this section describes the target design. Nothing
+in it has been executed yet.** Rows marked *live* are what runs today.
+Rows marked *pending* wait for the steps in the
+[migration plan](pki-migration-plan.md). Today the three bootstrap CAs
+are self-signed, `cluster-ca` is a self-signed cert-manager root, and the
+YubiKey root does not exist.
 
-| | Bootstrap PKI | Workload PKI |
+There is one root CA with two branches. The branches never share an
+intermediate.
+
+```
+neurosis Root CA 2026          YubiKey slot 9c on c4130, P-384, 20 y, pathlen:1
+├── workload branch (in the cluster)
+│   └── neurosis workload CA       Secret cert-manager/cluster-ca, P-384, 2 y, pathlen:0
+│         └── workload leaves      ClusterIssuer cluster-ca
+└── bootstrap branch (cluster-pki on r440)
+    ├── neurosis k8s CA            5 y, pathlen:0 → apiserver, kubelet, admin, ...
+    ├── neurosis etcd CA           5 y, pathlen:0 → etcd server/peer/client
+    └── neurosis front-proxy CA    5 y, pathlen:0 → front-proxy-client
+```
+
+| | Bootstrap branch | Workload branch |
 | --- | --- | --- |
 | For | etcd, kube-apiserver, controller-manager, scheduler, kubelet, kube-proxy, flannel client, front-proxy, service-account keys, admin kubeconfig | TLS for workloads in the cluster |
 | Made by | `cluster-pki` on r440 (this document) | cert-manager in the cluster (`k8s/components/infra/cert-manager/`, [k8s/README.md](../k8s/README.md#cert-manager)) |
-| CAs | k8s, etcd, front-proxy; keys only in `r440:~/.local/share/cluster-pki/neurosis` | `cluster-ca` (root Certificate from a `selfSigned` ClusterIssuer), key only in the Secret `cert-manager/cluster-ca` |
+| CAs, *live* | k8s, etcd, front-proxy, each self-signed; keys only in `r440:~/.local/share/cluster-pki/neurosis` | `cluster-ca` (root Certificate from a `selfSigned` ClusterIssuer), key only in the Secret `cert-manager/cluster-ca` |
+| CAs, *pending* | the same three as intermediates signed by the root (`cluster-pki --ca-csr`, then `--ca-import`); keys still only on r440 | `cluster-ca` becomes the workload intermediate signed by the root. Its Secret is created out-of-band at the ceremony; the ClusterIssuer name stays the same |
+| Trusts | its own intermediate only ([anchor rule](#the-anchor-rule)) | the root |
 | Delivered as | files in `/var/lib/kubernetes/secrets/` (`cluster-pki-deploy`) | Secrets, issued on request (`issuerRef: {kind: ClusterIssuer, name: cluster-ca}`) |
+
+The service-account keypair is a bare keypair, not a certificate. It is
+outside the hierarchy.
 
 **Why the bootstrap PKI stays files.** cert-manager is a set of pods. Pods
 need a kubelet registered with an apiserver, that apiserver needs etcd and
@@ -40,16 +67,82 @@ cert-manager can run, so cert-manager cannot be where they come from. And if
 it issued their renewals later, an outage of cert-manager (or of etcd, where
 its state lives) at renewal time could leave the control plane unable to
 start, with nothing left to fix it from. So they stay files signed offline,
-renewed by `cluster-pki` and installed by the operator.
+renewed by `cluster-pki` and installed by the operator. Moving bootstrap
+leaves into the cluster is a later phase with its own prerequisites (plan,
+"Phase 2 prerequisites"); it is not planned yet.
 
-**Why the workload CA is a new one.** The bootstrap CA keys never leave r440
-(CLAUDE.md). A cert-manager `CA` issuer needs its key in a Secret, i.e. in
-etcd on all three nodes, readable by anyone with Secret access in
-`cert-manager`. The k8s CA in particular signs `system:masters` and
-`system:node:*` client certs, so its key in the cluster would hand out
-cluster-admin. The workload CA is created inside the cluster instead; it
-signs nothing the apiserver or etcd trust (none of the bootstrap trust
-bundles include it), so a leak of it compromises workload TLS only.
+**Why the workload branch has its own intermediate.** The bootstrap CA keys
+never leave r440 (CLAUDE.md). A cert-manager `CA` issuer needs its key in a
+Secret, i.e. in etcd on all three nodes, readable by anyone with Secret
+access in `cert-manager`. The k8s CA in particular signs `system:masters`
+and `system:node:*` client certs, so its key in the cluster would hand out
+cluster-admin. The workload intermediate signs nothing the apiserver or
+etcd trust, so a leak of it compromises workload TLS only. That holds only
+because of the anchor rule.
+
+**Workload intermediate renewal is manual** (*pending*). cert-manager does
+not renew a CA Secret it did not issue. Re-sign it with the root about 60
+days before its 2-year expiry. Leaf durations must stay under its remaining
+life.
+
+### The anchor rule
+
+Bootstrap trust bundles contain **only their own intermediate**. Never the
+root, and never the workload intermediate. This covers `ca.pem`,
+`etcd-ca.pem`, `front-proxy-ca.pem` and the kubelet `clientCAFile`.
+
+Why: the root also signs the workload intermediate, whose key sits in etcd.
+If `ca.pem` held the root, anyone holding the workload key could mint an
+`O=system:masters` client cert that chains to the root, and the apiserver
+would accept it as cluster-admin. With only the k8s intermediate as the
+anchor, that chain does not verify.
+
+- It works because Go's `x509.Verify` accepts a non-self-signed cert in the
+  root pool as a trust anchor. etcd, the apiserver and the kubelet are all
+  Go. The legacy PKI already relied on this: its "temp root" was never on a
+  node (see the inventory below).
+- Server leaves ship the full chain (leaf + intermediate) in the cert file,
+  so clients that trust only the root (browsers, workloads) can verify them.
+- Only workloads trust the root itself, plus a trust-manager bundle if one
+  is added.
+- *Pending* (plan, node B): `cluster-pki status` and CI fail if any
+  bootstrap bundle contains a self-signed cert or the workload intermediate.
+
+## YubiKey root CA
+
+*Pending ceremony.* Nothing in this section exists yet. The ceremony is
+node F of the [migration plan](pki-migration-plan.md#ceremony-node-f), run
+on c4130 with Charlie physically present.
+
+| | |
+| --- | --- |
+| Card | the YubiKey plugged into c4130 (firmware 5.x or later, for P-384 and attestation) |
+| Slot | PIV **9c** (Digital Signature): the only signature slot, and its PIN is required before every signature. Why not 9a/9d/9e: plan, "Why slot 9c" |
+| Key | ECDSA P-384, generated on the card, not exportable |
+| Policies | `--pin-policy ALWAYS --touch-policy ALWAYS`: one signature per PIN entry plus a physical touch. Nobody can sign remotely, not even root on c4130 |
+| Root cert | `CN=neurosis Root CA 2026, O=neurosis`, 20 y, `CA:TRUE, pathlen:1`, `keyCertSign, cRLSign`. Also imported into slot 9c |
+| Signs | the four intermediates only: workload (every 2 y), k8s, etcd, front-proxy (every 5 y, or on rotation) |
+| In git (public) | `cluster/pki/`: the root cert (`root-ca.pem`, which `cluster-pki --ca-import` checks against), the slot attestation (`attest-9c.pem`) and the card's attestation cert (`attest-f9.pem`). The attestation proves the key was generated on the card and cannot be exported. The card serial and root fingerprint are recorded with them |
+
+Rules:
+
+- **Never run `ykman piv reset`.** It wipes slot 9c, and with it the root
+  key. There is no copy.
+- **PIN and PUK.** Both are changed from the defaults at the ceremony and
+  stored offline (where: [cluster.md, Secrets](cluster.md#secrets-all-of-them)).
+  Three wrong PINs block the PIN; the PUK unblocks it. Three wrong PUKs
+  leave only a reset, which loses the key. Type the PIN at the prompt.
+  Never put it on a command line, in shell history or in a file.
+- **Management key.** Generated at the ceremony and stored on the card,
+  PIN-protected (`change-management-key --generate --protect`). No other
+  copy.
+- **No backup (accepted risk).** If the card is lost, broken or reset, the
+  root is gone and every intermediate must be re-rooted under a new one.
+  Nothing breaks at once: the bootstrap bundles anchor on their 5-year
+  intermediates, and the workload intermediate lasts 2 years.
+- Consider keeping the card unplugged between ceremonies. Touch-always
+  stops remote signing, but a plugged-in card can still be pulled, or its
+  PIN guessed against the retry counter.
 
 ## Inventory of the legacy PKI (2026-10-31)
 
