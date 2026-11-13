@@ -344,8 +344,9 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
 ## Secrets (all of them)
 
 The one inventory of every secret this repo depends on. Other docs keep
-their setup steps but point here. Encrypted agenix files are in git; every
-other secret lives outside git.
+their setup steps but point here. sops-encrypted files are in git
+(`secrets/*.yaml`, recipients in `.sops.yaml`, sops-nix:
+`modules/system/sops.nix`); every other secret lives outside git.
 
 | Secret | Where | Made by |
 | --- | --- | --- |
@@ -365,10 +366,13 @@ other secret lives outside git.
 | `NIX_CACHE_NETRC` | GitHub Actions secret | by hand (docs/ci.md) |
 | Remote-build SSH key `nixremote` | sops `nixremote-ssh-key`, `secrets/c4130.yaml` → `/run/secrets/nixremote-ssh-key` (root, 0600), formerly `c4130:/root/.ssh/nixremote`; public half authorized for user `nixremote` on r440 (`hosts/r440/builder.nix`) | `ssh-keygen` on c4130 (exists); used by `nix.buildMachines` in `hosts/c4130/builder.nix` (`ssh-ng://nixremote@10.25.0.2`) |
 | Tailscale auth key (reinstall only) | `/var/lib/tailscale/authkey` (root, 0600) on the server being enrolled; delete after enrolment | admin console: pre-approved, non-ephemeral, tagged `tag:node` ([Tailscale](#tailscale)); read by `tailscaled-autoconnect` (`modules/server/tailscale.nix`) |
-| charlie's password hash, m2mini | `m2mini:/var/lib/secrets/charlie.passwd` (root, 0600), `hashedPasswordFile` in `hosts/m2mini/configuration.nix`. **Missing as of 2026-11-12** (every switch warns `password file … does not exist`) | you: `mkpasswd -m yescrypt \| sudo install -D -m 0600 /dev/stdin /var/lib/secrets/charlie.passwd` |
-| Desktop secrets (agenix) | `modules/age/secrets/*.age`, encrypted in git (recipients: `modules/age/secrets/secrets.nix`); decrypted to `/run/agenix/` on the desktop. Famine: `login` (charlie's password hash, `custom.user.passwordFile`), `pam-yubikeys`, `ssh-yubikey-5`, `ssh-yubikey-5c`, `key-famine`, `nix-cache-netrc`. Pestilence only (archived): `key-pestilence`, `vpn-privkey`, `vpn-password`, `acme-cloudflare` | `agenix -e <name>.age` in `modules/age/secrets` |
-| Pestilence Transmission `rpc-password` | **plaintext in git**, `hosts/Pestilence/servarr.nix` (archived host; excluded from the format check so the secrets guard stays quiet) | rotate it and move it to agenix before restoring Pestilence |
-| Cloud-session secrets | env vars of the Claude Code cloud environment: `TAIL_AUTH_KEY` (joins the session to the tailnet) and charlie's sudo password | environment settings (CLAUDE.md, "Access from a cloud session") |
+| Admin password (`admin`, the only wheel account; sudo asks for it) | sops `admin-password-hash` (yescrypt hash) in `secrets/common.yaml` → `/run/secrets-for-users/admin-password-hash` (`neededForUsers`, `modules/system/admin.nix`), every host. The plaintext sits next to it as `admin-password`, for retrieval only: not a `sops.secrets` entry, never on a host. Lockout risk: a host that cannot decrypt `common.yaml` has no admin password, and root is locked | you: `mkpasswd -m yescrypt`, both into `sops secrets/common.yaml` |
+| charlie's password hash, Famine only | sops `charlie-password-hash` in `secrets/famine.yaml` → `/run/secrets-for-users/charlie-password-hash` (`neededForUsers`, `custom.user.keepPassword` in `modules/system/user.nix`; for the greeter, no sudo). Servers: charlie has no password (`modules/server/users.nix`); m2mini's old `/var/lib/secrets/charlie.passwd` is unused, delete it | you: `mkpasswd -m yescrypt` → `sops secrets/famine.yaml` |
+| sops-nix host identities | each host's SSH ed25519 host key `/etc/ssh/ssh_host_ed25519_key` (never in git); its `ssh-to-age` recipient is an anchor in `.sops.yaml`. Famine (no sshd) gets it from the `sopsHostKey` activation script (`modules/system/sops.nix`). A reinstalled host has a new key: update `.sops.yaml` and `sops updatekeys` before its first switch | sshd / activation |
+| sops admin identities | YubiKey PIV (age-plugin-yubikey, `admin_yubikey` in `.sops.yaml`) and the offline passphrase-protected backup age key (`admin_backup`); recipients of every file | `age-plugin-yubikey`, `age-keygen` |
+| Desktop YubiKey files | sops `pam-yubikeys`, `ssh-yubikey-5`, `ssh-yubikey-5c` in `secrets/famine.yaml` (`modules/system/yubikey.nix`, off until they exist). The old agenix files (`modules/age`, removed) and their keys are lost, as are Pestilence's agenix-only `key-pestilence`, `vpn-privkey`, `vpn-password`, `acme-cloudflare` | remake at Famine with both YubiKeys |
+| Pestilence Transmission `rpc-password` | **plaintext in git**, `hosts/Pestilence/servarr.nix` (archived host; excluded from the format check so the secrets guard stays quiet) | rotate it and move it to sops before restoring Pestilence |
+| Cloud-session secrets | env vars of the Claude Code cloud environment: `TAIL_AUTH_KEY` (joins the session to the tailnet) and the sudo password (charlie's until the sops switch; afterwards admin's, see the admin row above) | environment settings (CLAUDE.md, "Access from a cloud session") |
 | Binary-cache setup files (temporary) | `r440:/root/nix-cache-setup/*.pw,*.netrc` (root, 0700 dir) | made with the htpasswd; shred once every host's sops `nix-cache-netrc` (and r440's `nix-cache-htpasswd`) is live. Famine's old password is lost: give it a new `famine` user first |
 
 None of the plaintext secrets may go into git, the Nix store or a command line (the Pestilence `rpc-password` is the one known exception, above).
