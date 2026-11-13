@@ -347,7 +347,11 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
    cache.nixos.org alone.
 10. On r440: `shred -u ~/nix-cache-*.pw ~/nix-cache-*.netrc`.
 
-## Secrets that live outside git
+## Secrets (all of them)
+
+The one inventory of every secret this repo depends on. Other docs keep
+their setup steps but point here. Encrypted agenix files are in git; every
+other secret lives outside git.
 
 | Secret | Where | Made by |
 | --- | --- | --- |
@@ -366,5 +370,12 @@ binfmt or extra-platforms), so m2mini only gets arch-independent paths
 | Binary cache netrc, servers | `/var/lib/nix-cache/netrc` on c4130 and m2mini (root, 0600) | by hand (same) |
 | Binary cache netrc, Famine | agenix `modules/age/secrets/nix-cache-netrc.age` → `/run/agenix/nix-cache-netrc` | `agenix -e` (same; encrypted, so in git) |
 | `NIX_CACHE_NETRC` | GitHub Actions secret | by hand (docs/ci.md) |
+| Remote-build SSH key `nixremote` | `c4130:/root/.ssh/nixremote` (root, 0600); public half authorized for user `nixremote` on r440 (`hosts/r440/builder.nix`) | `ssh-keygen` on c4130 (exists); used by `nix.buildMachines` in `hosts/c4130/builder.nix` (`ssh-ng://nixremote@10.25.0.2`) |
+| Tailscale auth key (reinstall only) | `/var/lib/tailscale/authkey` (root, 0600) on the server being enrolled; delete after enrolment | admin console: pre-approved, non-ephemeral, tagged `tag:node` ([Tailscale](#tailscale)); read by `tailscaled-autoconnect` (`modules/server/tailscale.nix`) |
+| charlie's password hash, m2mini | `m2mini:/var/lib/secrets/charlie.passwd` (root, 0600), `hashedPasswordFile` in `hosts/m2mini/configuration.nix`. **Missing as of 2026-11-12** (every switch warns `password file … does not exist`) | you: `mkpasswd -m yescrypt \| sudo install -D -m 0600 /dev/stdin /var/lib/secrets/charlie.passwd` |
+| Desktop secrets (agenix) | `modules/age/secrets/*.age`, encrypted in git (recipients: `modules/age/secrets/secrets.nix`); decrypted to `/run/agenix/` on the desktop. Famine: `login` (charlie's password hash, `custom.user.passwordFile`), `pam-yubikeys`, `ssh-yubikey-5`, `ssh-yubikey-5c`, `key-famine`, `nix-cache-netrc`. Pestilence only (archived): `key-pestilence`, `vpn-privkey`, `vpn-password`, `acme-cloudflare` | `agenix -e <name>.age` in `modules/age/secrets` |
+| Pestilence Transmission `rpc-password` | **plaintext in git**, `hosts/Pestilence/servarr.nix` (archived host; excluded from the format check so the secrets guard stays quiet) | rotate it and move it to agenix before restoring Pestilence |
+| Cloud-session secrets | env vars of the Claude Code cloud environment: `TAIL_AUTH_KEY` (joins the session to the tailnet) and charlie's sudo password | environment settings (CLAUDE.md, "Access from a cloud session") |
+| Binary-cache setup files (temporary) | `r440:/root/nix-cache-setup/*.pw,*.netrc` (root, 0700 dir) | made with the htpasswd; shred after Famine's agenix `nix-cache-netrc` exists |
 
-None of these may go into git, the Nix store or a command line.
+None of the plaintext secrets may go into git, the Nix store or a command line (the Pestilence `rpc-password` is the one known exception, above).

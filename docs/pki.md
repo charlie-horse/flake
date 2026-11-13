@@ -5,7 +5,8 @@ CAs, a service-account keypair and one set of leaf certificates per node. All
 of it is generated on the **operator machine** by `cluster-pki` from
 `cluster/definition.nix` and copied to the nodes by `cluster-pki-deploy`.
 Nothing secret is ever a Nix path, in git, or in `/nix/store`: NixOS modules
-reference string paths under `/var/lib/kubernetes/secrets/`.
+reference string paths under `/var/lib/kubernetes/secrets/`. The inventory of
+every secret (PKI and the rest) is `docs/cluster.md`, "Secrets (all of them)".
 
 ```sh
 nix run .#cluster-pki                  # create/refresh everything in ./pki-out

@@ -79,7 +79,8 @@ The guard scans only the diff: the PR's merge-base to head, or on a push
 It prints only `file:line`, never the matching text. All key material lives
 under `/var/lib/kubernetes/secrets/` on the hosts and the CA key on r440
 (`docs/pki.md`); in-cluster secrets are hand-made Kubernetes Secrets
-(`k8s/README.md`).
+(`k8s/README.md`). Every secret, CI's included, is listed in
+`docs/cluster.md`, "Secrets (all of them)".
 
 The guard is diff-only on purpose: older plaintext credentials in
 `hosts/Pestilence` (and in git history) only trip it when those lines are
