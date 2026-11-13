@@ -1,6 +1,9 @@
 # Plan: YubiKey root CA, intermediates, cert-manager (2026-11-13)
 
-Status: **plan, nothing done yet.** Current state is in [pki.md](pki.md).
+Status (2026-11-13): **A–F done; the ceremony ran on 2026-11-13.** G goes
+live when the PR with `k8s/secrets/cert-manager/cluster-ca.sops.yaml`
+merges. H is next. Current state is in [pki.md](pki.md); what happened is
+in [History](#history).
 
 ## Decisions (made 2026-11-13)
 
@@ -80,22 +83,22 @@ The nodes run in parallel unless an arrow says otherwise. Code nodes are one
 branch, CI run and PR each.
 
 ```
-A tools (done)┐
-B cluster-pki ─┼──► E rehearsal (done) ──► F ceremony ──► G workload cutover
-C cert-manager ┤                                       └─► H front-proxy → k8s → etcd rotation
-D docs ────────┘
+A tools (done) ──────┐
+B cluster-pki (done) ┼─► E rehearsal (done) ─► F ceremony (done) ─► G workload cutover (at merge)
+C cert-manager (done)┤                                          └─► H front-proxy → k8s → etcd (next)
+D docs (done) ───────┘
 ```
 
 | Node | What | Output |
 | --- | --- | --- |
 | **A** tools | **Done, no host change.** Flake package `ca-ceremony-tools`: `yubikey-manager`, `yubico-piv-tool` (ykcs11), `step-cli` + `step-kms-plugin`, `openssl` + `pkcs11-provider` (wrapper `ca-openssl`; unused, it crashed in E), and `ca-pcscd`, a temporary pcscd for hosts that don't run one. Used through `nix shell <flake>#ca-ceremony-tools`; nothing is installed on any host, so no switch. | Package |
-| **B** cluster-pki | New modes: `--ca-csr <ca>` (generate the intermediate key and CSR in `ca/<ca>/next/`; don't self-sign) and `--ca-import <ca> <cert>` (check that the cert matches the key, `pathlen:0`, and that it chains to `cluster/pki/root-ca.pem`). Wire into `--rotate-ca … --phase begin`. Leaves get chain files. Trust bundles hold the intermediate only, with the anchor check described above. Also fix the `--out` default to XDG and the `.gitignore` patterns (open TODOs). | PR |
-| **C** cert-manager | `issuers.nix`: drop the `selfsigned` → `cluster-ca` root Certificate. `cluster-ca` ClusterIssuer reads the Secret `cert-manager/cluster-ca` (`tls.crt` = intermediate + root, `tls.key`, `ca.crt` = root), which comes from sops (G). Optional: trust-manager `Bundle` that distributes the root to namespaces. Nothing requests from `cluster-ca` today, so the swap has no consumers to break. | Merge before G (see G). Until then the issuer stays Ready on the old self-signed Secret. trust-manager deferred until `cluster/pki/root-ca.pem` exists. |
-| **D** docs | `pki.md`: one root and two branches, the anchor rule, a YubiKey root CA section. `cluster.md` Secrets table: the root key as a second PIV use on the existing admin YubiKey rows, the workload intermediate as a sops Secret, and the root cert in git (public). | PR |
+| **B** cluster-pki | **Done.** New modes: `--ca-csr <ca>` (generate the intermediate key and CSR in `ca/<ca>/next/`; don't self-sign) and `--ca-import <ca> <cert>` (check that the cert matches the key, `pathlen:0`, and that it chains to `cluster/pki/root-ca.pem`). Wire into `--rotate-ca … --phase begin`. Leaves get chain files. Trust bundles hold the intermediate only, with the anchor check described above. Also fix the `--out` default to XDG and the `.gitignore` patterns (open TODOs). | PR |
+| **C** cert-manager | **Done** (lands in the same PR as G). `issuers.nix`: drop the `selfsigned` → `cluster-ca` root Certificate. `cluster-ca` ClusterIssuer reads the Secret `cert-manager/cluster-ca` (`tls.crt` = intermediate + root, `tls.key`, `ca.crt` = root), which comes from sops (G). Optional: trust-manager `Bundle` that distributes the root to namespaces. Nothing requests from `cluster-ca` today, so the swap has no consumers to break. | Merge before G (see G). Until then the issuer stays Ready on the old self-signed Secret. trust-manager deferred until `cluster/pki/root-ca.pem` exists. |
+| **D** docs | **Done.** `pki.md`: one root and two branches, the anchor rule, a YubiKey root CA section. `cluster.md` Secrets table: the root key as a second PIV use on the existing admin YubiKey rows, the workload intermediate as a sops Secret, and the root cert in git (public). | PR |
 | **E** rehearsal | **Done (software rehearsal):** the ceremony commands ran against a SoftHSM key through step-kms-plugin. All PASS: Go TLS and etcd 3.7.3 accept a client cert when the trust file holds only the k8s intermediate; they reject a workload-signed `system:masters` cert with that same trust file; they **accept** it if the root is in the trust file (so the anchor rule is needed); a server cert file with leaf + intermediate verifies against the root alone. The openssl/pkcs11 fallback crashed and is dropped. | Ceremony commands and gotchas (F) |
-| **F** ceremony | Ad hoc on whatever machine the user plugs the card into (a desktop like Famine, or a server). **The user runs every step** (PIN, touch, sudo). No host switch. Steps below. | Root cert, attestation, 4 signed intermediates, the sops file for `cluster-ca` |
-| **G** workload cutover | **Order matters.** (1) Merge C first. It removes the old self-signed `Certificate cluster-ca`; confirm it is gone from the cluster (`kubectl -n cert-manager get certificate cluster-ca` → NotFound). Otherwise cert-manager re-issues over the new Secret with a self-signed cert. (2) At the ceremony (F step 7), encrypt the intermediate straight from tmpfs with `sops` into `k8s/secrets/cert-manager/cluster-ca.sops.yaml`, then PR and merge. Flux's Kustomization `secrets` replaces the old Secret (server-side apply adopts it; the old Certificate no longer owns it). No `kubectl create`. Then check `flux get kustomizations secrets` and `cert-manager-issuers` are Ready, issue a test Certificate, `openssl verify -CAfile root-ca.pem`. | |
-| **H** bootstrap rotation | Existing `--rotate-ca` flow, one CA at a time: front-proxy (lowest risk), then k8s, then etcd (per-node runbook). One host at a time, etcd health check after each. | All bootstrap certs chain to the root |
+| **F** ceremony | **Done 2026-11-13** ([History](#history)). Ad hoc on whatever machine the user plugs the card into (a desktop like Famine, or a server). **The user runs every step** (PIN, touch, sudo). No host switch. Steps below. | Root cert, attestation, 4 signed intermediates, the sops file for `cluster-ca` |
+| **G** workload cutover | **Order matters.** (1) Merge C first. It removes the old self-signed `Certificate cluster-ca`; confirm it is gone from the cluster (`kubectl -n cert-manager get certificate cluster-ca` → NotFound). Otherwise cert-manager re-issues over the new Secret with a self-signed cert. (2) At the ceremony (F step 7), encrypt the intermediate straight from tmpfs with `sops` into `k8s/secrets/cert-manager/cluster-ca.sops.yaml`, then PR and merge. Flux's Kustomization `secrets` replaces the old Secret (server-side apply adopts it; the old Certificate no longer owns it). No `kubectl create`. Then check `flux get kustomizations secrets` and `cert-manager-issuers` are Ready, and that the live Secret's `tls.crt` is the workload intermediate (fingerprint in `cluster/pki/fingerprints.txt`; C and G land in one PR, so if cert-manager re-issued it before the Certificate was pruned, run `flux reconcile kustomization secrets`). Issue a test Certificate, `openssl verify -CAfile root-ca.pem`. | |
+| **H** bootstrap rotation | **Next.** The three intermediates are imported on r440 into `ca/<ca>/next/`; the bootstrap PKI still runs on the self-signed "solaris" CAs. Start each with `--rotate-ca <ca> --phase begin`. Existing `--rotate-ca` flow, one CA at a time: front-proxy (lowest risk), then k8s, then etcd (per-node runbook). One host at a time, etcd health check after each. | All bootstrap certs chain to the root |
 
 Rough effort: A–D about 2–3 h of agent time in parallel. E about 1 h.
 F about 30 min of your time. G about 20 min. H about 1–2 h spread over
@@ -208,11 +211,36 @@ Gotchas (found in E):
   as the Secret in etcd. It signs nothing the bootstrap side trusts (anchor
   rule), so a leak compromises workload TLS only.
 - **Workload intermediate renewal is manual.** cert-manager will not renew
-  a CA Secret it didn't issue. Set a reminder about 60 days before the
-  2-year expiry; renew by signing a new one and replacing the sops file.
+  a CA Secret it didn't issue. It expires 2028-11-12: set a reminder for
+  about 2028-09-13 (60 days before); renew by signing a new one and replacing the sops file.
   Leaf durations must stay under the intermediate's remaining life.
 - **Anchor mistake.** Covered by the anchor check in B. E showed it is real: etcd accepts a workload-signed `system:masters` cert once the root is in the trust file.
 - **Wasted PIN tries.** A KMS URI without `pin-source` burns a try on 123456 (F, gotchas). The PUK in sops covers a lockout.
+
+## History
+
+**2026-11-13: ceremony (F).** Outputs, all public, in `cluster/pki/`:
+
+| Cert | Valid | Notes |
+| --- | --- | --- |
+| `root-ca.pem` (`CN=neurosis Root CA 2026, O=neurosis`, P-384) | 2026-11-13 to 2046-11-13 | key in YubiKey 19830800 slot 9c, PIN + touch always, cert also in 9c. SHA-256 `03:9D:49:10:E9:7B:6D:39:1E:3A:5E:D5:42:8D:D5:9A:D6:E5:EC:4E:E8:DB:98:2D:FC:51:06:FA:0D:4F:F7:7A`. Attested: `attest-9c.pem` chains to `attest-f9.pem` |
+| `k8s-ca.pem`, `etcd-ca.pem`, `front-proxy-ca.pem` | 5 y (to 2031-11-13) | imported on r440 into `ca/<ca>/next/`; not rotated in yet (H) |
+| `workload-ca.pem` | 2 y (to 2028-11-12) | key in `k8s/secrets/cert-manager/cluster-ca.sops.yaml` (G) |
+
+Fingerprints of all five: `cluster/pki/fingerprints.txt`.
+
+Gotchas, both fixed in the same PR:
+
+- `ceremony.sh` did not start pcscd, because `ykman list` sees the key over
+  FIDO even with no pcscd running.
+- `cluster-pki check-anchors` failed falsely in the imported-but-not-begun
+  state (fix by Barbara).
+
+**Incident (resolved 2026-11-13): the PIV PIN was exposed** in a
+cloud-session transcript during the ceremony. The user rotated it the same
+day with `ykman piv access change-pin` (only the PIN changes; the keys in
+slots 9c and 82 are unaffected), and the plaintext PIN and sudo-password
+files on c4130 were deleted.
 
 ## Phase 2 prerequisites (not planned yet)
 
