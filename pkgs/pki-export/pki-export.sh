@@ -229,7 +229,7 @@ api_call() { # METHOD PATH [JSON-BODY-FILE] -> body on stdout
 git_auth() { # git with the token from $GITHUB_TOKEN via a credential helper
   # shellcheck disable=SC2016 # expanded by git's helper shell, not here
   git -c credential.helper= \
-    -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$GITHUB_TOKEN"; }; f' \
+    -c 'credential.helper=!f() { echo username=x-access-token; printf "%s=%s\n" password "$GITHUB_TOKEN"; }; f' \
     "$@"
 }
 
