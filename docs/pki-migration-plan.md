@@ -244,7 +244,7 @@ files on c4130 were deleted.
 
 ## Phase 2: host certs from in-cluster issuers, delivered by sops (planned 2026-11-13)
 
-Status: **plan, nothing done yet.** Phase 1 is complete: the root, all four
+Status: **P1–P5 built in PR #45; P6–P9 pending.** Phase 1 is complete: the root, all four
 intermediates and the rotations of the front-proxy, k8s and etcd CAs (H) were
 done on 2026-11-13.
 
@@ -281,8 +281,18 @@ files** with only the public recipients from `.sops.yaml`:
   `admin_yubikey`, `admin_backup` and that host (a new `creation_rules` entry
   per host, like the existing ones).
 - `encrypted_regex: -key\.pem$`, so only the private keys are encrypted. The certs
-  stay plaintext in git: they're public, PR diffs show exactly what changed,
-  and CI can check expiry and issuers without any key.
+  stay plaintext in git: they're public, and PR diffs show exactly what
+  changed.
+
+**Checks live in the export job, not in CI** (decision 2026-11-13).
+`pki-export.sh` validates every node before it pushes: all of the node's
+stems are present (otherwise the node is skipped), each cert chains to
+exactly its own intermediate (not the root, not the workload CA), each cert
+belongs to that node, each key is encrypted, and each key matches its cert.
+It also fails the CronJob if any cert on `main` expires within 14 days. CI
+keeps only the secrets guard rule: in `secrets/pki/`, plaintext is allowed
+only for values that are pure `CERTIFICATE` blocks, and every `-key.pem`
+value must be `ENC[`.
 
 ### Safety rules
 
@@ -290,14 +300,17 @@ files** with only the public recipients from `.sops.yaml`:
    `front-proxy-ca.pem`) hold only their own intermediate, never the root.
    The bundles are public: they come from `cluster/pki/*-ca.pem` in git,
    not from the cluster.
-2. **approver-policy** (cert-manager's `CertificateRequestPolicy`) limits each
-   Issuer to an exact allow-list. `k8s-ca` may issue `O=system:masters` only
+2. **approver-policy** (cert-manager's `CertificateRequestPolicy`) limits
+   each leaf to an exact allow-list: **one policy per leaf** (39), because a
+   policy allows a CN and a set of O values independently and so can't tie
+   an O to a CN. `k8s-ca` may issue `O=system:masters` only
    for `CN=cluster-admin`, `system:node:<n>` only for the three node names,
    and only the known component CNs. `etcd-ca` may issue only
    `etcd-{server,peer,client-apiserver}-<n>` with their SANs. `front-proxy-ca`
    may issue only `front-proxy-client`. Everything else is denied. The
    namespaced Issuer limits *who* can request a cert; the policy limits
-   *what* they get.
+   *what* they get. Known limit: approver-policy accepts a request with
+   fewer SANs than the policy allows, never more.
 3. **The CA keys enter the cluster through sops.** They go in
    `k8s/secrets/cluster-pki/{k8s,etcd,front-proxy}-ca.sops.yaml` (admins +
    `&flux`), applied by the Flux Kustomization `secrets`. That file is also
@@ -307,7 +320,9 @@ files** with only the public recipients from `.sops.yaml`:
    are retired.
 4. **etcd snapshots now contain the bootstrap CA keys.** Treat every snapshot
    (`/var/lib/etcd-snap-*.db`) as cluster-admin material.
-5. **The export job's GitHub credential** is a GitHub App installation token,
+5. **The export job reads only the leaves.** Its Role is `get` on the 39
+   leaf Secrets by name (no `list`), so it can't read the CA keys.
+6. **The export job's GitHub credential** is a GitHub App installation token,
    or a fine-grained token limited to this repo with contents and pull-request
    write access. It's stored as a sops k8s Secret. The job only pushes
    branches named `pki-renew/*`, and it never pushes to `main`.
@@ -318,32 +333,29 @@ files** with only the public recipients from `.sops.yaml`:
 P1 issuers+policy ──┐
 P2 export job ──────┼──► P6 keys into cluster ──► P7 dry run ──► P8 cutover m2mini → c4130 → r440 ──► P9 retire
 P3 NixOS sops wiring┤      (user, sops on r440)    (PR, no switch)    (one host at a time)
-P4 .sops.yaml + CI ─┤
+P4 .sops.yaml, guard┤
 P5 cert diff tool ──┘
 ```
 
 | Node | What | Output |
 | --- | --- | --- |
-| **P1** issuers + policy | Namespace `cluster-pki`. Three CA `Issuer`s reading the Secrets from P6. Install approver-policy (pinned chart, same style as `cert-manager/chart.nix`), and turn off cert-manager's default auto-approver for the `cluster-pki` Issuers. Add one `CertificateRequestPolicy` per Issuer. Add one `Certificate` per cluster-pki leaf per node, generated from `cluster/definition.nix` so the names and SANs come from one source. | PR |
-| **P2** export job | A small image (Nix-built: kubectl, sops, yq, git, curl) and a CronJob (daily) with a ServiceAccount that can only `get`/`list` Secrets in `cluster-pki`. Per host it builds `secrets/pki/<host>.yaml`: file names as keys, matching today's `secretsDir` names. If the set of cert fingerprints differs from `main`, it pushes `pki-renew/<date>` and opens a PR that lists every cert that changed and its expiry. It's idempotent: no change means no PR. | PR |
-| **P3** NixOS wiring | Add a per-node option `certSource = "files" \| "sops"` (default `"files"`). With `"sops"`: one `sops.secrets.<file>` per cert/key from `secrets/pki/<host>.yaml` (`sopsFile`, `path` under `/run/secrets/pki/`, owner and mode exactly as today's `install` lines), `secretsDir = "/run/secrets/pki"`, and `restartUnits` per file (etcd for etcd files, the apiserver for apiserver files, …). The bundles come from `cluster/pki/` in git. `sa.key`/`sa.pub` move into `secrets/<host>.yaml` once, by hand (they're static). | PR |
-| **P4** `.sops.yaml` + CI | Add creation rules for `secrets/pki/<host>.yaml` and `k8s/secrets/cluster-pki/`. A CI check over `secrets/pki/*.yaml` covers: every cert chains to its own intermediate (`-partial_chain`) and not to the root, no cert in the file belongs to another host, nothing expires within 14 days, and the private keys are encrypted. Extend the recipients check to the new paths. | PR |
-| **P5** cert diff tool | A script that compares a cert-manager-issued set with cluster-pki's leaves for the same node: subject, SANs, EKU/KU, key type and lifetime. P7 uses it. | PR (with P1) |
+| **P1–P5** | **Done in PR #45.** P1: namespace `cluster-pki`, three CA `Issuer`s, approver-policy with one `CertificateRequestPolicy` per leaf, one `Certificate` per leaf from `cluster/definition.nix`. P2: `pki-export` image and daily CronJob (`get` on the 39 leaf Secrets only); validates each node, then pushes `pki-renew/<date>` and opens a PR when fingerprints differ from `main`. P3: per-node `certSource = "files" \| "sops"`, sops-nix paths under `/run/secrets/pki/` with `restartUnits`. P4: `.sops.yaml` rules for `secrets/pki/<host>.yaml` (`encrypted_regex: -key\.pem$`) and `k8s/secrets/cluster-pki/`, plus the secrets guard rule for `secrets/pki/`. P5: `pki-diff`, which compares cert-manager's leaves with cluster-pki's. | PR #45 |
 | **P6** keys into the cluster | **You**, on r440 with the YubiKey: sops-encrypt the three intermediate keys + certs into `k8s/secrets/cluster-pki/*.sops.yaml` straight from the PKI directory (no plaintext copy). PR, merge. Flux creates the Secrets and the Issuers go Ready. | PR |
 | **P7** dry run | cert-manager issues all leaves, and the export job opens its first PR. Run the diff tool against cluster-pki's current leaves: everything must match except serials and validity. Merge it. No host switches yet (`certSource` is still `"files"`). | Certs in git |
 | **P8** cutover | One host at a time (m2mini → c4130 → r440): set `certSource = "sops"`, PR, merge, `git pull && switch`, etcd health check, `readyz`. It's a **leaf swap under the same intermediates**, so no trust change and no bundle change: lower risk than phase 1's rotations. Roll back by switching the host back to `"files"` (the old files stay in `/var/lib/kubernetes/secrets/` until P9). | All hosts on sops |
 | **P9** retire | Remove `certSource = "files"` and `cluster-pki deploy`. Shred the leaves in `/var/lib/kubernetes/secrets/`. Move the r440 PKI directory to an offline archive (the keys are in sops now). Update `docs/pki.md` and the Secrets table in `docs/cluster.md`. | PR |
 
-P1–P5 can run as parallel agent work (about 4–6 h). P6–P8 need you: one sops
-step and three host switches, about 1 h in total.
+P6–P8 need you: one sops step and three host switches, about 1 h in
+total.
 
 ### Renewal, once live
 
 cert-manager renews 30 days before expiry. The export job opens a PR within
 a day. You merge it and run `git pull && switch` on each host (restartUnits
-restarts only what changed). If a PR sits unmerged, the CI expiry check (14
-days) and leaf-expiry monitoring flag it. Monitoring is a separate open
-TODO.
+restarts only what changed). If a renewal PR sits unmerged, the CronJob
+starts failing once a cert on `main` is within 14 days of expiry: a failed
+`pki-export` run is the signal. Leaf-expiry monitoring beyond that is a
+separate open TODO.
 
 ### Open questions
 
