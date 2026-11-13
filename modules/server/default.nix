@@ -15,20 +15,15 @@
     # Host-specific admin bits (m2mini: dialout, fish) are in the host.
     ../system/sops.nix
     ../system/admin.nix
-    ../system/sudo-2fa.nix
+    # Authentication policy (sshd keys only, sudo, polkit, console; the
+    # hardware factor): one module for every host, docs/auth.md.
+    ../system/auth
     # charlie next to admin, mutable users, root untouched until
     # custom.server.legacyCharlie.enable is turned off; then admin is the
     # only login and root is locked (docs/cluster.md, "Removing charlie
     # from the servers").
     ./legacy-charlie.nix
   ];
-
-  # sshd: keys only. A leaked admin password must not give a shell over
-  # plain SSH (LAN, port 22); Tailscale SSH does not use sshd's auth.
-  services.openssh.settings = {
-    PasswordAuthentication = false;
-    KbdInteractiveAuthentication = false;
-  };
 
   environment.systemPackages = [
     # /etc/nixos is a checkout of this flake on the servers.

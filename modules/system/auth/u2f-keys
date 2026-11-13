@@ -1,0 +1,14 @@
+# pam_u2f mapping for custom.auth.hardwareFactor
+# (modules/system/auth/default.nix). Public data (key handles and public
+# keys), safe in git.
+#
+# PLACEHOLDER: no key registered yet, so enabling
+# custom.auth.hardwareFactor fails evaluation. Register BOTH FIDO2 keys
+# (docs/auth.md, "Registering the keys"):
+#
+#   pamu2fcfg -u admin -o pam://neurosis -i pam://neurosis      # first key
+#   pamu2fcfg -n -o pam://neurosis -i pam://neurosis            # second key
+#
+# touching each key when asked, and put ONE line below this comment:
+# the first command's `admin:<KeyHandle>,<UserKey>,es256,+presence`
+# followed directly by the second's `:<KeyHandle>,<UserKey>,es256,+presence`.
