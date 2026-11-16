@@ -1,8 +1,7 @@
 # Docs
 
 Every doc in this repo and the one topic each owns. Docs say how things
-work now. Rules: [CLAUDE.md](../CLAUDE.md#documentation-policy), enforced by
-`scripts/check-docs.sh`.
+work now. Rules: [CLAUDE.md](../CLAUDE.md#documentation-policy).
 
 ## Cluster and operations
 

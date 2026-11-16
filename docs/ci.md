@@ -20,7 +20,6 @@ Every action is pinned by full commit SHA ([below](#pinned-actions)).
 | `flake-check` | ubuntu-24.04 | `nix flake check --keep-going`: every output evaluates (every NixOS host: the desktop Famine and the servers c4130, r440 and m2mini; Famine's ISO; the packages). Its only `checks` output is `pki-tools` (`parts/packages.nix`; pytest in its checkPhase), the one thing flake check builds; nothing heavy. The k8s render is the system-independent output `k8s`, which flake check does not evaluate. |
 | `format` | ubuntu-24.04 | `nix fmt -- --check` over every tracked `.nix` file (the flake's formatter, RFC-style nixfmt). Excluded: `hosts/Pestilence/servarr.nix` (any edit to it, reformatting included, trips the secrets guard). Run `nix fmt` before committing. |
 | `eval-hosts` (matrix) | x86: ubuntu-24.04, m2mini: ubuntu-24.04-arm | `nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath` with import-from-derivation **disabled**, for c4130, r440 and m2mini. It checks `.system` and writes the drvPath to the job summary. |
-| `docs` | ubuntu-24.04 | `bash scripts/check-docs.sh`: relative markdown links and `docs/…md` references resolve, every doc is linked from [README.md](README.md), and no comment block in code is longer than 15 lines. Exceptions: `.docs-allowlist`. |
 
 `flake check` alone is not enough: it checks that each
 `nixosConfigurations.*` evaluates to *a* configuration, but does not force
@@ -234,7 +233,6 @@ for h in c4130 r440 m2mini; do
 done
 nix build .#k8s.manifests                                     # the render
 nix build .#k8s.checkImages && ./result/bin/k8s-check-images
-bash scripts/check-docs.sh                                    # the docs job
 ```
 
 New files must be `git add`ed before Nix can see them. On r440, Nix's git

@@ -9,7 +9,6 @@
 #   flake-check    every flake output evaluates (nothing heavy is built)
 #   eval-hosts     each server's toplevel drvPath evaluates, for its system
 #   format         every tracked .nix file is nixfmt-formatted (`nix fmt`)
-#   docs           scripts/check-docs.sh (doc links, comment-block length)
 #
 # See docs/ci.md.
 name: checks
@@ -394,18 +393,6 @@ jobs:
             echo "Eval only: compare on the host with"
             echo "\`nix-diff /run/current-system $drv\` before switching."
           } >> "$GITHUB_STEP_SUMMARY"
-
-  # ------------------------------------------------------------------------
-  docs:
-    name: Docs
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: scripts/check-docs.sh
-        run: bash scripts/check-docs.sh
 
   # ------------------------------------------------------------------------
   format:

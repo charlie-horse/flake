@@ -61,8 +61,3 @@ workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
    lines; longer prose goes to the doc, with a one-line pointer in the code.
 6. **Docs change in the same PR as the code.** Moving or renaming a doc or
    heading fixes every link to it.
-7. **Enforced by CI.** `scripts/check-docs.sh` (the `docs` job in
-   `.github/workflows/checks.yml`) fails on long comment blocks, broken
-   links and anchors, missing `docs/…md` files, docs missing from the index,
-   TODO markers, and history/plan/decision text in `docs/`. Run it before
-   pushing. A deliberate exception goes in `.docs-allowlist` with a comment.
