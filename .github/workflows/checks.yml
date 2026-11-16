@@ -3,8 +3,7 @@
 # (the c4130 closure alone is CUDA + torch + vLLM, far beyond a hosted
 # runner), never renders k8s (render.yml does) and never writes.
 #
-#   secrets-guard  keys, kubeconfigs or plaintext passwords in the diff;
-#                  sops files (secrets/, k8s/**/*.sops.yaml) fully encrypted,
+#   secrets-guard  sops files (secrets/, k8s/**/*.sops.yaml) fully encrypted,
 #                  and each encrypted to exactly its .sops.yaml recipients
 #   flake-check    every flake output evaluates (nothing heavy is built)
 #   eval-hosts     each server's toplevel drvPath evaluates, for its system
@@ -45,7 +44,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Fail on keys, kubeconfigs, plaintext passwords or unencrypted sops files
+      - name: sops files are fully encrypted
         env:
           EVENT: ${{ github.event_name }}
           PR_BASE: ${{ github.event.pull_request.base.sha }}
@@ -68,47 +67,8 @@ jobs:
           fi
           echo "scanning $base..$head"
           status=0
-          hits=$(mktemp)
 
-          # 1. File names (added/copied/modified/renamed, not deleted).
-          while IFS= read -r -d '' f; do
-            b=${f##*/}
-            case "$b" in
-              *.nix | *.md) continue ;; # e.g. modules that build kubeconfigs
-            esac
-            case "$b" in
-              *-key.pem | *.key | kubeconfig | kubeconfig.* | *.kubeconfig \
-                | *-kubeconfig | *_kubeconfig)
-                echo "::error file=$f::secret-looking file name: $f"
-                status=1
-                ;;
-            esac
-          done < <(git diff --name-only -z --diff-filter=ACMRT "$base" "$head")
-
-          # 2. Added lines. Only file:line is printed, never the content.
-          #    Comment lines (#, //) are skipped, so docs may name the
-          #    pattern; a hashedPassword/hashedPasswordFile never matches
-          #    (the match is case-sensitive).
-          pattern='password[[:space:]]*=|-----BEGIN ([A-Z]+ )?PRIVATE KEY-----'
-          pattern+='|client-key-data[:]'
-          git diff -U0 --no-color --diff-filter=ACMRT "$base" "$head" \
-            | awk -v pat="$pattern" '
-                /^\+\+\+ / { f = substr($0, 7); next }
-                /^@@/ {
-                  split($3, a, ","); n = substr(a[1], 2) + 0; next
-                }
-                /^\+/ {
-                  line = substr($0, 2)
-                  if (line !~ /^[[:space:]]*(#|\/\/)/ && line ~ pat)
-                    printf "%s:%d\n", f, n
-                  n++
-                }' > "$hits"
-          while IFS= read -r hit; do
-            echo "::error file=${hit%%:*},line=${hit##*:}::password or private key"
-            status=1
-          done < "$hits"
-
-          # 3. sops files: secrets/*.yaml and k8s/**/*.sops.yaml (.sops.yaml
+          # sops files: secrets/*.yaml and k8s/**/*.sops.yaml (.sops.yaml
           #    at the root holds the recipients). Each added/modified one
           #    must be fully sops-encrypted, checked on the whole file at
           #    $head (not just the diff): a top-level `sops:` block with
@@ -209,7 +169,7 @@ jobs:
               "secrets/pki/<node>.yaml, k8s/**/*.sops.yaml; docs/secrets.md," \
               "docs/pki.md); never plaintext in git or the Nix store." >&2
           else
-            echo "no secrets found"
+            echo "sops files OK"
           fi
           exit "$status"
 

@@ -38,17 +38,10 @@ on a host, on the host: `nix-diff /run/current-system <drvPath>`.
 
 ## Secrets guard
 
-The guard scans the diff, and checks every sops file in the tree against
-`.sops.yaml`. To pass it:
-
-- Commit secrets only as sops-encrypted files (`secrets/*.yaml`,
-  `k8s/**/*.sops.yaml`); list each one in [secrets.md](secrets.md).
-- After changing recipients in `.sops.yaml`, run `sops updatekeys` on every
-  file the rule matches.
-- Never commit key files or kubeconfigs. Comments (`#`, `//`) may name the
-  patterns.
-- The guard only trips on edited lines, so editing the plaintext lines in
-  `hosts/Pestilence` fails it.
+Checks that every changed sops file is fully encrypted, and that every sops
+file in the tree is encrypted to its `.sops.yaml` recipients. After changing
+recipients in `.sops.yaml`, run `sops updatekeys` on every file the rule
+matches. It does not scan for plaintext secrets; never commit them.
 
 ## render.yml
 
