@@ -1,7 +1,7 @@
 # Render ./k8s (catenix) and ship it to the cluster.
 #
 #   render   (every PR and push touching the render's inputs) builds
-#            .#k8s.manifests from THIS commit, fails on key material, checks
+#            .#k8s.manifests from THIS commit, checks
 #            that images are multi-arch (advisory) and uploads the tree.
 #   publish  (main only) pushes the tree to GHCR as an OCI artifact
 #            (ghcr.io/<repo>/manifests, tags <sha12> and main), signs it with
