@@ -18,12 +18,7 @@ nix build .#k8s.manifests                                  # -> ./result
 nix eval .#k8s.components.\"apps/authentik\".config.build.manifests --json
 ```
 
-Rules:
-
-- Every image must be a multi-arch manifest list (linux/amd64 +
-  linux/arm64), unless its pods are pinned to amd64 nodes. Nothing checks
-  this.
-- Never commit the render; CI builds it.
+Rule: never commit the render; CI builds it.
 
 **Adding a component:** write its module under `k8s/components/` and add
 one line to `components` in `k8s/default.nix` (or to `deferred.modules`,

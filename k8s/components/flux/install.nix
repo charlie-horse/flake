@@ -4,7 +4,6 @@
 # from the cluster), as is the chart's pre-install `flux check` Job (a Helm
 # hook; Flux here is applied by kubectl, then by itself). Importing the
 # chart also types the Flux custom resources in sync.nix and receiver.nix.
-# All controller images (ghcr.io/fluxcd/*) are multi-arch.
 {
   pkgs,
   catenix,
