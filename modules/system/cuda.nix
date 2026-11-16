@@ -21,12 +21,8 @@ in
     default = false;
   };
   config = mkIf (gpu == "nvidia") {
-    nix.settings = {
-      substituters = [ "https://cuda-maintainers.cachix.org" ];
-      trusted-public-keys = [
-        ("cuda-maintainers.cachix.org-1:" + "0dq3bujKpuEPMCX6U4WylrUDZ9JyUG0VpVZa7CNfq5E=")
-      ];
-    };
+    # nixpkgs' CUDA cache (modules/system/nix-cache.nix).
+    custom.nixCache.cuda.enable = true;
     environment.systemPackages = with pkgs.cudaPackages; [
       cudatoolkit
     ];

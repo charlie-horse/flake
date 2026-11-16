@@ -76,5 +76,9 @@ in
   nix.daemonCPUSchedPolicy = "batch";
   nix.daemonIOSchedClass = "idle";
 
+  # Builds for c4130 substitute their inputs here (builders-use-substitutes):
+  # CUDA redist packages from nixpkgs' CUDA cache.
+  custom.nixCache.cuda.enable = true;
+
   # The binary cache (harmonia behind nginx with basic auth) is ./cache.nix.
 }
