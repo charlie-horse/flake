@@ -31,7 +31,7 @@ workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
   and the YubiKey PIN in `$YK_PIN`; pass them on stdin (`sudo -S`), never in
   argv or output. Only if those variables are unavailable or auto mode denies
   the run, give the user a copy-paste block to run as `admin`.
-- Every file and folder in `/etc/nixos` stays owned by `admin:admin`: run git
+- Every file and folder in `/etc/nixos` stays owned by `admin:users`: run git
   and builds there as admin, never as root. Never edit files or run
   `nix flake update` there.
 - Over SSH, `pgrep -f` matches its own command line; use
