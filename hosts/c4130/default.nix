@@ -10,8 +10,8 @@
 #
 # Required specialArgs:
 #   inputs   - flake inputs; needs inputs.vllm-fork
-#              (github:charlie-horse/vllm-sm70, inputs.nixpkgs.follows =
-#              the 26.05 nixpkgs)
+#              (github:charlie-horse/vllm-sm70/latest, no nixpkgs.follows:
+#              it builds with its own pinned nixpkgs)
 # nixpkgs itself: the flake's `nixpkgs` input (github:NixOS/nixpkgs/
 # nixos-26.05, rev pinned in flake.lock).
 #

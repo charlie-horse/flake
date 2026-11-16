@@ -1,5 +1,6 @@
 # Host values for the vLLM service. The modules, packages, models and the
-# Python environment live in the fork's flake (input `vllm-fork`, nix/ there).
+# Python environment live in charlie-horse/vllm-sm70's flake (input
+# `vllm-fork`, a historical name; nix/ there).
 { inputs, ... }:
 {
   imports = [

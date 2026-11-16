@@ -48,12 +48,13 @@
     # drop-in for the old fork (github:charlie-horse/vLLM), same options.
     # No nixpkgs.follows: vllm-sm70 builds with its own pinned nixpkgs, so a
     # host nixpkgs bump (update.yml) cannot change the gated build.
-    # The input keeps the name `vllm-fork` so hosts/c4130 is unchanged.
-    # Pinned to cef0f9e (C1 passed, build aczb9zwk) until `latest` is
-    # fast-forwarded to a gated commit; then point this at .../latest again.
-    # (`latest` moves only after main
-    # CI, the c4130 check, the GPU gate and release sign-off, same commit.)
-    # `nix flake update vllm-fork` to move it.
+    # The input keeps the name `vllm-fork` (historical; it is no longer the
+    # fork) so hosts/c4130 and flake.lock stay unchanged.
+    # Follows vllm-sm70's release branch `latest`, which moves only after
+    # main CI, the c4130 check, the GPU gate and release sign-off on the same
+    # commit. `nix flake update vllm-fork` to move the lock.
+    # vllm-sm70's own input `vllm-legacy` still pulls the old fork (cf9492a)
+    # into flake.lock for the Flint checkpoint recipe (eval only).
     vllm-fork.url = "github:charlie-horse/vllm-sm70/latest";
 
     # m2mini's Asahi support (pinned rev; bump deliberately).

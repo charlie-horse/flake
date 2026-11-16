@@ -1,6 +1,7 @@
 # Flake input updates, as a pull request.
 #
-# `nix flake update` (every input, vllm-fork included), then the same gates
+# `nix flake update` (every input, vllm-fork = charlie-horse/vllm-sm70
+# included), then the same gates
 # a human change gets before it can be merged: `nix flake check` and the k8s
 # render. On success the new flake.lock is force-pushed to the branch
 # auto/flake-update and a PR to main is opened (or its body refreshed). It
@@ -93,7 +94,7 @@ jobs:
             echo
             if echo "$rows" | grep -qF "| \`vllm-fork\` |"; then
               echo "> [!WARNING]"
-              echo "> **vllm-fork moved.** This changes c4130's production vLLM. Build it on r440 and"
+              echo "> **vllm-fork (charlie-horse/vllm-sm70) moved.** This changes c4130's production vLLM. Build it on r440 and"
               echo "> switch c4130 deliberately (GC first, outside the GPU window; CLAUDE.md)."
               echo
             fi

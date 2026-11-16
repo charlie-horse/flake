@@ -156,7 +156,8 @@ without credentials.
 
 Mondays and Fridays at 04:00 UTC (or dispatched by hand):
 
-1. `nix flake update` updates **every** input, `vllm-fork` included. Nothing to do if no
+1. `nix flake update` updates **every** input, `vllm-fork` (charlie-horse/vllm-sm70)
+   included. Nothing to do if no
    input moved.
 2. `nix flake check` and `nix build .#k8s.manifests` run as the same gates a
    human change needs.
