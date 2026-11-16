@@ -23,7 +23,8 @@ Rules:
 
 - Every image must be a multi-arch manifest list (linux/amd64 +
   linux/arm64), except images pinned to amd64 nodes (exemptions in
-  `checkImages`, `k8s/render.nix`).
+  `checkImages`, `k8s/render.nix`). Run `k8s-check-images` (above) when
+  adding or bumping an image; nothing runs it automatically.
 - Never commit the render; CI builds it.
 
 **Adding a component:** write its module under `k8s/components/` and add
