@@ -17,13 +17,17 @@
       # runs it with --check, excluding only hosts/Pestilence/servarr.nix).
       formatter = pkgs.nixfmt;
 
-      # pytest runs in pki-tools' checkPhase.
-      checks.pki-tools = pkiTools;
+      # pytest runs in the checkPhase; the ceremony variant runs the superset
+      # (card fakes and the SoftHSM rehearsal as well).
+      checks.pki-tools = pkiTools.ceremony;
 
       packages = {
         # YubiKey root-CA ceremony tools, entered ad hoc as root on c4130
         # (`nix shell .#ca-ceremony-tools`; docs/pki-migration-plan.md).
-        ca-ceremony-tools = pkgs.callPackage ../pkgs/ca-ceremony-tools { };
+        ca-ceremony-tools = pkgs.callPackage ../pkgs/ca-ceremony-tools {
+          pki-ceremony = pkiTools.ceremony;
+        };
+        pki-ceremony = pkiTools.ceremony;
         pki-export = pkiTools;
         pki-export-image = pkiTools.image;
       }

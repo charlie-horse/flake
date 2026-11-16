@@ -17,7 +17,7 @@ sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig get nodes   # break-g
 ```
 
 - [Bootstrap PKI and workload PKI](#bootstrap-pki-and-workload-pki)
-- [YubiKey root CA](#yubikey-root-ca)
+- [YubiKey root CA](#yubikey-root-ca) ([pki-ceremony](#the-ceremony-tool-pki-ceremony), [backup roots](#backup-roots))
 - [Where certs come from](#where-certs-come-from)
 - [Break-glass](#break-glass)
 - [Offline signing when the cluster is down](#offline-signing-when-the-cluster-is-down)
@@ -79,7 +79,7 @@ rule.
 **Workload intermediate renewal is manual.** cert-manager does not renew a
 CA Secret it did not issue. It expires 2028-11-12; about 60 days before
 (around 2028-09-13), sign a new one with the root
-([how](#signing-an-intermediate-under-the-existing-root)) and replace the
+(`pki-ceremony sign --new workload`, [how](#signing-an-intermediate-under-the-existing-root)) and replace the
 sops file (PR, merge; Flux applies it). Leaf durations must stay under its
 remaining life.
 
@@ -137,7 +137,8 @@ FIDO2 key `ssh:admin` ([cluster.md, Secrets](cluster.md#secrets-all-of-them),
 Rules:
 
 - **Never run `ykman piv reset`.** It wipes every PIV slot: the root key in
-  9c and the sops key in 82. The root key has no copy.
+  9c and the sops key in 82. The root key has no copy (the
+  [backup roots](#backup-roots) are other keys, not copies).
 - **PIN, PUK and management key** are shared with the sops key; the
   ceremony did not change them. The PIN was exposed during the ceremony
   and rotated the same day (plan, [History](pki-migration-plan.md#history)). The PIN is held by the user, offline. The
@@ -145,16 +146,118 @@ Rules:
   PIN-protected on the card, so `ykman` asks for the PIN when it writes
   slot 9c. Never put the PIN on a command line or in shell history. The
   ceremony's only copy is a 0600 `pin-source` file in tmpfs, shredded
-  after (step must have it, or it tries 123456 and burns a try).
-- **No backup (accepted risk).** If the card is lost, broken or reset, the
-  root is gone and every intermediate must be re-rooted under a new one.
-  Nothing breaks at once: the bootstrap bundles anchor on their 5-year
-  intermediates, and the workload intermediate lasts 2 years.
+  after (step-kms-plugin must have it, or it tries 123456 and burns a
+  try). After an aborted run, `shred -u /dev/shm/ceremony.*/*`.
+- **Backup roots, not a backup key.** If the card is lost, broken or reset,
+  root A's key is gone. Two backup roots on other cards
+  ([Backup roots](#backup-roots)) keep a signer that clients already
+  trust. Nothing breaks at once either way: the bootstrap bundles anchor
+  on their 5-year intermediates, and the workload intermediate lasts 2
+  years.
 - **One card holds the sops admin identity and the root.** Losing it costs
   both. sops survives through `admin_backup` (a recipient of every file).
   A blocked PIN is unblocked with the PUK; while the PIN is blocked the
   card can't decrypt, so read the PUK from `secrets/admin.yaml` with
   `admin_backup`.
+
+### The ceremony tool: `pki-ceremony`
+
+`pki-ceremony` (`pkgs/pki-tools/pki/ceremony/`, on PATH in
+`nix shell /etc/nixos#ca-ceremony-tools`) has three subcommands:
+
+| Subcommand | Does | PIN + touch |
+| --- | --- | --- |
+| `root` | the first-time root ceremony (what `ceremony.sh` did on 2026-11-13): refuses if 9c holds a key or cert; new root in 9c, attestation, workload + bootstrap intermediates | 1 + 1 per intermediate |
+| `sign` | [sign-only under the existing root](#signing-an-intermediate-under-the-existing-root) | 1 per intermediate |
+| `backup-root` | a [backup root](#backup-roots) on a new card, cross-signed both ways | 2 on the new card, 1 on 19830800 |
+
+For every subcommand:
+
+- **One card at a time.** Before every card operation it lists the
+  inserted YubiKeys (`ykman list --serials`) and refuses unless exactly the
+  expected serial is in. A swap is a prompt; a wrong card is refused and
+  the prompt repeats.
+- **The PIN, PUK and management key** are read with getpass (never
+  echoed), never on argv or in the environment. The PIN reaches
+  step-kms-plugin only as a 0600 `pin-source` file in a tmpfs work dir,
+  overwritten and removed on exit.
+- **Slot 82 is compared before and after**; the tool never writes it, never
+  resets a card and never changes card 19830800's PIN, PUK or management
+  key.
+- **The repo is never written.** Outputs go to `--out`; the tool prints
+  where each file goes. Keys made with `--new` exist only in memory and in
+  the sops-encrypted Secret (plaintext only on sops's stdin).
+- **Signing** goes through `step-kms-plugin sign` (the same call
+  `step certificate sign --kms` makes): Python builds the certificate,
+  the card signs its SHA-384 digest, and the signature is checked against
+  the issuer before anything is written.
+- **Rehearsal first:** the same commands with `--rehearsal ~/hsm [--yes]`
+  use SoftHSM tokens named after the serials instead of cards (the
+  inserted card is the file `~/hsm/inserted`); `sign` and `backup-root`
+  then need `--root` pointing at the rehearsal root. Run them on the
+  ceremony machine before the real thing. The nix check runs all three.
+
+On a server (`sudo -i` first; pki-ceremony starts `ca-pcscd` itself when
+no PC/SC reader sees the card). As root, pass `--repo /etc/nixos`.
+
+### Backup roots
+
+Two more YubiKeys each hold a backup root, made with
+`pki-ceremony backup-root --serial <card> --index <n>`:
+`CN=neurosis Backup Root CA <n> 2026, O=neurosis`, P-384 in slot 9c, PIN +
+touch always, attested, 20 y, `pathlen:2`. Planned: backup root 1 and 2 on
+two dedicated cards; read each serial with `ykman list --serials` before
+the ceremony (the tool refuses any other card).
+
+| File (public, for `cluster/pki/`) | Issuer | pathlen | Why |
+| --- | --- | --- | --- |
+| `backup-root-<n>.pem` (B) | itself | 2 | anchors leaf → intermediate (0) → A′ (1) → B. With pathlen:1, OpenSSL, Go and Python cryptography all reject that chain |
+| `root-ca-by-backup-<n>.pem` (A′) | B | 1 | root A's name, key and SKI signed by B, so every chain that ends at A also reaches B. Same pathlen as A (0 fails everywhere) |
+| `backup-root-<n>-by-root.pem` (B′) | A | 1 | B's name, key and SKI signed by A. See the limitation below |
+| `attest-9c-<serial>.pem`, `attest-f9-<serial>.pem` | Yubico | | the B key was generated on that card (serial and policy checked) |
+
+The ceremony is two steps, because only one card can be plugged in:
+
+1. **New card in.** It must be factory-fresh (default PIN, PUK and
+   management key, empty 9c); a card in any other state is refused (one
+   with its own PIN, PUK, protected management key and empty 9c is used
+   after a `yes`). You choose the new PIN (twice). The PUK is random and
+   leaves the tool only as `puk-<serial>.sops.yaml`, encrypted for the
+   admin recipients before the card is changed. The management key is
+   random and PIN-protected on the card. Then: key in 9c, attestation, B
+   self-signed and imported into 9c, and B cross-signs A using only
+   `cluster/pki/root-ca.pem` (2 touches).
+2. **Swap to 19830800.** The same gate as `sign` (9c key and cert equal
+   `root-ca.pem`), then A signs B (1 touch). It then checks that the four
+   real intermediates chain to B through A′.
+
+Type `later` at the swap prompt to stop after step 1; step 2 runs any time
+from step 1's directory, which it re-verifies first (root fingerprint,
+B unchanged, A′ under B, attestation):
+
+```sh
+pki-ceremony backup-root --repo /etc/nixos --serial <card> --index 1 --out ~/backup-1
+pki-ceremony backup-root --repo /etc/nixos --cross-sign-with-root ~/backup-1   # step 2 later
+```
+
+**B′ does not protect clients that trust only A.** Root A is `pathlen:1`,
+and OpenSSL 3.6, Go 1.24 and Python cryptography 48 enforce a trust
+anchor's pathlen, so leaf → intermediate under B → B′ → A (two CAs under
+A) is rejected. B′ helps only verifiers that ignore anchor constraints.
+The protection against losing card A is to put each `backup-root-<n>.pem`
+next to `root-ca.pem` in every bundle that trusts the root (workloads, a
+trust-manager bundle) now. The bootstrap side anchors on its own
+intermediates and is unaffected. For OpenSSL clients that trust only B,
+an untrusted bundle must list A′ before A's self-signed cert (otherwise
+"self-signed certificate in certificate chain").
+
+After the ceremony, on a branch: the public files into `cluster/pki/`
+(and their lines into `fingerprints.txt`), the PUK into
+`secrets/admin.yaml` (the tool prints the `sops decrypt | sops set
+--value-stdin` pipe), and a row per card in
+[cluster.md, Secrets](cluster.md#secrets-all-of-them). If initialising a
+**backup** card goes wrong, the recovery is `ykman --device <that serial>
+piv reset` by hand, and only on that card; never on 19830800.
 
 ## Where certs come from
 
@@ -289,8 +392,9 @@ same root: trust first, then leaves, then drop the old CA. Every switch is
 one host at a time with the etcd check and `readyz` after each
 ([cluster.md, Changing a host](cluster.md#changing-a-host)).
 
-- **Sign:** in tmpfs, a new P-384 key and CSR
-  (`O=neurosis, CN=neurosis <ca> CA <date>`), signed by the root in slot 9c
+- **Sign:** `pki-ceremony sign --new <ca>`: a new P-384 key in memory
+  (`O=neurosis, CN=neurosis <ca> CA <date>`), signed by the root in slot 9c,
+  key and cert written only as the encrypted Secret
   ([how](#signing-an-intermediate-under-the-existing-root)).
 - **PR 1, trust and signer:** `cluster/pki/<ca>-ca.pem` becomes new + old
   (new first: the export job checks leaves against the first cert, so it
@@ -308,23 +412,58 @@ one host at a time with the etcd check and `readyz` after each
 
 ### Signing an intermediate under the existing root
 
-`ca-ceremony` (`pkgs/ca-ceremony-tools/ceremony.sh`) is the first-time root
-ceremony: it refuses to run while slot 9c holds a key and always creates a
-new root, so it is not the renewal tool. Renewing an intermediate under the
-existing root needs a sign-only mode of ca-ceremony (open follow-up, plan);
-until then sign by hand from `nix shell /etc/nixos#ca-ceremony-tools`
-(5 y for k8s/etcd/front-proxy, 2 y for workload; one PIN + touch):
+`pki-ceremony sign` signs under the root in slot 9c and never creates a
+key on the card ([the tool](#the-ceremony-tool-pki-ceremony)). Lifetimes:
+5 y for k8s/etcd/front-proxy, 2 y for workload, `--not-after` overrides.
+One PIN + touch per item:
 
 ```sh
+sudo -i                                       # on a server
+nix shell /etc/nixos#ca-ceremony-tools
+pki-ceremony sign --repo /etc/nixos --new workload --out ~/sign-$(date +%F)   # renewal before 2028-11-12
+pki-ceremony sign --repo /etc/nixos --new k8s --out ...                       # a CA rotation
+pki-ceremony sign --repo /etc/nixos --csr name=req.csr --out ...              # a CSR made elsewhere
+```
+
+Before it asks for the PIN it refuses unless:
+
+- card 19830800 (`--serial`) is the only card in, slot 9c holds the key of
+  `cluster/pki/root-ca.pem` (`--root`) and a certificate equal to it
+  (SHA-256), with PIN ALWAYS + touch ALWAYS;
+- every CSR has a valid signature, a P-384 key and no extension other than
+  BasicConstraints `CA:TRUE, pathlen:0`, KeyUsage and SKI (it refuses
+  `pathlen` > 0, unlimited and `CA:FALSE`);
+- every lifetime ends before the root (2046-11-13).
+
+Each result is `CA:TRUE, pathlen:0`, `keyCertSign, cRLSign` (both
+critical), AKI = the root's SKI, verified under the root. `--new <ca>`
+makes the key in memory and writes `<ca>-ca.pem` plus the encrypted
+Secret: `cluster-ca.sops.yaml` (for `k8s/secrets/cert-manager/`) or
+`<ca>-ca.sops.yaml` (for `k8s/secrets/cluster-pki/`). `--csr` writes only
+the cert.
+
+Fallback by hand, the same step-kms-plugin path (one PIN + touch):
+
+```sh
+cat > intermediate.tpl <<'EOF'
+{"subject": {{ toJson .Subject }}, "keyUsage": ["certSign", "crlSign"],
+ "basicConstraints": {"isCA": true, "maxPathLen": 0}}
+EOF
 step certificate sign --template intermediate.tpl --not-after 43824h \
   --kms 'yubikey:serial=19830800?pin-source=<tmpfs file>' \
   <ca>.csr cluster/pki/root-ca.pem 'yubikey:slot-id=9c' > <ca>-ca.pem   # workload: 17520h
 ```
 
-`intermediate.tpl` is the template `ceremony.sh` writes (`pathlen:0`,
-`keyCertSign, cRLSign`). The pin-source file is 0600 in tmpfs, written with
-`read -rs`, shredded after: without it step tries 123456 and burns a PIN
-try.
+A cross certificate by hand (another root's name and public key, no
+private key needed) is `step certificate create --skip-csr-signature
+--template x.tpl --ca <issuer>.pem --ca-kms '<KMS URI>' --ca-key
+'yubikey:slot-id=9c' --key <subject>.pub '<subject CN>' out.pem`, with
+`x.tpl` setting the subject, `subjectKeyId` (the subject cert's SKI,
+base64), `certSign, crlSign` and `maxPathLen: 1`. step refuses before
+signing if the card's key is not `--ca`'s.
+
+The pin-source file is 0600 in tmpfs, written with `read -rs`, shredded
+after: without it step tries 123456 and burns a PIN try.
 
 ## Phase 2 operations
 

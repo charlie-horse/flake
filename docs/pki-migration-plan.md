@@ -122,8 +122,8 @@ PIN, PUK or management key (already set for sops), never touches slot 82
    enter the same `nix shell`; `ca-ceremony` starts `ca-pcscd` itself when no
    pcscd is reachable (it exits when idle).
    Work in a tmpfs directory.
-The script is `pkgs/ca-ceremony-tools/ceremony.sh`. It runs these
-commands; `<ca>` is `workload`, `k8s`, `etcd` or `front-proxy`:
+The script was `pkgs/ca-ceremony-tools/ceremony.sh` (since 2026-11-16
+`pki-ceremony root`, docs/pki.md). It ran these commands; `<ca>` is `workload`, `k8s`, `etcd` or `front-proxy`:
 
 ```sh
 ykman --device 19830800 piv keys generate --algorithm ECCP384 \
@@ -240,6 +240,16 @@ cloud-session transcript during the ceremony. The user rotated it the same
 day with `ykman piv access change-pin` (only the PIN changes; the keys in
 slots 9c and 82 are unaffected), and the plaintext PIN and sudo-password
 files on c4130 were deleted.
+
+**2026-11-16: `pki-ceremony`.** `ceremony.sh` became the Python CLI
+`pki-ceremony` (pkgs/pki-tools, in `ca-ceremony-tools`) with `root`,
+`sign` (the sign-only follow-up below) and `backup-root` (backup roots on
+other cards, cross-signed both ways; docs/pki.md, "Backup roots"). All
+three are rehearsed against SoftHSM in the nix check. Finding: the cross
+cert B′ (backup root signed by A) cannot give A-only clients a path to
+intermediates under a backup root, because A is `pathlen:1` and
+OpenSSL, Go and Python cryptography enforce the anchor's pathlen; the
+backup root certs must be shipped in root-trusting bundles instead.
 
 **2026-11-16: phase 2 cutover (P8) and retirement (P9).** P8: m2mini
 (#50), c4130 (#51) and r440 (#53) switched to `certSource = "sops"`, one at
@@ -366,12 +376,11 @@ separate open TODO.
 
 ### Open follow-ups
 
-- **A sign-only mode for `ca-ceremony`.** `ceremony.sh` is the first-time
-  root ceremony: it refuses to run while slot 9c holds a key and always
-  creates a new root. Renewing the workload intermediate (before
-  2028-11-12) or a bootstrap CA rotation needs a mode that only signs a CSR
-  with the existing root. Until then: `step certificate sign` by hand
-  (pki.md, "Signing an intermediate under the existing root").
+- ~~A sign-only mode for `ca-ceremony`.~~ Done 2026-11-16: `pki-ceremony
+  sign` (docs/pki.md, "Signing an intermediate under the existing root")
+  signs only under the root already in slot 9c, after checking the card's
+  serial, its 9c key and cert against `cluster/pki/root-ca.pem`, and every
+  CSR and lifetime. `ceremony.sh` is replaced by `pki-ceremony root`.
 
 ### Open questions
 

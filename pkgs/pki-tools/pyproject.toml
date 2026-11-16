@@ -10,9 +10,10 @@ dependencies = ["cryptography", "pyyaml"]
 
 [project.scripts]
 pki-export = "pki.cli_export:main"
+pki-ceremony = "pki.ceremony.cli:main"
 
 [tool.setuptools]
-packages = ["pki"]
+packages = ["pki", "pki.ceremony"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
