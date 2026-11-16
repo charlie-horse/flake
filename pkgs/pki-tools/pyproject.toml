@@ -10,9 +10,11 @@ dependencies = ["cryptography", "pyyaml"]
 
 [project.scripts]
 pki-export = "pki.cli_export:main"
+pki-ceremony = "pki.ceremony.cli:main"
 
 [tool.setuptools]
-packages = ["pki"]
+packages = ["pki", "pki.ceremony"]
+package-data = { "pki.ceremony" = ["yubico-piv-ca.pem"] }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

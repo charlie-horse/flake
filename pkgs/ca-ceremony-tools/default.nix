@@ -6,9 +6,10 @@
 #
 #   sudo -i                                  # pcscd and its clients run as root
 #   nix shell /etc/nixos#ca-ceremony-tools
-#   CSR_DIR=~/csrs ca-ceremony               # the whole ceremony (ceremony.sh)
-#   MODE=rehearsal CSR_DIR=... ca-ceremony   # node E: SoftHSM key, no card
-# or by hand:
+#   pki-ceremony sign --new workload --out ~/ceremony-$(date +%F)
+#   pki-ceremony backup-root --serial N --index I --out ...
+#   pki-ceremony <cmd> ... --rehearsal ~/hsm  # SoftHSM tokens instead of cards
+# (docs/pki.md, "YubiKey root CA") or by hand:
 #   ca-pcscd &                               # temporary pcscd, exits when idle
 #   ykman info; ykman piv info
 #   step certificate create ... --kms 'yubikey:' --key 'yubikey:slot-id=9c'
@@ -28,10 +29,10 @@
 #   ca-openssl        openssl with OPENSSL_MODULES=<pkcs11-provider> and
 #                     PKCS11_PROVIDER_MODULE=<libykcs11.so>, for that
 #                     process only (no openssl.cnf anywhere is changed)
-#   ca-ceremony       ./ceremony.sh (root key in 9c, root + 4 intermediates,
-#                     sops-encrypted workload Secret); owned by the PKI plan
-#   sops, age-plugin-yubikey, yq (yq-go)   for the workload Secret
-#   softhsm2-util     softhsm, for MODE=rehearsal
+#   pki-ceremony      pkgs/pki-tools (root, sign, backup-root); starts
+#                     ca-pcscd itself when no PC/SC reader sees the card
+#   sops, age-plugin-yubikey, yq (yq-go)   for the sops-encrypted Secrets
+#   softhsm2-util     softhsm, for --rehearsal
 #
 # The admin YubiKey's other uses (sops age identity in PIV slot 82, FIDO2
 # ssh:admin and pam_u2f) are untouched: nothing here writes to the card by
@@ -54,12 +55,7 @@
   age-plugin-yubikey,
   yq-go,
   softhsm,
-  coreutils,
-  diffutils,
-  findutils,
-  gnugrep,
-  gnused,
-  git,
+  pki-ceremony,
 }:
 let
   # step-cli >= 0.31.0: 0.30.2 (nixos-26.05) loads the issuer certificate of
@@ -132,26 +128,12 @@ let
     softhsm
     ca-pcscd
     ca-openssl
+    pki-ceremony
   ];
-
-  ca-ceremony = writeShellApplication {
-    name = "ca-ceremony";
-    runtimeInputs = tools ++ [
-      coreutils
-      diffutils
-      findutils
-      gnugrep
-      gnused
-      procps
-      git
-    ];
-    # writeShellApplication adds its own shebang and `set -euo pipefail`.
-    text = lib.removePrefix "#!/usr/bin/env bash\n" (builtins.readFile ./ceremony.sh);
-  };
 in
 symlinkJoin {
   name = "ca-ceremony-tools";
-  paths = tools ++ [ ca-ceremony ];
+  paths = tools;
   meta = {
     description = "YubiKey PIV root-CA ceremony tools (ykman, step + step-kms-plugin, openssl + pkcs11-provider, ad-hoc pcscd)";
     platforms = lib.platforms.linux;

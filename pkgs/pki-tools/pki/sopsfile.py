@@ -83,3 +83,23 @@ def certs(path: str) -> dict[str, bytes]:
 
 def recipients(text: str) -> list[str]:
     return [a["recipient"] for a in (yaml.safe_load(text).get("sops", {}).get("age") or [])]
+
+
+def encrypt_stdin(repo: str, filename_override: str, text: str) -> str:
+    res = subprocess.run(
+        ["sops", "--config", ".sops.yaml", "encrypt", "--filename-override", filename_override,
+         "--input-type", "yaml", "--output-type", "yaml", "/dev/stdin"],
+        cwd=repo, env=public_env(), input=text, capture_output=True, text=True,
+    )
+    if res.returncode != 0:
+        raise RuntimeError(f"sops encrypt for {filename_override} failed: " + res.stderr.strip())
+    return res.stdout
+
+
+def rule_recipients(repo: str, path: str) -> list[str]:
+    with open(os.path.join(repo, ".sops.yaml")) as f:
+        rules = yaml.safe_load(f)["creation_rules"]
+    rule = next((r for r in rules if re.search(r["path_regex"], path)), None)
+    if rule is None:
+        raise RuntimeError(f"no .sops.yaml rule for {path}")
+    return [k for g in rule["key_groups"] for k in g["age"]]
