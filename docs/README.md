@@ -4,6 +4,10 @@ Procedures and rules for operating what the flake declares. What runs where
 and how it is configured: read the Nix source. Rules for these docs:
 [CLAUDE.md](../CLAUDE.md#documentation-policy).
 
+Tools: `nix develop` (or direnv with `.envrc`) has every tool these
+procedures use, except the root-CA tools in `ca-ceremony-tools`
+([pki.md](pki.md)). On a host, use the `nix shell` lines given.
+
 | Doc | Procedures for |
 | --- | --- |
 | [cluster.md](cluster.md) | Changing a host, etcd health check, changing something in the cluster, Kubernetes API access, Tailscale |

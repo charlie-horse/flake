@@ -22,7 +22,7 @@ are the flake's `checks` (`parts/checks.nix`); CI (`checks.yml`) only runs
 ## Running other checks locally
 
 ```sh
-nix shell nixpkgs#actionlint nixpkgs#shellcheck -c actionlint
+actionlint                                   # from nix develop
 nix build .#k8s.checkImages && ./result/bin/k8s-check-images
 ```
 

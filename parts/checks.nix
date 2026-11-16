@@ -3,7 +3,7 @@
 { inputs, ... }:
 {
   perSystem =
-    { system, ... }:
+    { system, self', ... }:
     let
       pkgs = inputs.nixpkgs.legacyPackages.${system};
       inherit (pkgs) lib;
@@ -46,6 +46,11 @@
               find . -name '*.nix' -print0 | xargs -0 nixfmt --check
               touch $out
             '';
+
+        # pki-tools (pytest runs in its checkPhase) and the image
+        # pki-export-image.yml pushes from main.
+        pki-tools = self'.packages.pki-export;
+        pki-export-image = self'.packages.pki-export-image;
 
         # The k8s render with this system's nixpkgs: on x86_64-linux the same
         # derivation as `.#k8s.manifests` (parts/k8s.nix).

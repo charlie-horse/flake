@@ -1,4 +1,5 @@
-# Per-system packages. The k8s render is the system-independent output `k8s`
+# Per-system packages and the dev shell (`nix develop`, or direnv via
+# .envrc). The k8s render is the system-independent output `k8s`
 # (parts/k8s.nix); the desktop ISOs come from the flake lib (parts/hosts.nix).
 { inputs, config, ... }: {
   perSystem =
@@ -16,8 +17,32 @@
       # `nix fmt`: RFC-style nixfmt (the `format` check, parts/checks.nix).
       formatter = pkgs.nixfmt;
 
-      # pytest runs in pki-tools' checkPhase.
-      checks.pki-tools = pkiTools;
+      # Tools the procedures in docs/ use. The YubiKey root-CA tools stay in
+      # `ca-ceremony-tools` (docs/pki.md).
+      devShells.default = pkgs.mkShellNoCC {
+        packages = with pkgs; [
+          # secrets and the YubiKey
+          sops
+          age
+          age-plugin-yubikey
+          ssh-to-age
+          yubikey-manager
+          pam_u2f
+          # cluster
+          kubectl
+          kubelogin-oidc
+          fluxcd
+          cloudflared
+          # checks and inspection
+          nixfmt
+          actionlint
+          shellcheck
+          nix-diff
+          jq
+          yq-go
+          openssl
+        ];
+      };
 
       packages = {
         # YubiKey root-CA ceremony tools, entered ad hoc wherever the card is

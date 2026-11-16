@@ -1,19 +1,11 @@
-# Devenv
-.devenv*
-devenv.local.nix
-
 # direnv
 .direnv
-
-# pre-commit
-.pre-commit-config.yaml
 
 # nix build outputs
 result
 result-*
 
 # cluster-pki output (CA keys + leaves; never commit) and other secrets
-/pki-out/
 pki-out/
 *-key.pem
 *.key
@@ -27,7 +19,4 @@ admin.conf
 *.passwd
 cluster-pki-staging/
 **/tls/
-
-# k8s render: built by CI (render.yml) and pushed to GHCR, never committed
-/k8s/rendered/
 __pycache__/

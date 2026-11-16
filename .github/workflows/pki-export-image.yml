@@ -1,17 +1,9 @@
-# docs/pki.md#export-job-image
+# Push the pki-export image to GHCR from main (`nix flake check` builds it
+# on every PR: checks.pki-export-image). docs/pki.md#export-job-image
 name: pki-export-image
 
 on:
   push:
-    branches: [main]
-    paths:
-      - "pkgs/pki-tools/**"
-      - "k8s/components/infra/cluster-pki/leaves.nix"
-      - "cluster/definition.nix"
-      - "parts/packages.nix"
-      - "flake.lock"
-      - ".github/workflows/pki-export-image.yml"
-  pull_request:
     branches: [main]
     paths:
       - "pkgs/pki-tools/**"
@@ -26,12 +18,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: pki-export-image-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: pki-export-image
+  cancel-in-progress: false
 
 jobs:
   image:
-    name: Build (and on main push) the pki-export image
+    name: Push the pki-export image
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -58,9 +51,6 @@ jobs:
           ./stream > image.tar
 
       - name: Push to GHCR
-        if: >-
-          github.ref == 'refs/heads/main'
-          && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
