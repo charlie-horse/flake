@@ -1,7 +1,7 @@
 # Checks: the repository's gate. Runs on every pull request and push to
 # main, whatever changed. It only checks; it never builds a NixOS toplevel
 # (the c4130 closure alone is CUDA + torch + vLLM, far beyond a hosted
-# runner), never renders k8s (render.yml does) and never writes.
+# runner) and never writes.
 #
 #   flake-check    `nix flake check`, the single gate (parts/checks.nix)
 #
@@ -43,6 +43,6 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
-      # Evaluates every output and builds the light `checks` (parts/checks.nix).
-      # The k8s render (`k8s`) is not evaluated here, so nothing heavy is built.
+      # Evaluates every output and builds the `checks` (parts/checks.nix),
+      # the k8s render included.
       - run: nix flake check --keep-going -L

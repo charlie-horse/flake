@@ -21,8 +21,6 @@ nix eval .#k8s.components.\"apps/authentik\".config.build.manifests --json
 
 Rules:
 
-- Keep the render out of `packages.<system>`: it is import-from-derivation,
-  and `nix flake check` must not build it.
 - Every image must be a multi-arch manifest list (linux/amd64 +
   linux/arm64), except images pinned to amd64 nodes (exemptions in
   `checkImages`, `k8s/render.nix`).

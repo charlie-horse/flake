@@ -1,9 +1,9 @@
 # Flake input updates, pushed straight to main (hands-free).
 #
-# `nix flake update` (every input, vllm-fork included), then the gates a
-# human change gets: `nix flake check`, each server's toplevel eval (no IFD)
-# and the k8s render. Only if all pass is flake.lock committed and pushed to
-# main; on failure nothing is pushed and the failed run is the signal.
+# `nix flake update` (every input, vllm-fork included), then the gate a
+# human change gets: `nix flake check` (host evals and the k8s render
+# included). Only if it passes is flake.lock committed and pushed to main;
+# on failure nothing is pushed and the failed run is the signal.
 #
 # GITHUB_TOKEN pushes trigger no workflows, so the job then dispatches
 # checks.yml and render.yml on main. A vllm-fork bump is flagged in the
@@ -23,9 +23,6 @@ permissions:
 concurrency:
   group: update
   cancel-in-progress: false
-
-env:
-  NO_IFD: --option allow-import-from-derivation false
 
 jobs:
   update:
@@ -63,24 +60,6 @@ jobs:
         if: steps.update.outputs.changed == 'true'
         run: nix flake check --keep-going -L
 
-      # Servers only: x86_64 evals of all three (m2mini also evaluates on
-      # x86_64 without IFD; checks.yml evaluates it natively after the push).
-      - name: Eval server toplevels (no build, no IFD)
-        if: steps.update.outputs.changed == 'true'
-        run: |
-          set -euo pipefail
-          for host in c4130 r440 m2mini; do
-            # shellcheck disable=SC2086 # NO_IFD is a list of flags
-            drv=$(nix eval --raw $NO_IFD ".#nixosConfigurations.$host.config.system.build.toplevel.drvPath")
-            echo "$host: $drv"
-          done
-
-      # The k8s render is not a per-system output, so flake check does not
-      # build it (parts/k8s.nix).
-      - name: Render k8s
-        if: steps.update.outputs.changed == 'true'
-        run: nix build -L --no-link .#k8s.manifests
-
       - name: Describe the changes
         if: steps.update.outputs.changed == 'true'
         id: describe
@@ -108,7 +87,7 @@ jobs:
             fi
             echo "$rows"
             echo
-            echo "Passed before push: nix flake check, server evals (no IFD), k8s render."
+            echo "Passed before push: nix flake check."
             echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           } > "$RUNNER_TEMP/msg.txt"
           {

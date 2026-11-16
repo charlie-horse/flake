@@ -1,5 +1,5 @@
-# `nix flake check` is the gate for every commit (CLAUDE.md). Checks that
-# need no network and build nothing heavy go here, not in CI steps.
+# `nix flake check` is the gate for every commit (CLAUDE.md). Every check
+# goes here, not in CI steps (docs/ci.md).
 { inputs, ... }:
 {
   perSystem =
@@ -46,6 +46,10 @@
               find . -name '*.nix' -print0 | xargs -0 nixfmt --check
               touch $out
             '';
+      }
+      # The k8s render (parts/k8s.nix), built where it is pinned.
+      // lib.optionalAttrs (system == "x86_64-linux") {
+        k8s-render = inputs.self.k8s.manifests;
       };
     };
 }

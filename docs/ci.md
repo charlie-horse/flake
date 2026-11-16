@@ -7,7 +7,10 @@ are the flake's `checks` (`parts/checks.nix`); CI (`checks.yml`) only runs
 - Run `nix flake check` before every commit. The hook in `.githooks/` does
   it; enable it once per clone with `git config core.hooksPath .githooks`.
 - A new check goes in `parts/checks.nix` as a flake check, never as a CI
-  step. It must build nothing heavy and need no network.
+  step. It must fetch only through fixed-output derivations and build
+  nothing heavier than the k8s render.
+- The render check (`k8s-render`) runs only on x86_64-linux: commit k8s
+  changes from an x86_64-linux machine or rely on CI.
 - CI never builds a NixOS toplevel; builds happen on r440
   ([build-cache.md](build-cache.md)).
 - `nix fmt` fixes what the `format` check reports.
@@ -22,7 +25,6 @@ are the flake's `checks` (`parts/checks.nix`); CI (`checks.yml`) only runs
 
 ```sh
 nix shell nixpkgs#actionlint nixpkgs#shellcheck -c actionlint
-nix build .#k8s.manifests                                     # the render
 nix build .#k8s.checkImages && ./result/bin/k8s-check-images
 ```
 

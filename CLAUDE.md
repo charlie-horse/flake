@@ -49,6 +49,8 @@ workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
   (enable once per clone: `git config core.hooksPath .githooks`).
 - Add any new check as a flake check in `parts/checks.nix`, never as a CI
   step. CI only runs `nix flake check`.
+- Server configs must not use import-from-derivation (IFD); nothing
+  enforces this. The k8s render is the only IFD the flake check builds.
 
 ## Documentation policy
 
