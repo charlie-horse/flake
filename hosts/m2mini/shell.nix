@@ -39,10 +39,8 @@
       starship init fish | source
     '';
   };
-  # admin's login shell, and charlie's while custom.server.legacyCharlie
-  # is on. Tailscale SSH runs remote commands through it: use
-  # `ssh ... bash -s` / `ssh -t ... bash` for sh syntax (cluster-pki-deploy
-  # already does).
+  # Tailscale SSH runs remote commands through fish: use `ssh ... bash -s`
+  # or `ssh -t ... bash` for sh syntax.
   users.users.admin.shell = pkgs.fish;
   users.users.charlie = lib.mkIf config.custom.server.legacyCharlie.enable {
     shell = pkgs.fish;

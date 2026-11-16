@@ -1,7 +1,7 @@
 # cert-manager, namespace `cert-manager`: the workload PKI. Bootstrap
-# certificates (etcd, apiserver, kubelets, ...) stay files from cluster-pki
-# (docs/pki.md): they must exist before the cluster, and so cert-manager,
-# can run.
+# certificates (etcd, apiserver, kubelets, ...) reach the nodes as sops
+# files (secrets/pki/, docs/pki.md): they must exist before the cluster, and
+# so cert-manager, can run.
 #
 #   chart.nix      controller, webhook, cainjector and the CRDs (this
 #                  component, applied by Flux's `flux-system` Kustomization)

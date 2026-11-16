@@ -16,18 +16,10 @@
 #                   ./firewall.nix      (cluster ports open to the nodes only)
 #   controlPlane -> ./tailscale-service.nix (Tailscale Service svc:kube-api
 #                                         -> local apiserver)
-# limited by clusterNode.stage (cluster.nodes.<n>.rollout.stage) during the
-# cut-over: "etcd" -> etcd only, "controlPlane" -> + control plane and
-# keepalived, "full" -> everything. clusterNode.etcd.phase picks the etcd
-# leaves ("trust": legacy leaves + new bundle, "final": new leaves). See
-# docs/history/cluster-handoff-2026-10.md for the order.
+# limited by clusterNode.stage (cluster.nodes.<n>.rollout.stage).
 #
-# Secrets: every key and cert is a STRING path under clusterNode.secretsDir
-# (/var/lib/kubernetes/secrets from `cluster-pki deploy`, or /run/secrets/pki
-# with certSource "sops"). Nothing secret is a Nix path, so nothing secret is
-# ever copied into /nix/store. File names:
-#   ca.pem etcd-ca.pem front-proxy-ca.pem sa.pub sa.key
-#   <component>-<node>.pem / <component>-<node>-key.pem
+# Every key and cert is a STRING path under /run/secrets/pki (sops-nix,
+# ./pki-sops.nix), so nothing secret is ever copied into /nix/store.
 {
   config,
   lib,
@@ -66,32 +58,6 @@ in
       '';
     };
 
-    certSource = mkOption {
-      type = types.enum [
-        "files"
-        "sops"
-      ];
-      default = cfg.node.rollout.certSource or "files";
-      defaultText = "cluster.nodes.<name>.rollout.certSource or \"files\"";
-      description = ''
-        Where the node's cluster certs and keys come from. "files":
-        secretsDir as filled by `cluster-pki deploy`. "sops": sops-nix
-        from secrets/pki/<name>.yaml (leaves), secrets/<name>.yaml (sa.key,
-        sa.pub) and cluster/pki/ (bundles), in /run/secrets/pki
-        (./pki-sops.nix; docs/pki-migration-plan.md, phase 2).
-      '';
-    };
-
-    secretsDir = mkOption {
-      # A string on purpose: a Nix path here would copy keys into the store.
-      type = types.str;
-      default = cluster.secretsDir or "/var/lib/kubernetes/secrets";
-      description = ''
-        Directory holding every cluster key and cert. certSource "sops"
-        sets it to /run/secrets/pki (./pki-sops.nix).
-      '';
-    };
-
     stage = mkOption {
       type = types.enum [
         "etcd"
@@ -104,23 +70,6 @@ in
         Cut-over stage (docs/history/cluster-handoff-2026-10.md): which of the node's roles
         actually run. "etcd": etcd only; "controlPlane": + apiserver,
         controller-manager, scheduler and keepalived; "full": every role.
-      '';
-    };
-
-    etcd.phase = mkOption {
-      type = types.enum [
-        "trust"
-        "final"
-      ];
-      default = cfg.node.rollout.etcdPhase or "final";
-      defaultText = "cluster.nodes.<name>.rollout.etcdPhase or \"final\"";
-      description = ''
-        etcd PKI phase. "trust": trust the new etcd-ca.pem bundle (new +
-        legacy CA) but keep presenting the LEGACY leaves, copied into
-        secretsDir as legacy-etcd-peer-<n>{,-key}.pem and
-        legacy-etcd-client-apiserver-<n>{,-key}.pem; peerClientCertAuth
-        stays off as today. "final": the new leaves, peerClientCertAuth on.
-        Every member must be in "trust" before any member goes "final".
       '';
     };
 
@@ -141,7 +90,7 @@ in
       type = types.functionTo types.str;
       readOnly = true;
       internal = true;
-      description = "name -> string path of a file in secretsDir.";
+      description = "name -> string path of a file in /run/secrets/pki.";
     };
     leaf = mkOption {
       type = types.functionTo (types.attrsOf types.str);
@@ -185,7 +134,7 @@ in
             .${cfg.stage}
           )
         ) cfg.node.roles;
-        secret = n: "${cfg.secretsDir}/${n}";
+        secret = n: "/run/secrets/pki/${n}";
         leaf = component: {
           cert = cfg.secret "${component}-${cfg.name}.pem";
           key = cfg.secret "${component}-${cfg.name}-key.pem";
@@ -198,13 +147,6 @@ in
         {
           assertion = cluster.nodes ? ${cfg.name};
           message = "clusterNode: ${cfg.name} is not in cluster.nodes.";
-        }
-        {
-          assertion = lib.hasPrefix "/" cfg.secretsDir && !(lib.hasPrefix builtins.storeDir cfg.secretsDir);
-          message = ''
-            clusterNode.secretsDir must be an absolute path outside the
-            Nix store (got ${cfg.secretsDir}).
-          '';
         }
         {
           assertion = lib.elem cfg.node.cri [

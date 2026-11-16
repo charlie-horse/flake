@@ -208,9 +208,8 @@ jobs:
 
           if [ "$status" -ne 0 ]; then
             echo "Secrets go in git only sops-encrypted (secrets/*.yaml," \
-              "k8s/**/*.sops.yaml; docs/cluster.md), cluster PKI in" \
-              "/var/lib/kubernetes/secrets (docs/pki.md); never plaintext" \
-              "in git or the Nix store." >&2
+              "secrets/pki/<node>.yaml, k8s/**/*.sops.yaml; docs/cluster.md," \
+              "docs/pki.md); never plaintext in git or the Nix store." >&2
           else
             echo "no secrets found"
           fi
