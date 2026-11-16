@@ -21,8 +21,9 @@
       checks.pki-tools = pkiTools;
 
       packages = {
-        # YubiKey root-CA ceremony tools, entered ad hoc as root on c4130
-        # (`nix shell .#ca-ceremony-tools`; docs/pki-migration-plan.md).
+        # YubiKey root-CA ceremony tools, entered ad hoc wherever the card is
+        # plugged in (`nix shell .#ca-ceremony-tools`; docs/pki.md,
+        # docs/history/pki-migration-plan-2026-11.md).
         ca-ceremony-tools = pkgs.callPackage ../pkgs/ca-ceremony-tools { };
         pki-export = pkiTools;
         pki-export-image = pkiTools.image;

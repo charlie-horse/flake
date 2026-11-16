@@ -1,11 +1,17 @@
 # catenix: proposed CI
 
-Moved out of `docs/ci.md`: a proposal for the catenix repository
-(github:charlie-horse/catenix), which this repository cannot push to. The
-patch used to also add an `err.txt` (a build log pasted in by mistake);
-that hunk is removed.
+> **Status: open proposal, not applied.** A patch for the catenix repository
+> (github:charlie-horse/catenix), which this repository cannot push to; it
+> waits for someone with push access to catenix. Verified against catenix
+> `5a7507c`, the rev this flake's `flake.lock` still pins.
+>
+> **Unverified:** whether catenix has added CI of its own since; check its
+> `.github/workflows/` before applying.
 
-catenix (`github:charlie-horse/catenix`) has no CI yet, and we cannot push
+Moved out of `docs/ci.md`. The patch used to also add an `err.txt` (a build
+log pasted in by mistake); that hunk is removed.
+
+catenix had no CI when this was written (2026-11), and we cannot push
 to it. This patch adds `.github/workflows/ci.yml` with three jobs:
 
 - **check:** runs `nix flake check -L --keep-going` on x86_64-linux and

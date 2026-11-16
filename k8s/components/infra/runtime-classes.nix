@@ -1,19 +1,14 @@
 # RuntimeClasses matching the containerd runtime handlers that
 # modules/cluster/node.nix configures:
 #
-#   runc    every node, containerd's default handler. Pods without a
-#           runtimeClassName use it already; the object only lets a pod
-#           name it explicitly.
-#   nvidia  gpu nodes only (cluster.nodes.<n>.gpu = true): runc wrapped by
-#           nvidia-container-runtime in CDI mode. Its scheduling
-#           nodeSelector keeps such pods on nodes labelled
-#           nvidia.com/gpu.present=true (node.nix sets that label from
-#           `gpu`).
-#   crun    optional, off (`enableCrun` below). Turn it on only together
-#           with `clusterNode.crun.enable = true` on the nodes that should
-#           run it, and give those nodes a label to select (e.g.
-#           cluster.nodes.<n>.labels."runtime.neurosis/crun" = "true"),
-#           which crunNodeSelector must then name.
+#   runc    every node, containerd's default handler
+#   nvidia  gpu nodes only (cluster.nodes.<n>.gpu): nodeSelector
+#           nvidia.com/gpu.present=true
+#   crun    optional, off (`enableCrun`); only together with
+#           clusterNode.crun.enable on those nodes and a node label that
+#           crunNodeSelector names
+#
+# Details: docs/k8s/README.md#runtime-classes
 { lib, cluster, ... }:
 let
   enableCrun = false;

@@ -9,6 +9,7 @@
 #   flake-check    every flake output evaluates (nothing heavy is built)
 #   eval-hosts     each server's toplevel drvPath evaluates, for its system
 #   format         every tracked .nix file is nixfmt-formatted (`nix fmt`)
+#   docs           scripts/check-docs.sh (doc links, comment-block length)
 #
 # See docs/ci.md.
 name: checks
@@ -116,14 +117,12 @@ jobs:
           #    outside it `ENC[...]`, every comment `#ENC[...]`. k8s files
           #    may have only the top-level keys apiVersion kind metadata
           #    type data stringData sops (the same set as checkSecret in
-          #    k8s/render.nix; k8s/README.md, "Secrets"), the first four in
+          #    k8s/render.nix; docs/k8s/secrets.md), the first four in
           #    the clear (Flux needs them), data/stringData encrypted.
           #    Anything else under secrets/ or k8s/secrets/ (no .sops.yaml
-          #    suffix) is refused; k8s/render.nix rejects the same files at
-          #    render time. Only the file and the key path are printed,
-          #    never a value.
-          #    secrets/pki/<node>.yaml: only a <stem>.pem of CERTIFICATE
-          #    blocks may be plaintext.
+          #    suffix) is refused, as k8s/render.nix does. secrets/pki/
+          #    <node>.yaml: only a <stem>.pem of CERTIFICATE blocks may be
+          #    plaintext. Prints file and key path, never a value. docs/ci.md.
           while IFS= read -r -d '' f; do
             case "$f" in
               secrets/pki/*/*) mode=bad ;;
@@ -208,7 +207,7 @@ jobs:
 
           if [ "$status" -ne 0 ]; then
             echo "Secrets go in git only sops-encrypted (secrets/*.yaml," \
-              "secrets/pki/<node>.yaml, k8s/**/*.sops.yaml; docs/cluster.md," \
+              "secrets/pki/<node>.yaml, k8s/**/*.sops.yaml; docs/secrets.md," \
               "docs/pki.md); never plaintext in git or the Nix store." >&2
           else
             echo "no secrets found"
@@ -395,6 +394,18 @@ jobs:
             echo "Eval only: compare on the host with"
             echo "\`nix-diff /run/current-system $drv\` before switching."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ------------------------------------------------------------------------
+  docs:
+    name: Docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: scripts/check-docs.sh
+        run: bash scripts/check-docs.sh
 
   # ------------------------------------------------------------------------
   format:

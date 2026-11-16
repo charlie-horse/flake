@@ -1,26 +1,15 @@
 # One Kustomization per deferred component (k8s/default.nix `deferred`),
 # named after the component's last path element (infra/cert-manager-issuers
 # -> cert-manager-issuers), from the same signed artifact as `flux-system`.
+# ./deferred/ holds an empty kustomization.yaml, so `flux-system` (path ./)
+# skips the subtree; each Kustomization here builds its own directory.
 #
-# Deferred components render under ./deferred/, which holds an empty
-# kustomization.yaml, so `flux-system` (path ./) leaves that subtree out:
-# Flux's generator takes a directory with a kustomization.yaml as a base and
-# does not look inside it. Each Kustomization here builds its own
-# directory below it instead.
-#
-# They are for objects whose apply needs something `flux-system` deploys to
-# be running first, typically an admission webhook with failurePolicy Fail
-# (cert-manager's: every cert-manager.io object). Kept out of `flux-system`,
-# a down webhook fails only that Kustomization, not the apply of the whole
-# cluster (Flux dry-runs every object before applying any; one failure
-# applies nothing).
-#
-#   dependsOn flux-system   starts once `flux-system` has applied the same
-#                           revision of the artifact (CRDs, the webhook's
-#                           Deployment)
+#   dependsOn flux-system   after `flux-system` applied the same revision
+#                           (CRDs, the webhook's Deployment)
 #   retryInterval 1m        until the webhook answers (first install)
-#   wait                    Ready only when every object is Ready (the
-#                           cluster-ca ClusterIssuer)
+#   wait                    Ready only when every object is Ready
+#
+# Why (admission webhooks with failurePolicy Fail): docs/k8s/README.md#deferred-components
 {
   lib,
   deferred,

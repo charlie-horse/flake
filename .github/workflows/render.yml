@@ -9,11 +9,9 @@
 #            Flux's webhook. Flux applies only artifacts signed by this
 #            workflow on main (k8s/components/flux/sync.nix).
 #
-# Every push to main publishes (Flux does nothing when the digest is
-# unchanged). The cache only skips the nix build when the render inputs
-# equal an earlier render's; it never decides whether to publish, so a
-# revert to an earlier state is deployed like any other change. Dispatching
-# the workflow on main republishes the current render. See docs/ci.md.
+# Every push to main publishes (same digest: Flux does nothing); the cache
+# only skips the nix build, never the publish. Dispatching on main
+# republishes. Rationale and details: docs/ci.md#renderyml.
 name: render
 
 on:

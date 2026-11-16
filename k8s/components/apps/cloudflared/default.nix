@@ -3,31 +3,15 @@
 #
 #   https://<host> -> Cloudflare edge -> cloudflared (any replica)
 #     -> nginx sidecar on 127.0.0.1:9190 (same pod)
-#     -> http://<service ClusterIP>:80 (cluster.<service>.serviceIP)
-#        or, for the Nix cache (cluster.binaryCache), r440's LAN address
-#        (nginx with basic auth in front of harmonia, hosts/r440/cache.nix)
+#     -> http://<service ClusterIP>:80, or r440's LAN address for the Nix cache
 #
-#   files.nix       routes (hostname -> ClusterIP) and both config files
-#   nginx.conf      the nginx sidecar's config (template)
-#   configmap.nix   both files as a ConfigMap
-#   deployment.nix  one replica per node, hostNetwork, cloudflared + nginx
+#   files.nix routes and both config files; nginx.conf the sidecar's config;
+#   configmap.nix both as a ConfigMap; deployment.nix one replica per node
 #
-# Why nginx: Cloudflare APPENDS the visitor's IP to a client-sent
-# X-Forwarded-For, and authentik (and Open WebUI) read the leftmost entry.
-# Cloudflare's edge always sets Cf-Connecting-Ip itself, so nginx REPLACES
-# X-Forwarded-For / X-Real-IP with it. Websockets pass through.
-#
-# hostNetwork is why the namespace is `privileged` for Pod Security (see
-# deployment.nix); the containers themselves run unprivileged, read-only
-# and without capabilities.
-#
-# The tunnel credential: Secret cloudflared/tunnel-credentials, key
-# credentials.json (the JSON `cloudflared tunnel create` writes),
-# sops-encrypted in git (k8s/secrets/cloudflared/tunnel-credentials.sops.yaml)
-# and applied by the Flux Kustomization `secrets` (k8s/README.md, "Secrets",
-# "Cloudflare tunnel"); read at start. DNS: each hostname is a
-# proxied CNAME to <tunnel id>.cfargotunnel.com:
-#   cloudflared tunnel route dns --overwrite-dns <tunnel id> <hostname>
+# nginx replaces X-Forwarded-For with Cf-Connecting-Ip. hostNetwork is why
+# the namespace is `privileged`. Credential: Secret
+# cloudflared/tunnel-credentials (sops). DNS routes and rotation:
+# docs/k8s/apps.md#cloudflare-tunnel
 { ... }:
 {
   imports = [

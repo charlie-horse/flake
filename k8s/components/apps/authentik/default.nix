@@ -1,22 +1,14 @@
 # authentik (SSO / OIDC identity provider), namespace `authentik`.
 #
-#   chart.nix       server + worker (authentik Helm chart), one of each per
-#                   node, so login survives any one node being down
-#   postgres.nix    PostgreSQL 17 StatefulSet, single instance, data on
-#                   m2mini's NVMe (hostPath PV)
+#   chart.nix       server + worker (authentik Helm chart), one of each per node
+#   postgres.nix    PostgreSQL 17 StatefulSet, data on m2mini (hostPath PV)
 #   backup.nix      daily `pg_dump -Fc` CronJob to r440 (14 kept)
 #   blueprints.nix  OIDC clients and groups (blueprints/*.yaml)
 #
-# Secrets: the Secret `authentik-secrets` (settings.nix), sops-encrypted in
-# git (k8s/secrets/authentik/authentik-secrets.sops.yaml) and applied by the
-# Flux Kustomization `secrets` (k8s/README.md, "Secrets", "authentik").
-# Until it is applied the pods wait in CreateContainerConfigError; nothing
-# else breaks.
-#
-# Public at https://auth.neuros.is (cluster.authentik.host) through the
-# cluster's tunnel (apps/cloudflared) to Service authentik-server at the
-# fixed ClusterIP cluster.authentik.serviceIP. Without the tunnel:
-#   kubectl -n authentik port-forward svc/authentik-server 9000:80
+# The Secret `authentik-secrets` (settings.nix) is sops-encrypted in
+# k8s/secrets/authentik/; until it is applied the pods wait in
+# CreateContainerConfigError. Public at https://auth.neuros.is through
+# apps/cloudflared. Docs: docs/k8s/apps.md#authentik
 { ... }:
 let
   inherit (import ./settings.nix) namespace;

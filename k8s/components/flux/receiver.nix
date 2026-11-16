@@ -6,8 +6,8 @@
 # The token: Secret flux-system/webhook-token, key `token`, no trailing
 # newline (it is the HMAC key verbatim, and the webhook path is derived from
 # it), sops-encrypted in k8s/secrets/flux-system/webhook-token.sops.yaml and
-# applied by the Kustomization `secrets` (secrets.nix; k8s/README.md,
-# "Secrets"). Changing it means updating the GitHub secrets
+# applied by the Kustomization `secrets` (secrets.nix;
+# docs/k8s/secrets.md). Changing it means updating the GitHub secrets
 # FLUX_WEBHOOK_TOKEN and FLUX_WEBHOOK_URL too (docs/ci.md).
 { ... }:
 {

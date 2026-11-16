@@ -9,14 +9,10 @@
 #     with:
 #       extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
 #
-# Without the secret (pull requests from forks, Dependabot) the output is
-# empty and the job uses cache.nixos.org only, exactly as before. With it,
-# the netrc goes to $RUNNER_TEMP (mode 600; the nix-daemon reads it as
-# root) and is never printed. Read-only: harmonia serves r440's store, CI
-# cannot push to it.
-#
-# The URL and key mirror cluster/definition.nix `binaryCache` (host,
-# publicKey); change both together. See docs/ci.md.
+# Without the secret (fork PRs, Dependabot) the output is empty: cache.nixos.org
+# only. The netrc goes to $RUNNER_TEMP (mode 600), never printed. Read-only.
+# URL and key mirror cluster/definition.nix `binaryCache`; change both
+# together. Details: docs/build-cache.md#github-actions.
 name: nix-cache
 description: nix.conf lines for r440's binary cache, if the netrc secret is set
 inputs:

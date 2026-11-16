@@ -3,22 +3,14 @@
 # modules/cluster/default.nix).
 #
 #   system:kube-apiserver:kubelet-api-admin
-#       The apiserver's kubelet client cert (apiserver-kubelet-client-<n>,
-#       CN=system:kube-apiserver, no O) must be allowed by the kubelets'
-#       Webhook authorizer, or `kubectl logs/exec/attach/port-forward`,
-#       `top` and node proxying return 403. Same binding as nixpkgs
-#       kubernetes/apiserver.nix (apiserver-kubelet-api-admin-crb).
-#
+#       lets the apiserver's kubelet client cert (CN=system:kube-apiserver)
+#       past the kubelets' Webhook authorizer (else logs/exec/port-forward 403)
 #   oidc:cluster-admins
-#       Members of the authentik group `cluster-admins` (blueprint in
-#       apps/authentik/blueprints/kubernetes-oidc.yaml) get cluster-admin when they log in with
-#       OIDC. The apiserver prefixes OIDC groups with `oidc:`
-#       (modules/cluster/control-plane.nix), so no OIDC token can claim a
-#       built-in group such as system:masters. Inert while
-#       clusterNode.oidc.enable is false.
+#       authentik group `cluster-admins` -> cluster-admin for OIDC logins
+#       (groups are prefixed `oidc:`); inert without `oidc` in cluster/definition.nix
 #
-# Bootstrap: apply this file with the admin cert together with the network
-# and DNS (k8s/README.md); Flux keeps it afterwards.
+# Bootstrap applies it by hand with the network and DNS; Flux keeps it
+# afterwards. Details: docs/k8s/README.md#rbac
 { ... }:
 {
   validation.strict = true;

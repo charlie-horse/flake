@@ -7,10 +7,16 @@ cluster, an export job puts them into git as sops files, and sops-nix
 installs them in `/run/secrets/pki/` on each node
 ([Where certs come from](#where-certs-come-from)). Nothing secret is a Nix
 path, in `/nix/store`, or in git unencrypted. The inventory of every secret
-(PKI and the rest) is `docs/cluster.md`, "Secrets (all of them)".
-The old operator-side tool `cluster-pki` (removed in phase 2's P9,
-2026-11-16) and its procedures are in git history
-(`git show aea861e:docs/pki.md`) and [docs/history](history/cluster-handoff-2026-10.md).
+(PKI and the rest) is [secrets.md](secrets.md). How the hosts decrypt sops
+files at all (host keys, pre-switch check) is in
+[auth.md, sops-nix on the hosts](auth.md#sops-nix-on-the-hosts).
+
+History: the migration to this design (2026-11) is
+[history/pki-migration-plan-2026-11.md](history/pki-migration-plan-2026-11.md),
+with the inventory of the legacy PKI it replaced. The old operator-side tool
+`cluster-pki` (removed in #54, 2026-11-16) and its procedures are in git
+history (`git show aea861e:docs/pki.md`) and
+[history/cluster-handoff-2026-10.md](history/cluster-handoff-2026-10.md).
 
 ```sh
 sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig get nodes   # break-glass, any node
@@ -22,15 +28,15 @@ sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig get nodes   # break-g
 - [Break-glass](#break-glass)
 - [Offline signing when the cluster is down](#offline-signing-when-the-cluster-is-down)
 - [CA rotation](#ca-rotation)
-- [Phase 2 operations](#phase-2-operations)
-- [Inventory of the legacy PKI](#inventory-of-the-legacy-pki-2026-10-31)
+- [Phase 2 operations](#phase-2-operations) (issuers, approver-policy, export job)
+- [Design notes](#design-notes)
+- [Open items](#open-items)
 
 ## Bootstrap PKI and workload PKI
 
-**Status (2026-11-16):** every CA is a neurosis intermediate under the
-YubiKey root (bootstrap CAs rotated in 2026-11-13), and all three nodes
-read their certs from sops (P8). The migration is complete
-([plan](pki-migration-plan.md)).
+Every CA is a neurosis intermediate under the YubiKey root, and all three
+nodes read their certs from sops (since 2026-11-16;
+[migration history](history/pki-migration-plan-2026-11.md)).
 
 There is one root CA with two branches. The branches never share an
 intermediate.
@@ -49,7 +55,7 @@ neurosis Root CA 2026          admin YubiKey (19830800) slot 9c, P-384, 20 y, pa
 | | Bootstrap branch | Workload branch |
 | --- | --- | --- |
 | For | etcd, kube-apiserver, controller-manager, scheduler, kubelet, kube-proxy, flannel client, front-proxy, service-account keys, admin kubeconfig | TLS for workloads in the cluster |
-| Made by | cert-manager Issuers `k8s-ca`, `etcd-ca`, `front-proxy-ca` in namespace `cluster-pki` ([Phase 2 operations](#phase-2-operations)) | cert-manager in the cluster (`k8s/components/infra/cert-manager/`, [k8s/README.md](../k8s/README.md#cert-manager)) |
+| Made by | cert-manager Issuers `k8s-ca`, `etcd-ca`, `front-proxy-ca` in namespace `cluster-pki` ([Phase 2 operations](#phase-2-operations)) | cert-manager in the cluster (`k8s/components/infra/cert-manager/`, [k8s/apps.md](k8s/apps.md#cert-manager)) |
 | CAs | k8s, etcd, front-proxy intermediates signed by the root (5 y, to 2031-11-13). Keys sops-encrypted in git (`k8s/secrets/cluster-pki/<ca>-ca.sops.yaml`), applied by the Flux Kustomization `secrets` | `cluster-ca`, the workload intermediate signed by the root (2 y, to 2028-11-12). Its key is sops-encrypted in git (`k8s/secrets/cert-manager/cluster-ca.sops.yaml`), applied by the Flux Kustomization `secrets` |
 | Trusts | its own intermediate only ([anchor rule](#the-anchor-rule)) | the root |
 | Delivered as | files in `/run/secrets/pki/` on each node, from `secrets/pki/<node>.yaml` through sops-nix | Secrets, issued on request (`issuerRef: {kind: ClusterIssuer, name: cluster-ca}`) |
@@ -96,12 +102,13 @@ would accept it as cluster-admin. With only the k8s intermediate as the
 anchor, that chain does not verify.
 
 - It works because Go's `x509.Verify` accepts a non-self-signed cert in the
-  root pool as a trust anchor. The rehearsal (plan, node E) confirmed both
+  root pool as a trust anchor. The rehearsal
+([migration plan, node E](history/pki-migration-plan-2026-11.md#work-breakdown-dag)) confirmed both
   halves with etcd 3.7.3: a workload-signed `system:masters` cert is
   rejected with only the k8s intermediate in the trust file, and accepted
   once the root is in it. etcd, the apiserver and the kubelet are all
   Go. The legacy PKI already relied on this: its "temp root" was never on a
-  node (see the inventory below). OpenSSL does not by default: check by
+  node ([legacy inventory](history/pki-migration-plan-2026-11.md#appendix-inventory-of-the-legacy-pki-2026-10-31)). OpenSSL does not by default: check by
   hand with `openssl verify -partial_chain -CAfile ca.pem <leaf>.pem`.
 - Server leaves ship the full chain (leaf + intermediate) in the cert file,
   so clients that trust only the root (browsers, workloads) can verify them.
@@ -114,25 +121,25 @@ anchor, that chain does not verify.
 ## YubiKey root CA
 
 Made at the ceremony on 2026-11-13 (node F of the
-[migration plan](pki-migration-plan.md#ceremony-node-f); outputs in its
-[History](pki-migration-plan.md#history)). Valid 2026-11-13 to 2046-11-13,
+[migration plan](history/pki-migration-plan-2026-11.md#ceremony-node-f); outputs in its
+[History](history/pki-migration-plan-2026-11.md#history)). Valid 2026-11-13 to 2046-11-13,
 SHA-256 `03:9D:49:10:E9:7B:6D:39:1E:3A:5E:D5:42:8D:D5:9A:D6:E5:EC:4E:E8:DB:98:2D:FC:51:06:FA:0D:4F:F7:7A`.
 
 The root key is on the **admin YubiKey** (YubiKey 5, serial 19830800),
 the card that already holds the sops admin age key in PIV slot 82 and the
-FIDO2 key `ssh:admin` ([cluster.md, Secrets](cluster.md#secrets-all-of-them),
+FIDO2 key `ssh:admin` ([secrets.md](secrets.md),
 [auth.md](auth.md)). The root is a second PIV use on that card.
 
 | | |
 | --- | --- |
 | Card | admin YubiKey, serial 19830800. It travels with the user and is never parked in a host |
-| Slot | PIV **9c** (Digital Signature): the only signature slot, and its PIN is required before every signature. Why not 9a/9d/9e: plan, "Why slot 9c". Slot 82 (sops) is never touched |
+| Slot | PIV **9c** (Digital Signature): the only signature slot, and its PIN is required before every signature. Why not 9a/9d/9e: [migration plan, "Why slot 9c"](history/pki-migration-plan-2026-11.md#why-slot-9c). Slot 82 (sops) is never touched |
 | Key | ECDSA P-384, generated on the card, not exportable |
 | Policies | `--pin-policy ALWAYS --touch-policy ALWAYS`: one signature per PIN entry plus a physical touch. Nobody signs without the user, not even root on the host it is plugged into |
 | Root cert | `CN=neurosis Root CA 2026, O=neurosis`, 20 y, `CA:TRUE, pathlen:1`, `keyCertSign, cRLSign`. Also imported into slot 9c |
 | Signs | the four intermediates only: workload (every 2 y), k8s, etcd, front-proxy (every 5 y, or on rotation) |
 | In git (public) | `cluster/pki/`: the root cert `root-ca.pem`, the slot attestation `attest-9c.pem` (it chains to the card's attestation cert `attest-f9.pem`: the key was generated on the card and cannot be exported), the four intermediate certs `{k8s,etcd,front-proxy,workload}-ca.pem` (the bootstrap ones are also the hosts' trust bundles) and `fingerprints.txt` |
-| Where it runs | ad hoc, on whatever machine the user plugs the card into; nothing about the root depends on a particular host. Tools: `nix shell <flake>#ca-ceremony-tools`. A desktop that runs pcscd (Famine) needs nothing else; on a server, use the ad-hoc procedure for sops on a server (`sudo -i`, then `ca-pcscd &` for a temporary pcscd; [cluster.md, Secrets](cluster.md#secrets-all-of-them)). The user runs every step; a cloud session holds no PIN and runs no sudo |
+| Where it runs | ad hoc, on whatever machine the user plugs the card into; nothing about the root depends on a particular host. Tools: `nix shell <flake>#ca-ceremony-tools` ([below](#tools-ca-ceremony-tools)). A desktop that runs pcscd (Famine) needs nothing else; on a server, use the ad-hoc procedure for sops on a server (`sudo -i`, then `ca-pcscd &` for a temporary pcscd; [secrets.md](secrets.md)). The user runs every step; a cloud session holds no PIN and runs no sudo |
 
 Rules:
 
@@ -140,7 +147,7 @@ Rules:
   9c and the sops key in 82. The root key has no copy.
 - **PIN, PUK and management key** are shared with the sops key; the
   ceremony did not change them. The PIN was exposed during the ceremony
-  and rotated the same day (plan, [History](pki-migration-plan.md#history)). The PIN is held by the user, offline. The
+  and rotated the same day ([migration history](history/pki-migration-plan-2026-11.md#history)). The PIN is held by the user, offline. The
   PUK is in sops (`secrets/admin.yaml`). The management key is random and
   PIN-protected on the card, so `ykman` asks for the PIN when it writes
   slot 9c. Never put the PIN on a command line or in shell history. The
@@ -155,6 +162,32 @@ Rules:
   A blocked PIN is unblocked with the PUK; while the PIN is blocked the
   card can't decrypt, so read the PUK from `secrets/admin.yaml` with
   `admin_backup`.
+
+### Tools: ca-ceremony-tools
+
+`pkgs/ca-ceremony-tools`, entered ad hoc with
+`nix shell <flake>#ca-ceremony-tools` (on a host: `/etc/nixos#ca-ceremony-tools`).
+No host installs it and no host runs pcscd permanently, so using it needs
+no switch. Nothing in it writes to the card by itself; the card's other
+uses (sops key in slot 82, FIDO2 `ssh:admin` and pam_u2f over HID, not
+PC/SC) are untouched.
+
+| Command | What |
+| --- | --- |
+| `ykman` | yubikey-manager |
+| `yubico-piv-tool` | plus `lib/libykcs11.so` (ykcs11, the PKCS#11 module) |
+| `step`, `step-kms-plugin` | step-cli (pinned to ≥ 0.31.0: 0.30.2 in nixos-26.05 loads the issuer cert of `step certificate sign --kms` through the KMS plugin and fails on a file) and its KMS plugin, next to it on `PATH` |
+| `ca-pcscd` | a temporary pcscd for hosts that don't run one: `PCSCLITE_HP_DROPDIR=<ccid>/pcsc/drivers pcscd --foreground --auto-exit` (exits after ~60 s idle). Needs root |
+| `ca-ceremony` | `ceremony.sh`: the first-time root ceremony (root key in 9c, root + 4 intermediates, the sops-encrypted workload Secret). `MODE=rehearsal` uses a SoftHSM key, no card. It refuses to run while slot 9c holds a key or a cert |
+| `sops`, `age-plugin-yubikey`, `yq` (yq-go) | for the sops files |
+| `openssl`, `ca-openssl` | `ca-openssl` is openssl with pkcs11-provider over ykcs11 for that process only. It crashed in the rehearsal: don't use it; `step` is the only signing path |
+| `softhsm2-util` | for `MODE=rehearsal` |
+
+Gotchas from the ceremony: the step KMS URI must carry `pin-source=<0600
+tmpfs file>` (without it step tries the default PIN 123456 and burns one
+of three tries); `ykman list` sees the key over FIDO/HID even with no
+pcscd, so the script checks PC/SC with `ykman piv info`; wait for ykman's
+"Enter PIN" prompt before typing (earlier keystrokes are echoed, then lost).
 
 ## Where certs come from
 
@@ -219,14 +252,13 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
   Tailscale Service).
 - **Subjects** and the RBAC that uses them:
   - `system:kube-apiserver` (the apiserver's kubelet client) is bound to
-    `system:kubelet-api-admin` by `k8s/components/infra/rbac.nix` (catenix,
-    `k8s/components/rbac.nix`). NixOS would create this binding through
+    `system:kubelet-api-admin` by `k8s/components/infra/rbac.nix`. NixOS would create this binding through
     the addon manager, which is disabled here, so on a fresh cluster it
     must be applied with the admin cert; until then `kubectl logs/exec`
     get 403.
   - `flannel-client` and `system:kube-addon-manager` are **unused**: flannel
     runs as a DaemonSet with its own ServiceAccount and there is no addon
-    manager. Nothing binds them (see the TODO in history/cluster-handoff-2026-10.md).
+    manager. Nothing binds them (see the TODO in [history/cluster-handoff-2026-10.md](history/cluster-handoff-2026-10.md)).
   - `system:node:<n>` is what the Node authorizer expects.
 - **`etcd-server-<n>` also has client auth**, so `etcdctl` on a member can
   use it for health checks.
@@ -237,7 +269,9 @@ Every leaf is a pair: `<component>-<n>.pem` and `<component>-<n>-key.pem`.
 
 ## Break-glass
 
-Every node has `/etc/kubernetes/admin.kubeconfig`, readable by root only:
+Every control-plane node (today all three) has
+`/etc/kubernetes/admin.kubeconfig` (`modules/cluster/pki-sops.nix`), root
+0600:
 user `cluster-admin` (`O=system:masters`) with the node's
 `/run/secrets/pki/admin-<n>.pem`, server the VIP `https://10.0.0.200:6443`.
 It follows the admin cert's renewals; nothing to regenerate or copy. It
@@ -248,7 +282,7 @@ sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig get nodes
 sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig -s https://127.0.0.1:6443 get nodes   # VIP down
 ```
 
-People use OIDC ([k8s/README.md](../k8s/README.md#authentik)). The admin
+People use OIDC ([k8s/apps.md](k8s/apps.md#authentik)). The admin
 cert never leaves the node; a cloud session runs no sudo, so it has no
 cluster credentials.
 
@@ -311,7 +345,7 @@ one host at a time with the etcd check and `readyz` after each
 `ca-ceremony` (`pkgs/ca-ceremony-tools/ceremony.sh`) is the first-time root
 ceremony: it refuses to run while slot 9c holds a key and always creates a
 new root, so it is not the renewal tool. Renewing an intermediate under the
-existing root needs a sign-only mode of ca-ceremony (open follow-up, plan);
+existing root needs a sign-only mode of ca-ceremony ([open](#open-items));
 until then sign by hand from `nix shell /etc/nixos#ca-ceremony-tools`
 (5 y for k8s/etcd/front-proxy, 2 y for workload; one PIN + touch):
 
@@ -328,8 +362,9 @@ try.
 
 ## Phase 2 operations
 
-cert-manager issues the bootstrap leaves in the cluster
-([plan](pki-migration-plan.md), phase 2).
+cert-manager issues the bootstrap leaves in the cluster (phase 2 of the
+[migration](history/pki-migration-plan-2026-11.md), done 2026-11-16; the
+heading keeps its name because code comments point at it).
 
 - Namespace `cluster-pki`: component `infra/cluster-pki`, applied by
   `flux-system`. It holds the export job too.
@@ -425,69 +460,40 @@ most a year after creation; an admin, with the YubiKey):
 2. From the dev shell, `sops k8s/secrets/cluster-pki/pki-export-github.sops.yaml`
    and replace `stringData.token`. Never put the token on a command line;
    `sops` opens `$EDITOR`.
-3. Update its row in `docs/cluster.md`, "Secrets (all of them)".
+3. Update its row in [secrets.md](secrets.md).
 4. PR, merge. The Flux Kustomization `secrets` applies it.
 
-## Inventory of the legacy PKI (2026-10-31)
+## Design notes
 
-Taken read-only with
-`openssl x509 -noout -subject -issuer -enddate -ext subjectAltName,keyUsage,extendedKeyUsage`
-on the public certificates only. Locations: c4130 and r440
-`/etc/nixos/tls/`, m2mini `/etc/nixos/mod/tls/`. Every host has the
-same tree (`ca/`, `apiserver/{server,etcd-client,kubelet-client}/`,
-`etcd/peer/`, `kubelet/{server,api-client}/`, `controller-manager/`,
-`scheduler/`, `proxy/`; r440 also `kubectl/`), each with its `.json` CSR
-config, `.csr`, cert and key.
+Decisions behind the current design (made 2026-11-13; the full reasoning is
+in the [migration plan](history/pki-migration-plan-2026-11.md#phase-2-host-certs-from-in-cluster-issuers-delivered-by-sops-planned-2026-11-13)):
 
-### CAs
+- **Why the export job writes whole files.** sops encrypts each file under
+  one data key, and changing a file needs a recipient's private key. The
+  job holds none, so it never edits a file: it regenerates
+  `secrets/pki/<node>.yaml` from the public recipients in `.sops.yaml`
+  (admins + that host, `encrypted_regex: -key\.pem$`). The certs stay
+  plaintext, so a renewal PR's diff shows what changed.
+- **Checks are in the export job, not CI.** CI keeps only the secrets
+  guard: in `secrets/pki/`, plaintext only for pure `CERTIFICATE` values,
+  every `-key.pem` value `ENC[`.
+- **The CA keys in sops are also the offline copy** (the only one), which
+  is what [offline signing](#offline-signing-when-the-cluster-is-down) uses.
+- **etcd snapshots contain the bootstrap CA keys** (the Secrets in
+  `cluster-pki`). Treat every snapshot as cluster-admin material.
+- **No kubelet CSR rotation.** It would need the k8s CA key in the
+  controller-manager on every control plane; there is one path for every
+  leaf instead.
+- **The export job's GitHub token** is limited to this repo, contents and
+  pull requests; the job pushes only `pki-renew/*` branches, never `main`.
 
-| CA | Subject | Issuer | Expires | SHA-256 (prefix) | Notes |
-|---|---|---|---|---|---|
-| etcd | `O=charlie's cloud, OU=solaris, CN=ETCD CA 1` | `CN=temp root` | 2036-08-03 | `44:9E:0B:F4:D2:B3` | intermediate, `pathlen:0`; identical on all 3 |
-| k8s | `O=charlie's cloud, OU=solaris, CN=K8s CA 1` | `CN=temp root` | 2036-08-03 | `5F:26:6A:54:52:F9` | intermediate, `pathlen:0`; identical on all 3 |
+## Open items
 
-The "temp root" is not on any node (only the intermediates are trusted, which
-works because they are used as trust anchors directly). There is no
-front-proxy CA.
-
-### Leaves (all RSA, all expire 2027-08-04)
-
-| Cert (path under `tls/`) | Subject | Signed by | EKU | SANs | Where |
-|---|---|---|---|---|---|
-| `etcd/peer/etcd.pem` | `CN=kube-etcd-peer` | etcd CA | server+client | `<node>`, `localhost`, `127.0.0.1` | per node (3 distinct) |
-| `apiserver/server/api.pem` | `CN=kube-apiserver` | k8s CA | server | `r440`, `c4130`, `m2mini` (DNS only) | **one cert+key shared by all 3** |
-| `apiserver/etcd-client/etcd.pem` | `CN=kube-apiserver-etcd-client` | etcd CA | client | – | per node |
-| `apiserver/kubelet-client/{api,kubelet}.pem` | `O=system:cluster-admins, CN=kube-apiserver-kubelet-client` | k8s CA | client | – | per node |
-| `controller-manager/api-client/api.pem` | `O=system:cluster-admins, CN=kube-controller-manager-api-client` | k8s CA | client | – | per node |
-| `scheduler/api-client/api.pem` | `O=system:cluster-admins, CN=kube-scheduler-api-client` | k8s CA | client | – | per node |
-| `kubelet/server/kubelet.pem` | `CN=kubelet` | k8s CA | server | `<node>`, `localhost`, `127.0.0.1` | per node |
-| `kubelet/api-client/api.pem` | `O=system:cluster-admins, CN=kubelet-api-client` | k8s CA | client | – | per node |
-| `proxy/api-client/api.pem` | `O=system:cluster-admins, CN=kube-proxy-api-client` | k8s CA | client | – | per node |
-| `kubectl/api-client/api.pem` | `O=system:cluster-admins, CN=kubectl` | k8s CA | client | – | r440 only |
-
-### Findings
-
-1. **Every private key is in `/nix/store`** (world-readable). The configs use
-   Nix paths (`certFile = ./tls/...`), so each key was copied into the store
-   on every build. Treat every legacy key, including the apiserver key that
-   also signs service-account tokens, as exposed. They are replaced, not
-   reused.
-2. **apiserver SAN gaps.** Only the three short names are present. The VIP
-   `10.0.0.200`, the `kubernetes` service IP (old `192.0.0.1`, new
-   `10.96.0.1`), `kubernetes.default[.svc[.cluster.local]]`, the LAN and
-   tailnet IPs, the MagicDNS FQDNs (`*.leaffish-monster.ts.net`), `localhost`
-   and `127.0.0.1` are all missing. In-cluster clients and anything using
-   the VIP fail hostname verification.
-3. **etcd and kubelet SAN gaps.** Only the short name and loopback. Names
-   resolve through MagicDNS today, which works, but the FQDNs and the LAN or
-   tailnet IPs do not verify.
-4. **The etcd peer cert is also the etcd server cert** (`certFile` and
-   `peerCertFile` both default to it). `peerClientCertAuth` is off.
-5. **Identities only work with `AlwaysAllow`.** Every client cert is in
-   `O=system:cluster-admins`, which is not a built-in group. Under
-   `Node,RBAC` the kubelets need `system:node:<name>` in `system:nodes`,
-   kube-proxy needs `system:kube-proxy`, and so on (see the table below).
-6. **The service-account key is the apiserver TLS key**
-   (`serviceAccountKeyFile = api.pem`, `serviceAccountSigningKeyFile = api-key.pem`).
-7. Two different CAs sit behind one "temp root" whose key is not
-   on the hosts. Nothing depends on the root, so it is dropped.
+- **Sign-only mode for `ca-ceremony`.** Needed to renew the workload
+  intermediate or rotate a bootstrap CA under the existing root; until then
+  [sign by hand](#signing-an-intermediate-under-the-existing-root).
+- **A reminder for the workload intermediate renewal** (around 2028-09-13,
+  [above](#bootstrap-pki-and-workload-pki)): nothing in the repo sets one.
+- **Leaf-expiry monitoring** beyond the export job failing at 14 days.
+- **trust-manager `Bundle`** distributing the root to namespaces: optional,
+  not deployed.

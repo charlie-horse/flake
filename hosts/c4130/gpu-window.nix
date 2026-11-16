@@ -1,27 +1,10 @@
 # GPU window on c4130: vllm.service is stopped at 22:00 and started again at
-# 05:55 (America/New_York), so the login users (admin, plus charlie while
-# custom.server.legacyCharlie.enable is on, modules/server/legacy-charlie.nix)
-# can use both V100s in between.
-#
+# 05:55 (America/New_York), so the login users can use both V100s between.
 # - gpu-window-start: stops vllm.service (and nothing else).
-# - gpu-window-end:   kills the GPU processes owned by those users, then
-#                     starts vllm.service. 06:00 is the deadline.
-#
-# Both are oneshot services run by timers with Persistent = false, so a
-# missed run (host down at 22:00 or 05:55) is not replayed at boot. A failing
-# oneshot ends up `failed` in systemd (`systemctl --failed`). vllm.service is
-# targeted by name only; nothing here touches the Kubernetes services.
-#
-# Notes:
-# - Only the vllm.service is stopped. vllm-lmcache.service stays up overnight
-#   (about 328 MiB per GPU and 64 GB of pinned RAM stay allocated).
-# - The timers do not know the window state: a `nixos-rebuild switch` or a
-#   reboot between 22:00 and 06:00 starts vllm.service again (it is enabled),
-#   and the GPUs are then taken. Stop it again by hand, or switch outside the
-#   window.
-# - A user's GPU processes means PIDs in user-<uid>.slice (a login session,
-#   tmux, a user service). A GPU pod run by kubelet as the same uid is in a
-#   kubepods cgroup, is not matched, and is only logged as skipped.
+# - gpu-window-end:   kills the login users' GPU processes (only those in
+#                     their user-<uid>.slice), then starts vllm.service.
+# Timers have Persistent = false; a switch or reboot inside the window starts
+# vllm.service again. Details: docs/hosts/c4130.md#gpu-window
 {
   config,
   lib,

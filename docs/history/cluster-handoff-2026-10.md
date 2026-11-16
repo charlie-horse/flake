@@ -89,9 +89,9 @@ Every step below is run by a person with sudo.
 | `lib/system/mkServer.nix` | Server builder: host dir + `modules/cluster` only (no desktop, home-manager or agenix). Famine/Pestilence still use `mkHost`. Both are called from `parts/hosts.nix` (flake-parts). |
 | `hosts/{c4130,r440,m2mini}` | Ports of the hosts' own flakes (c4130/r440 from Ada's copies). Their old `k8s.nix` and `tls/` are not carried over. |
 | `modules/cluster/` | Manual `services.kubernetes` (no easyCerts): etcd (same member names and peer URLs), apiserver `Node,RBAC`, controller-manager, scheduler, kubelet, kube-proxy, containerd (`nvidia` handler on c4130), keepalived on all 3 nodes, firewall. Secrets are **string** paths under `/var/lib/kubernetes/secrets`. |
-| `pkgs/cluster-pki` | `cluster-pki` (CAs, leaves, rotation) and `cluster-pki-deploy` (stages a node's files over ssh and prints the `sudo install` lines). See [pki.md](pki.md). |
+| `pkgs/cluster-pki` | `cluster-pki` (CAs, leaves, rotation) and `cluster-pki-deploy` (stages a node's files over ssh and prints the `sudo install` lines). See [pki.md](../pki.md). |
 | `k8s/` | catenix modules → `k8s/rendered/`: RuntimeClasses, RBAC (`05-rbac`: apiserver → kubelet API, `oidc:cluster-admins`), StorageClass `local`, flannel, CoreDNS, NVIDIA device plugin, Flux (public HTTPS GitRepository, no secret), authentik (SSO; its Secret is made by hand). See [k8s/README.md](../k8s/README.md). |
-| `.github/workflows/k8s.yml` | Secrets guard, host evals with IFD off, render check. See [ci.md](ci.md). |
+| `.github/workflows/k8s.yml` | Secrets guard, host evals with IFD off, render check. See [ci.md](../ci.md). |
 
 ### Rollout knobs (new in this commit)
 
@@ -412,7 +412,7 @@ kubectl auth can-i '*' '*'                          # yes
 > below is the 2026-10-31 layout. To run these steps today, build it
 > (`nix build .#k8s.manifests`, see above for r440) and use the files under
 > `./result/infra/<component>/`; the full bootstrap is in
-> [k8s/README.md](../k8s/README.md#bootstrap-fresh-cluster-operator-with-an-admin-kubeconfig).
+> [k8s/README.md](../k8s/README.md#bootstrap-fresh-cluster).
 
 **3c.** RBAC that NixOS's (disabled) addon manager would have created:
 
@@ -506,7 +506,7 @@ render, including the device plugin.
 > **Since 2026-11-12** Flux reads a cosign-signed OCI artifact
 > (OCIRepository `flux-system-oci`, published by render.yml on `main`), not
 > a GitRepository, and the render is not committed. Use the bootstrap in
-> [k8s/README.md](../k8s/README.md#bootstrap-fresh-cluster-operator-with-an-admin-kubeconfig);
+> [k8s/README.md](../k8s/README.md#bootstrap-fresh-cluster);
 > the commands below are the original 2026-10-31 bootstrap.
 
 ```sh

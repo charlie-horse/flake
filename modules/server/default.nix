@@ -23,8 +23,8 @@
     ../programs/ssh.nix
     # charlie next to admin, mutable users, root untouched until
     # custom.server.legacyCharlie.enable is turned off; then admin is the
-    # only login and root is locked (docs/cluster.md, "Removing charlie
-    # from the servers").
+    # only login and root is locked (docs/history/charlie-removal-2026-11.md;
+    # current state: docs/cluster.md#accounts-on-the-servers).
     ./legacy-charlie.nix
   ];
 

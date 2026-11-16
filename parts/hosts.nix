@@ -29,7 +29,7 @@ in
 
   flake.nixosConfigurations = lib.merge [
     (lib.system.x86_64-linux.mkHost ../hosts/Famine)
-    # Pestilence is archived (hosts/Pestilence/README.md): its files stay,
+    # Pestilence is archived (docs/hosts/pestilence.md): its files stay,
     # but it is not an output, so it is neither built nor checked. To
     # restore it, re-add
     #   (lib.system.x86_64-linux.mkHost ../hosts/Pestilence)

@@ -49,11 +49,10 @@
     # No nixpkgs.follows: vllm-sm70 builds with its own pinned nixpkgs, so a
     # host nixpkgs bump (update.yml) cannot change the gated build.
     # The input keeps the name `vllm-fork` so hosts/c4130 is unchanged.
-    # Pinned to cef0f9e (C1 passed, build aczb9zwk) until `latest` is
-    # fast-forwarded to a gated commit; then point this at .../latest again.
-    # (`latest` moves only after main
-    # CI, the c4130 check, the GPU gate and release sign-off, same commit.)
-    # `nix flake update vllm-fork` to move it.
+    # Tracks the gated branch `latest`, which moves only after main CI, the
+    # c4130 check, the GPU gate and release sign-off (same commit). The rev
+    # is locked in flake.lock; `nix flake update vllm-fork` to move it.
+    # docs/hosts/c4130-vllm.md.
     vllm-fork.url = "github:charlie-horse/vllm-sm70/latest";
 
     # m2mini's Asahi support (pinned rev; bump deliberately).
@@ -63,7 +62,8 @@
     # TODO(Gus/m2mini): placeholder dir without firmware.cpio (proprietary,
     # never committed). Deploy on m2mini with
     #   --override-input m2mini-vendorfw path:/boot/vendorfw
-    # See hosts/m2mini/firmware.nix. Drop this input if Gus stops using it.
+    # docs/hosts/m2mini.md#vendor-firmware. Drop this input if Gus stops
+    # using it.
     m2mini-vendorfw.url = "path:./hosts/m2mini/vendorfw";
     m2mini-vendorfw.flake = false;
 

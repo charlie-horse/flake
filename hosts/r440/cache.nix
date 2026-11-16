@@ -1,42 +1,17 @@
-# r440's Nix binary cache: harmonia serving r440's /nix/store, and nginx
-# in front of it with HTTP basic auth, published as https://cache.neuros.is
-# through the cluster's Cloudflare tunnel. Every client uses that URL
-# (custom.nixCache, modules/system/nix-cache.nix).
+# r440's Nix binary cache: harmonia serving r440's /nix/store on a unix
+# socket, nginx in front with HTTP basic auth on cluster.binaryCache.port,
+# published as https://cache.neuros.is through the cluster's Cloudflare
+# tunnel. Clients: custom.nixCache (modules/system/nix-cache.nix).
 #
-#   https://cache.neuros.is -> Cloudflare -> cloudflared (any node,
-#     hostNetwork) -> its nginx sidecar -> http://10.0.0.239:5080
-#     -> nginx here (basic auth) -> harmonia (unix socket, its only listener)
+#   https://cache.neuros.is -> Cloudflare -> cloudflared (any node)
+#     -> its nginx sidecar -> http://10.0.0.239:5080 -> nginx here
+#     -> harmonia (unix socket, its only listener)
 #
-# c4130 too: it no longer substitutes over bond0 (builds still go there,
-# over ssh), so harmonia has no TCP listener and bond0 no port 5000.
-#
-# The :5080 listener's only consumer is the tunnel. nginx listens on every
-# address, port cluster.binaryCache.port; the firewall admits that port only
-# from the cluster nodes' LAN IPs and the VIP (the tunnel connectors run on
-# all three nodes and connect from those, or over lo on r440 itself).
-# tailscale0 is trusted on r440, so tailnet clients reach it too; all of
-# them need the password.
-#
-# Why nginx here and not in the tunnel's nginx sidecar: harmonia (3.1.0 in
-# nixpkgs 26.05) has no client authentication at all (only TLS), so
-# something in front has to do it. Doing it on r440 keeps the
-# unauthenticated harmonia off the LAN (for the sidecar, harmonia would have
-# to listen on r440's LAN IP for all three nodes, and every pod on them is
-# masqueraded to those IPs), and keeps the htpasswd in one file on the one
-# host that serves the store (no Kubernetes Secret).
-#
-# Secrets: sops-nix, keys of secrets/r440.yaml (encrypted in git; never
-# in plaintext in git, the store or a command line; docs/cluster.md):
-#   harmonia-signing-key  signing key `r440-cache-1:<base64>` (root, 0600).
-#                         Was /var/lib/secrets/harmonia.secret.
-#   nix-cache-htpasswd    basic-auth users (root:nginx, 0640), one line per
-#                         client (ci, famine, c4130, m2mini, ...):
-#                         `<user>:<SHA-512 crypt hash>` (`openssl passwd
-#                         -6`). Missing file: every request gets 500. Was
-#                         /var/lib/nix-cache/htpasswd.
-# Shred both old files once the sops ones are live.
-#
-# Read-only: harmonia only serves; nginx rejects everything but GET/HEAD.
+# Secrets (sops, secrets/r440.yaml): harmonia-signing-key (`r440-cache-1`),
+# nix-cache-htpasswd (one `<user>:<SHA-512 crypt>` line per client).
+# Read-only: nginx passes only GET/HEAD.
+# Why nginx here, reachability, caching, setup and adding/revoking clients:
+# docs/build-cache.md#binary-cache.
 {
   config,
   lib,

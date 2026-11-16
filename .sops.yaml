@@ -1,17 +1,13 @@
-# sops recipients for every encrypted file in this repo (sops-nix:
-# modules/system/sops.nix). After changing a recipient list, re-encrypt the
-# affected files with `sops updatekeys <file>` from the dev shell.
+# sops recipients for every encrypted file in this repo. How hosts decrypt
+# (sops-nix, host keys, the CI and pre-switch checks): docs/auth.md,
+# "sops-nix on the hosts"; every secret: docs/secrets.md.
+# After changing a recipient list, re-encrypt the affected files with
+# `sops updatekeys <file>` from the dev shell.
 #
 # Host keys are age recipients derived from each host's SSH ed25519 host
-# public key (/etc/ssh/ssh_host_ed25519_key.pub):
-#   ssh-to-age < ssh_host_ed25519_key.pub
-# The host decrypts with that private key at activation; a reinstalled host
-# gets a new key, so its anchor must be updated (and every file it reads
-# re-encrypted) BEFORE its first switch, or admin's password is missing.
-# Both are enforced: CI (checks.yml, secrets-guard) fails when a file's
-# recipients differ from its rule below, and each host's pre-switch check
-# `sopsDecrypt` (modules/system/sops.nix) refuses to switch when the host
-# key cannot decrypt a file it uses.
+# public key: ssh-to-age < /etc/ssh/ssh_host_ed25519_key.pub. A reinstalled
+# host gets a new key: update its anchor (and re-encrypt every file it
+# reads) BEFORE its first switch, or admin's password is missing.
 keys:
   # Admins: every rule includes both, so any file can be recovered.
   - &admin_yubikey age1yubikey1qwdgvy8jqgqjd2f380hf6d787x25eyhfwj5nxyv5gzhu6827medygv69f6q # age-plugin-yubikey (PIV slot)
@@ -24,7 +20,8 @@ keys:
   # activation). Before Famine's first sops switch: generate the key there
   # (`sudo ssh-keygen -A`), add `- &famine <ssh-to-age of it>` here, add
   # *famine to the common.yaml and famine.yaml rules, then `sops updatekeys`
-  # both files. Until then Famine cannot decrypt and must not switch.
+  # both files. Until then Famine cannot decrypt and must not switch
+  # (docs/hosts/famine.md).
   # Flux (in-cluster decryption of k8s secrets).
   - &flux age1ynj83hcd8zmscx4us80q6hqzxmr0d69hv3vr8extl5kvjqd92agqypgdux # flux-system/sops-age
 
@@ -76,7 +73,7 @@ creation_rules:
   # Kubernetes secrets decrypted in-cluster by Flux (kustomize-controller's
   # sops decryption). Only the values under data/stringData are encrypted.
   # Layout enforced by k8s/render.nix: k8s/secrets/<namespace>/<name>.sops.yaml.
-  # Sort keys before encrypting (see k8s/README.md, "Secrets").
+  # Sort keys before encrypting (docs/k8s/secrets.md).
   - path_regex: (^|/)k8s/secrets/[^/]+/[^/]+\.sops\.yaml$
     encrypted_regex: ^(data|stringData)$
     key_groups:

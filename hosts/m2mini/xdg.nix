@@ -1,17 +1,7 @@
-# XDG base directories (and the dotfiles that can follow them) for every
-# login shell on m2mini. Relative to "$HOME", which /etc/set-environment
-# expands per user (bash and, through babelfish, fish), so admin and
-# `sudo -i` root each get their own. Until 2026-11 these were charlie's
-# absolute paths, forced on every user. XDG_RUNTIME_DIR is left to
-# pam_systemd (/run/user/<uid> of whoever logs in); it used to be pinned to
-# charlie's uid.
-#
-# bash and less do not create the parent directories of HISTFILE and
-# LESSHISTFILE (history is then silently lost), so tmpfiles creates them for
-# every account that logs in here: admin, root (`sudo -i`) and, while
-# custom.server.legacyCharlie.enable is on, charlie. Each level is listed:
-# tmpfiles would otherwise create missing parents as root. INPUTRC and
-# WGETRC are only read; a missing file is fine.
+# XDG base directories (and the dotfiles that follow them) for every login
+# shell, relative to $HOME, so each user gets their own. tmpfiles creates
+# the parents of HISTFILE/LESSHISTFILE, which bash and less don't.
+# docs/hosts/m2mini.md#xdg-directories
 { config, lib, ... }:
 let
   cache = "$HOME/.cache";

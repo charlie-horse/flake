@@ -1,5 +1,6 @@
 # Host values for the vLLM service. The modules, packages, models and the
-# Python environment live in the fork's flake (input `vllm-fork`, nix/ there).
+# Python environment live in vllm-sm70's flake (input `vllm-fork`, nix/ there).
+# Docs: docs/hosts/c4130-vllm.md
 { inputs, ... }:
 {
   imports = [
@@ -52,8 +53,8 @@
     # L1 is pinned RAM, allocated in full at startup. Keep L1 + the active
     # model's vLLM RAM peak + ~30 GB under 125 GB.
     l1SizeGb = 64;
-    # L2 on c4130's root disk (~41% full on 2026-11-05). 32 GB since
-    # 2026-11-04 (the r440 L2 move was cancelled); the pruner trims to <= 80%
+    # L2 on c4130's root disk, kept small for disk space (32 GB since
+    # 2026-11-04; the r440 L2 move was cancelled). The pruner trims to <= 80%
     # of this.
     l2SizeGb = 32;
     # Dashboard (8081); no authentication.

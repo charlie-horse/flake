@@ -1,0 +1,9 @@
+# .docs-allowlist: exceptions for scripts/check-docs.sh.
+#
+# One entry per line; '#' starts a comment, blank lines are ignored.
+#   <glob>        skip a whole file for every rule (bash glob, '*' also
+#                 matches '/'), e.g.  docs/history/*
+#   <path>:<line> skip one finding: for comment-block, any line inside the
+#                 block; for md-link and docs-ref, the line of the link.
+# Add an entry only with a reason in a comment above it (e.g. a vendored
+# file, or a history doc that must quote an old path verbatim).

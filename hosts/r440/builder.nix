@@ -1,6 +1,7 @@
 # r440 as a Nix remote builder for c4130, over the direct 2x25G link
 # (bond0, 10.25.0.0/30); sshd listens everywhere. The binary cache is
 # ./cache.nix (https://cache.neuros.is for every host, c4130 included).
+# docs/build-cache.md#remote-builder.
 { lib, ... }:
 let
   # Public half of c4130's builder key (private half: sops key

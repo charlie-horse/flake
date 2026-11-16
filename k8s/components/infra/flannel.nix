@@ -1,26 +1,16 @@
-# flannel: the pod network (cluster.podCidr), VXLAN, kube-subnet-mgr mode
-# (each node's spec.podCIDR, allocated by kube-controller-manager from
-# --cluster-cidr = podCidr with nodeCidrMaskSize, is that node's subnet).
+# flannel: the pod network (cluster.podCidr), VXLAN, kube-subnet-mgr mode.
+# The CNI plugins and conflist come from NixOS (modules/cluster/node.nix),
+# so the chart's install-cni init containers are dropped; the DaemonSet only
+# runs flanneld.
 #
-# The host side is NixOS (modules/cluster/node.nix): the flannel and
-# portmap CNI plugins in /opt/cni/bin and the read-only 10-flannel.conflist
-# in /etc/cni/net.d. So the chart's install-cni-plugin / install-cni init
-# containers (and their hostPath volumes) are dropped here; the DaemonSet
-# only runs flanneld, which writes /run/flannel/subnet.env for the plugin.
+# `transport` picks what VXLAN runs over:
+#   "lan"        (default) --public-ip = the node's InternalIP (lanIP), so
+#                flanneld never picks the keepalived VIP, bond0 or
+#                tailscale0; udp/8472 open between LAN IPs
+#   "tailscale"  --iface=tailscale0, MTU 1280 - 50; slower, for nodes that
+#                stop sharing a LAN
 #
-# Interface: `transport` picks what VXLAN runs over.
-#   "lan"        (default) --public-ip = the node's InternalIP
-#                (status.hostIP = cluster.nodes.<n>.lanIP, the kubelet's
-#                --node-ip). flanneld uses the interface holding that
-#                address (eno1 on c4130/r440, end0 on m2mini), so it never
-#                picks the keepalived VIP (a second address on the VIP
-#                holder's LAN NIC), bond0 or tailscale0. The firewall opens
-#                udp/8472 from the nodes' LAN IPs
-#                (modules/cluster/firewall.nix).
-#   "tailscale"  --iface=tailscale0: VXLAN over the tailnet (trusted
-#                interface, so no firewall change), MTU derived from
-#                tailscale0 (1280 - 50). Slower; use it if the nodes stop
-#                sharing a LAN.
+# Details: docs/k8s/README.md#flannel
 {
   lib,
   pkgs,

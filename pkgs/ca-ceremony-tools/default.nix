@@ -1,41 +1,10 @@
-# ca-ceremony-tools: everything the YubiKey root-CA ceremony needs
-# (docs/pki-migration-plan.md, nodes A and F), as one package to enter ad
-# hoc. No host installs any of it and no host runs pcscd permanently
-# (docs/cluster.md, "Secrets (all of them)"), so the ceremony needs no
-# switch. On c4130, as admin:
-#
-#   sudo -i                                  # pcscd and its clients run as root
-#   nix shell /etc/nixos#ca-ceremony-tools
-#   CSR_DIR=~/csrs ca-ceremony               # the whole ceremony (ceremony.sh)
-#   MODE=rehearsal CSR_DIR=... ca-ceremony   # node E: SoftHSM key, no card
-# or by hand:
-#   ca-pcscd &                               # temporary pcscd, exits when idle
-#   ykman info; ykman piv info
-#   step certificate create ... --kms 'yubikey:' --key 'yubikey:slot-id=9c'
-#   ca-openssl x509 -req -provider pkcs11 -provider default \
-#     -key 'pkcs11:object=Private key for Digital Signature' ...
-#
-# Contents (bin/ is what matters):
-#   ykman             yubikey-manager
-#   yubico-piv-tool   plus lib/libykcs11.so (ykcs11, the PKCS#11 module)
-#   step              step-cli; finds `step-kms-plugin` on PATH, which this
-#   step-kms-plugin   package puts next to it
-#   openssl           plus lib/ossl-modules/pkcs11.so (pkcs11-provider)
-#   pcscd             pcsclite; ccid's reader driver for ca-pcscd
-#   ca-pcscd          pcscd the documented ad-hoc way:
-#                     PCSCLITE_HP_DROPDIR=<ccid>/pcsc/drivers
-#                     pcscd --foreground --auto-exit
-#   ca-openssl        openssl with OPENSSL_MODULES=<pkcs11-provider> and
-#                     PKCS11_PROVIDER_MODULE=<libykcs11.so>, for that
-#                     process only (no openssl.cnf anywhere is changed)
-#   ca-ceremony       ./ceremony.sh (root key in 9c, root + 4 intermediates,
-#                     sops-encrypted workload Secret); owned by the PKI plan
-#   sops, age-plugin-yubikey, yq (yq-go)   for the workload Secret
-#   softhsm2-util     softhsm, for MODE=rehearsal
-#
-# The admin YubiKey's other uses (sops age identity in PIV slot 82, FIDO2
-# ssh:admin and pam_u2f) are untouched: nothing here writes to the card by
-# itself, and FIDO2 goes over HID, not PC/SC.
+# ca-ceremony-tools: everything the YubiKey root CA needs (ykman, ykcs11,
+# step + step-kms-plugin, ca-pcscd, ca-ceremony = ./ceremony.sh, sops,
+# age-plugin-yubikey, yq, softhsm for MODE=rehearsal, ca-openssl), as one
+# package entered ad hoc with `nix shell <flake>#ca-ceremony-tools`. No host
+# installs it or runs pcscd permanently, so using it needs no switch.
+# Contents, usage and gotchas: docs/pki.md, "Tools: ca-ceremony-tools".
+# Nothing here writes to the card by itself (slot 82 and FIDO2 untouched).
 {
   lib,
   symlinkJoin,

@@ -1,21 +1,13 @@
 # Per-user YubiKey files for the desktops (mkHost), from the host's sops
-# file (sops.defaultSopsFile, secrets/<hostname>.yaml). They replace the
-# agenix secrets of the same names (modules/age), whose keys are lost.
+# file (sops.defaultSopsFile, secrets/<hostname>.yaml):
 #
-#   pam-yubikeys    pam_u2f mappings, linked to ~/.config/Yubico/u2f_keys
-#                   (pam_u2f's default authfile):
-#                   `charlie:<keyHandle>,<pubkey>,es256,+presence`, one
-#                   line. Make it at the machine with the YubiKey 5:
-#                   `pamu2fcfg -o pam://sortofasian -i pam://sortofasian`.
+#   pam-yubikeys    pam_u2f mappings, linked to ~/.config/Yubico/u2f_keys:
+#                   `charlie:<keyHandle>,<pubkey>,es256,+presence`, one line,
+#                   from `pamu2fcfg -o pam://sortofasian -i pam://sortofasian`.
 #
-# No separate ssh identity: ssh and git signing use the ssh:admin FIDO2
-# key from the agent (modules/programs/ssh.nix, modules/programs/git.nix).
-#
-# The PAM side (pam_u2f as an alternative to the password) is
-# custom.auth.desktopU2f in modules/system/auth, which this turns on.
-#
-# Off by default: every key must exist in the host's sops file first, or
-# evaluation fails (sops-nix checks the file).
+# The PAM side is custom.auth.desktopU2f (modules/system/auth), which this
+# turns on. Off by default: the key must exist in the host's sops file
+# first, or evaluation fails. docs/auth.md, "Desktop YubiKey".
 { lib, config, ... }:
 let
   inherit (lib)

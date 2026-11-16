@@ -1,43 +1,16 @@
 # Headlamp (Kubernetes web UI), namespace `headlamp`: the Headlamp Helm
-# chart (charts.headlamp, image ghcr.io/headlamp-k8s/headlamp), one replica,
-# amd64 only (nodeSelector): with c4130 tainted for vLLM that means r440.
-# m2mini (arm64, 16 KiB pages) is avoided on purpose, as for authentik.
+# chart, one replica, amd64 only (nodeSelector): with c4130 tainted, r440.
 #
 # Login is OIDC against authentik's confidential provider `headlamp`
-# (issuer https://auth.neuros.is/application/o/headlamp/, per-provider),
-# scopes `openid profile email groups`, callback
-# https://<cluster.headlamp.host>/oidc-callback. Headlamp hands each user's
-# own ID token to the apiserver, which accepts that issuer with audience
-# `headlamp` (cluster.oidc.extraIssuers, modules/cluster/control-plane.nix)
-# and maps it to oidc:<user> / oidc:<group>; RBAC binds oidc:cluster-admins
-# (k8s/components/infra/rbac.nix). The pod's own ServiceAccount has NO RBAC: the
-# chart's default cluster-admin ClusterRoleBinding is disabled, and
-# unsafeUseServiceAccountToken stays off. (The token is still mounted:
-# in-cluster mode reads the apiserver address and CA from it.)
+# (per-provider issuer, a second JWT authenticator on the apiserver:
+# cluster.oidc.extraIssuers). Headlamp hands each user's own ID token to the
+# apiserver; the pod's ServiceAccount has NO RBAC (the chart's cluster-admin
+# binding is disabled, unsafeUseServiceAccountToken off).
 #
-# The client secret: the pod reads it from the Secret `headlamp-oidc`,
-# sops-encrypted in git (k8s/secrets/headlamp/headlamp-oidc.sops.yaml) and
-# applied by the Flux Kustomization `secrets` (k8s/README.md, "Secrets",
-# "Headlamp"), key
-#   OIDC_CLIENT_SECRET   the `headlamp` provider's client secret, copied
-#                        from authentik (Applications -> Providers ->
-#                        headlamp); generate nothing here
-# Client id, issuer, scopes and callback are plain env values below. The
-# value is read at start: restart the Deployment after a change. Until the
-# Secret is applied the pod stays in CreateContainerConfigError, nothing
-# else breaks.
-#
-# Pod security: the namespace enforces `restricted` (the image runs as uid
-# 100; non-root, seccomp RuntimeDefault, all capabilities dropped, no
-# privilege escalation).
-#
-# No Ingress. Public at https://k8s.neuros.is (cluster.headlamp.host): the
-# cluster's Cloudflare tunnel (apps/cloudflared, one replica per
-# node, nginx sidecar keeps the Host header) forwards to Service headlamp at
-# the fixed ClusterIP cluster.headlamp.serviceIP (port 80). ClusterIP is immutable, so that
-# Service carries Flux's force annotation (recreated, not patched, if the IP
-# ever changes). From inside the tailnet/LAN without the tunnel:
-#   kubectl -n headlamp port-forward svc/headlamp 4466:80
+# Secret headlamp-oidc (sops, key OIDC_CLIENT_SECRET, copied from authentik),
+# read at start. The namespace enforces `restricted`. Public at
+# https://k8s.neuros.is through apps/cloudflared to the fixed ClusterIP
+# cluster.headlamp.serviceIP. Docs: docs/k8s/apps.md#headlamp
 {
   pkgs,
   catenix,

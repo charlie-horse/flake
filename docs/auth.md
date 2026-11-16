@@ -1,22 +1,233 @@
-# Authentication (`custom.auth`)
+# Authentication, accounts and host secrets
+
+How people and hosts prove who they are: the local accounts, the SSH
+client config, how each host decrypts its sops secrets, and the
+authentication policy (`custom.auth`: sshd, sudo, polkit, the console, the
+optional hardware factor). The inventory of every secret is
+[secrets.md](secrets.md); the cluster PKI is [pki.md](pki.md).
+
+- [Accounts](#accounts)
+- [SSH client](#ssh-client)
+- [sops-nix on the hosts](#sops-nix-on-the-hosts)
+- [custom.auth](#customauth)
+  - [Options](#options)
+  - [What each service asks for](#what-each-service-asks-for)
+  - [Hardware factor: the PAM stacks](#hardware-factor-the-pam-stacks)
+  - [Registering the keys](#registering-the-keys)
+  - [Clients: forwarding the agent](#clients-forwarding-the-agent)
+  - [Rollout, one host at a time](#rollout-one-host-at-a-time)
+  - [Lockout and recovery](#lockout-and-recovery)
+  - [Caveats](#caveats)
+- [Desktop YubiKey](#desktop-yubikey)
+
+## Accounts
+
+`modules/system/admin.nix`, on every host (desktops through `modules/`,
+servers through `modules/server/default.nix`).
+
+| Account | What |
+| --- | --- |
+| `admin` | The only account in wheel. Logs in over SSH with a FIDO2 resident key (`sk-ssh-ed25519@openssh.com`, application `ssh:admin`, on the YubiKey 19830800); the allowed keys are `adminAuthorizedKeys` in `admin.nix` (one today). sudo asks for its password, or for the key with the [hardware factor](#customauth) on |
+| `root` | Locked (`!`, no keys) wherever users are immutable; become root with `sudo -i` as admin |
+| `charlie` | The desktop user (`custom.user`, `modules/system/user.nix`; Famine). On a server only while `custom.server.legacyCharlie.enable` is on (`modules/server/legacy-charlie.nix`, stage 1 of [charlie's removal](history/charlie-removal-2026-11.md)) |
+
+**admin's password.** The one source of truth is the plaintext sops key
+`admin-password` in `secrets/common.yaml` (read it with
+`sops -d --extract '["admin-password"]' secrets/common.yaml`). Each host
+derives the hash at activation ([Login passwords](#login-passwords-customsopspasswords)).
+To change it, edit `admin-password` and switch every host.
+
+**Immutable users.** `users.mutableUsers = false` (`mkDefault`: the
+desktops, and servers with `legacyCharlie` off): `/etc/passwd`,
+`/etc/shadow` and `/etc/group` are rebuilt at every activation, so
+`passwd` and `useradd` do not survive a switch. A server with
+`legacyCharlie` on is mutable: existing shadow entries stay, root's `!` is
+not applied, and admin's hash is used only when admin is created (a later
+`admin-password` change reaches it only after stage 2, or with
+`sudo passwd admin`).
+
+Stage 2 (`legacyCharlie.enable = false`) is set for all three servers in
+`hosts/{c4130,r440,m2mini}/configuration.nix`.
+
+> **Unverified:** whether each server has switched to stage 2. Check on a
+> host with `getent passwd admin charlie`.
+
+**Lockout.** A host that cannot decrypt `secrets/common.yaml` has no admin
+password, and with root locked nobody can sudo. Both causes (host not a
+recipient, file not re-encrypted) are checked before it can happen
+([Can this host decrypt?](#can-this-host-decrypt)); if decryption still
+fails at activation, the previous admin hash is kept.
+
+## SSH client
+
+`modules/programs/ssh.nix`, on every host (the servers and Famine), so
+`ssh c4130` works without options from a desktop and from one server to
+the next.
+
+- **`/etc/ssh/ssh_config`** has a `Host` block for `c4130 r440 m2mini` and
+  their `*.leaffish-monster.ts.net` names (names only, no IPs): `User
+  admin`, `ForwardAgent yes`, `IdentitiesOnly yes`, and one `IdentityFile`
+  per `sk-` key in admin's authorized keys. Those files hold only the
+  **public** key: with `IdentitiesOnly`, ssh then offers exactly that key
+  from the agent, local or forwarded (ssh_config(5), `IdentityFile`). No
+  key-handle stub (an `OPENSSH PRIVATE KEY` file) is deployed anywhere; CI's
+  secrets guard rejects one.
+- **IPs are left out on purpose.** c4130's nix-daemon reaches r440 as
+  `nixremote@10.25.0.2` with its own key (`hosts/c4130/builder.nix`,
+  [build-cache.md](build-cache.md)); the block must not add identities or
+  agent forwarding there. By IP (the LAN when Tailscale is down) use
+  `ssh -A admin@10.0.0.95`.
+- **`/etc/ssh/ssh_known_hosts`** pins each node's ed25519 host key
+  (`cluster/definition.nix`, `nodes.<n>.sshHostKey`) for its name, FQDN,
+  LAN and tailnet address; host configs add the bond0 names
+  (`hosts/*/builder.nix`). Tailscale SSH presents the same host keys.
+  After a reinstall, update `sshHostKey` and the host's `.sops.yaml`
+  anchor together ([sops-nix](#host-keys-and-recipients)).
+- **Agent.** The desktops run a per-user ssh-agent
+  (`programs.ssh.startAgent`; gnome-keyring's `gcr-ssh-agent` is turned
+  off so only one runs). The servers run none (`modules/server/default.nix`)
+  and use the forwarded one. The agent must hold the `ssh:admin` key: on
+  Linux `ssh-add -K` with the YubiKey plugged in (or `ssh-keygen -K` once,
+  then `ssh-add` the `id_ed25519_sk_rk_admin` file it writes).
+- **Relay caveat:** forwarding lets root on the host you are on use your
+  key while you are connected ([Clients: forwarding the agent](#clients-forwarding-the-agent)).
+
+**Windows** (Win32-OpenSSH 8.9 or newer, for FIDO2 in the agent; tested
+2026-11-13):
+
+1. Start the agent and keep it running (PowerShell as Administrator):
+   `Set-Service ssh-agent -StartupType Automatic; Start-Service ssh-agent`.
+2. In `%USERPROFILE%\.ssh`, with the YubiKey plugged in, run `ssh-keygen -K`
+   (FIDO PIN, touch). It writes the resident-key stub
+   `id_ed25519_sk_rk_admin` (and `.pub`).
+3. Load it: `ssh-add .\id_ed25519_sk_rk_admin`.
+4. In `%USERPROFILE%\.ssh\config`:
+
+   ```
+   Host c4130 r440 m2mini c4130.leaffish-monster.ts.net r440.leaffish-monster.ts.net m2mini.leaffish-monster.ts.net
+     User admin
+     ForwardAgent yes
+     IdentitiesOnly yes
+     IdentityFile ~/.ssh/id_ed25519_sk_rk_admin.pub
+   ```
+
+5. Copy the three host-key lines from any server's
+   `/etc/ssh/ssh_known_hosts` into `%USERPROFILE%\.ssh\known_hosts`, or
+   check the fingerprint at the first connection against `sshHostKey`.
+
+## sops-nix on the hosts
+
+`modules/system/sops.nix`, on every host (desktops through `modules/`,
+servers through `modules/server/default.nix`). Recipients are in
+`.sops.yaml`; what each secret is and where it lives is
+[secrets.md](secrets.md). Editing a sops file with the YubiKey (ad hoc,
+pcscd on a server) is also there.
+
+### Files
+
+| File | Recipients | Used by |
+| --- | --- | --- |
+| `secrets/<hostname>.yaml` (lowercase, e.g. `c4130.yaml`, `famine.yaml`) | admins + that host (`famine.yaml`: admins only until Famine is enrolled) | the default `sopsFile` of every `sops.secrets.<name>` |
+| `secrets/common.yaml` | admins + every server (not Famine yet) | per secret, e.g. `admin-password` |
+| `secrets/admin.yaml` | admins only, never deployed | e.g. the YubiKey PIV PUK |
+| `secrets/pki/<node>.yaml`, `secrets/cluster-sa.yaml` | admins + that node / every control plane | the cluster PKI ([pki.md](pki.md#on-the-nodes-runsecretspki)) |
+| `k8s/secrets/<ns>/<name>.sops.yaml` | admins + Flux | in-cluster only ([k8s/secrets.md](k8s/secrets.md)) |
+
+The admins are `admin_yubikey` (age-plugin-yubikey, PIV slot 82 of the
+YubiKey 19830800) and `admin_backup` (an offline passphrase-protected age
+key); every rule has both, so any file can be recovered.
+
+A host selects a file other than its own with
+`sopsFile = builtins.path { path = "${inputs.self}/secrets/common.yaml"; name = "common.yaml"; }`.
+Always through `builtins.path`: it copies that one file to the store, so a
+host's closure references only its own sops files. A bare
+`"${inputs.self}/secrets/..."` would make every system depend on the whole
+flake source, and a relative `../../secrets` breaks on the desktops, whose
+`modules/` is a store copy of its own.
+
+Edit a file with `sops secrets/<file>.yaml` from the dev shell
+(`devenv.nix`: sops, age, age-plugin-yubikey, ssh-to-age). Secrets land in
+`/run/secrets/` (with `neededForUsers`: `/run/secrets-for-users/`, before
+users are created).
+
+### Host keys and recipients
+
+A host decrypts with its own SSH ed25519 host key
+(`/etc/ssh/ssh_host_ed25519_key`), converted to an age identity at
+activation. Its recipient in `.sops.yaml` is `ssh-to-age <
+ssh_host_ed25519_key.pub`. No GnuPG and no RSA host keys.
+
+- **After changing a recipient list**, re-encrypt the affected files with
+  `sops updatekeys <file>`.
+- **A reinstalled host** gets a new host key: update its `.sops.yaml`
+  anchor (and `sshHostKey`), re-encrypt every file it reads, merge, all
+  **before** its first switch, or admin has no password there.
+- **The host key must exist before the first activation.** On the servers
+  sshd made it long ago. Famine runs no sshd; its enrolment (`sudo
+  ssh-keygen -A`, add the recipient, `sops updatekeys`) is in
+  [hosts/famine.md](hosts/famine.md). As a fallback for activations that
+  skip the pre-switch check, an activation script makes a missing key
+  (never touching an existing one, without enabling sshd) before sops-nix
+  decrypts anything.
+
+### Can this host decrypt?
+
+Checked twice, automatically:
+
+- **CI** (`.github/workflows/checks.yml`, secrets-guard): every sops file's
+  age recipients equal its `.sops.yaml` rule, so no file was left
+  un-re-encrypted after a recipient change. No keys needed.
+- **On the host, before every switch/boot/test** (`system.preSwitchChecks.sopsDecrypt`):
+  each sops file the new generation uses is decrypted with the host key (to
+  `/dev/null`). Any failure, or a missing host key, aborts
+  `switch-to-configuration` before the bootloader or activation is touched.
+  `NIXOS_NO_CHECK=1` skips every pre-switch check; don't, unless you know
+  why it failed.
+
+### Login passwords (`custom.sopsPasswords`)
+
+Used for admin (`modules/system/admin.nix`). The sops key holds the
+**plaintext** password.
+
+1. sops-nix decrypts it with `neededForUsers` to
+   `/run/secrets-for-users/<key>` (ramfs, root 0400).
+2. The activation script `sopsPasswordHashes` derives the yescrypt hash
+   (`mkpasswd -m yescrypt --stdin`) into `/run/sops-password-hashes/<user>`
+   (tmpfs, root 0600 in a root 0700 directory): the user's
+   `hashedPasswordFile`. The current `/etc/shadow` hash is reused while it
+   still matches, so an unchanged password keeps its salt.
+3. nixpkgs' `users` script reads it. Order: `setupSecretsForUsers` →
+   `sopsPasswordHashes` → `users`.
+
+If the plaintext is missing or empty (decryption failed), the activation
+fails loudly and the user's **previous** hash from `/etc/shadow` is written
+instead; with immutable users a missing `hashedPasswordFile` would lock the
+account. The hashes have their own directory because sops-nix creates
+`/run/secrets-for-users` only after a successful decryption. A failing
+`setupSecretsForUsers` does not stop the activation, so this step still
+runs. With mutable users, nixpkgs applies `hashedPasswordFile` only when it
+creates the user. It needs the classic perl `users` script (no
+systemd-sysusers, no userborn; asserted).
+
+## custom.auth
 
 All authentication policy for every host is in one module,
 `modules/system/auth/default.nix`. It covers sshd, sudo, polkit, the console
 and the desktop YubiKey. The servers import it from `modules/server/default.nix`,
 and Famine gets it with `modules/` wholesale, so each host imports it exactly
-once. Accounts (admin, root locked, charlie on Famine) are separate, in
-`modules/system/admin.nix` and `modules/system/user.nix`.
+once.
 
-- [Options](#options)
-- [What each service asks for](#what-each-service-asks-for)
-- [Hardware factor: the PAM stacks](#hardware-factor-the-pam-stacks)
-- [Registering the keys](#registering-the-keys)
-- [Clients: forwarding the agent](#clients-forwarding-the-agent)
-- [Rollout, one host at a time](#rollout-one-host-at-a-time)
-- [Lockout and recovery](#lockout-and-recovery)
-- [Caveats](#caveats)
+**State (2026-11-16, from the repo):** no host sets `hardwareFactor.enable`
+or `custom.yubikey.enable` (Famine sets it `false`), so every host runs
+the "both off" column below. `modules/system/auth/u2f-keys` holds one admin
+line with three credentials (c2fd3f8), which satisfies the u2f side of the
+second-key check; `adminAuthorizedKeys` holds one `sk-` key, so enabling the
+factor still fails evaluation on the rssh side.
 
-## Options
+> **Unverified:** which physical keys the three u2f credentials belong to
+> (the file's own comment, written for one credential, says 19830800).
+
+### Options
 
 | Option | Default | Effect |
 | --- | --- | --- |
@@ -36,7 +247,7 @@ YubiKey sops secret `pam-yubikeys` and links
 hardware factor on, PAM then asks for the key and not the password.
 `hardwareFactor` and `desktopU2f` cannot both be on.
 
-## What each service asks for
+### What each service asks for
 
 | Service | Both off (today, every host) | `hardwareFactor.enable` (servers) | `desktopU2f.enable` (Famine) |
 | --- | --- | --- | --- |
@@ -63,7 +274,7 @@ root on any host can read it (`/run/secrets-for-users/admin-password`). With
 the factor on, the password gives no root anywhere, and at the console it
 is not enough alone.
 
-## Hardware factor: the PAM stacks
+### Hardware factor: the PAM stacks
 
 `/etc/pam.d/sudo` and `/etc/pam.d/polkit-1` (m2mini), auth section. This is
 c4130 and m2mini forced on with a dummy mapping, store paths shortened:
@@ -172,7 +383,7 @@ commands run with sudo also see the forwarded agent. sudo is built without
 `--with-pam-login`, so `sudo -i` and `sudoedit` use `/etc/pam.d/sudo` as
 well.
 
-## Registering the keys
+### Registering the keys
 
 **Prerequisite: two FIDO2 keys.** The YubiKey 5 (serial 19830800) plus a
 second one, kept apart. Evaluation refuses `hardwareFactor.enable` until
@@ -198,24 +409,16 @@ the u2f mapping holds two credentials AND rsshKeys holds two `sk-` keys
    its public key to `adminAuthorizedKeys` in `modules/system/admin.nix`.
    rsshKeys follows that list, and the same key then also logs in over SSH.
 
-## Clients: forwarding the agent
+### Clients: forwarding the agent
 
 The agent on the client must hold the `ssh:admin` **sk** key. A plain
 `ssh-ed25519` key does not count. Check with `ssh-add -L`: the line must
 start with `sk-ssh-ed25519@openssh.com` and end in `ssh:admin`.
 
-**Windows** (tested 2026-11-13, Win32-OpenSSH agent):
+**Windows**: set up the agent and load the resident key as in
+[SSH client](#ssh-client), Windows; use `ForwardAgent yes` (or `ssh -A`).
 
-1. `ssh -V` must be OpenSSH 8.9 or newer (FIDO2 support in the agent).
-2. Start the agent and keep it running (PowerShell as Administrator):
-   `Set-Service ssh-agent -StartupType Automatic; Start-Service ssh-agent`.
-3. In `%USERPROFILE%\.ssh`, with the YubiKey plugged in, run `ssh-keygen -K`
-   (FIDO PIN, touch). It writes the resident-key stub
-   `id_ed25519_sk_rk_admin` (and `.pub`).
-4. Load it: `ssh-add .\id_ed25519_sk_rk_admin`.
-5. In `~/.ssh/config`, for the hosts: `ForwardAgent yes` (or use `ssh -A`).
-
-The failure seen before step 4: the agent offered only a plain
+The failure seen before the key was loaded: the agent offered only a plain
 `ssh-ed25519` key. pam_rssh logged "None of these keys passed
 authentication" (`journalctl -b | grep -i rssh`), and sudo said
 "incorrect password" although none was asked for.
@@ -248,7 +451,7 @@ each use) narrows this.
 **Cloud sessions cannot sudo** on a host with the factor on: they have
 neither key. CLAUDE.md already has the user run sudo.
 
-## Rollout, one host at a time
+### Rollout, one host at a time
 
 Prerequisites:
 
@@ -281,13 +484,13 @@ usual). Per host:
    - without the touch it fails;
    - `sudo -v` there succeeds with only a touch;
    - on m2mini, `pkexec true` succeeds with only a touch.
-6. **Finish.** Close session A's root shell, and note the state in
-   `docs/cluster.md`.
+6. **Finish.** Close session A's root shell, and update the state
+   paragraph under [custom.auth](#customauth).
 
 If step 3 or 5 fails, roll back from session A with
 `nixos-rebuild switch --rollback`, or switch a commit with the option off.
 
-## Lockout and recovery
+### Lockout and recovery
 
 With the factor on, a host needs a key for sudo **and** for console login.
 The password alone opens nothing there.
@@ -318,7 +521,7 @@ The password alone opens nothing there.
 
 These cases are why the second key is a hard prerequisite.
 
-## Caveats
+### Caveats
 
 - **A key plugged into a host is a u2f path for any admin shell there.**
   The YubiKey (serial 19830800) travels with the user and is never parked
@@ -333,3 +536,20 @@ These cases are why the second key is a hard prerequisite.
 - **Famine's nixpkgs pin** has pam_rssh 1.2.0-rc2, which has no `cue`
   option; the module leaves it out there. The hardware factor is not meant
   for Famine (desktopU2f is).
+
+## Desktop YubiKey
+
+`custom.yubikey.enable` (`modules/system/yubikey.nix`, desktops; off by
+default, and Famine sets it `false`) puts the per-user pam_u2f mapping on a
+desktop and turns on `custom.auth.desktopU2f`:
+
+- sops secret `pam-yubikeys` from the host's own file
+  (`secrets/<hostname>.yaml`), owner the desktop user, 0400, linked to
+  `~/.config/Yubico/u2f_keys` (pam_u2f's default authfile). One line,
+  `charlie:<keyHandle>,<pubkey>,es256,+presence`, made at the machine with
+  the YubiKey: `pamu2fcfg -o pam://sortofasian -i pam://sortofasian`.
+- The key must exist in the host's sops file before enabling, or
+  evaluation fails (sops-nix checks the file).
+- No separate SSH identity: ssh and git signing use the `ssh:admin` FIDO2
+  key from the agent (`modules/programs/ssh.nix`, `modules/programs/git.nix`).
+- It replaced the agenix secrets of the same name, whose keys are lost.

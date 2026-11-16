@@ -37,8 +37,7 @@ in
   # r440 builds and holds x86_64 only (no aarch64 binary in its store,
   # 2026-11-12), so m2mini gets only arch-independent paths from it
   # (sources, fixed-output downloads, data). netrc: sops key
-  # nix-cache-netrc in secrets/m2mini.yaml (formerly /var/lib/nix-cache/
-  # netrc, made by hand; docs/cluster.md, "Binary cache"); without it Nix
-  # warns and uses cache.nixos.org alone.
+  # nix-cache-netrc in secrets/m2mini.yaml (docs/build-cache.md); without
+  # it Nix warns and uses cache.nixos.org alone.
   custom.nixCache.enable = true;
 }

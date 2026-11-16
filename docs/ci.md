@@ -4,7 +4,11 @@
 | --- | --- | --- |
 | `.github/workflows/checks.yml` | every PR and push to `main` | Checks only: the secrets guard, `nix flake check`, and an eval of each server's toplevel. Never builds or writes. |
 | `.github/workflows/render.yml` | PRs and pushes to `main` that touch a render input | Renders `k8s/`. On `main` it also publishes the render to GHCR (a signed OCI artifact) and pings Flux. |
-| `.github/workflows/update.yml` | Mon + Fri 04:00 UTC, or by hand | `nix flake update` (every input) → flake check + render → a PR from `auto/flake-update` ([below](#updateyml)). |
+| `.github/workflows/update.yml` | Mon + Fri 04:00 UTC, or by hand | `nix flake update` (every input) → flake check + server evals + render → push `flake.lock` to `main`, then dispatch checks and render ([below](#updateyml); PR #55). |
+| `.github/workflows/pki-export-image.yml` | PRs and pushes to `main` that touch `pkgs/pki-tools/**` or its other inputs | Builds `.#pki-export-image`; on `main` (push or dispatch) pushes it to GHCR ([below](#pki-export-imageyml)). |
+
+Every job that runs Nix substitutes from r440's binary cache when the
+secret is available ([below](#binary-cache)).
 
 Every action is pinned by full commit SHA ([below](#pinned-actions)).
 
@@ -13,9 +17,10 @@ Every action is pinned by full commit SHA ([below](#pinned-actions)).
 | Job | Runner | What it does |
 | --- | --- | --- |
 | `secrets-guard` | ubuntu-24.04 | Fails if the diff adds a key file, a kubeconfig or a plaintext password ([details](#secrets-guard)). |
-| `flake-check` | ubuntu-24.04 | `nix flake check --keep-going`: every output evaluates (every NixOS host: the desktop Famine and the servers c4130, r440 and m2mini; Famine's ISO; the packages). Pestilence is archived and not an output, so it is not checked (`hosts/Pestilence/README.md`). The flake has no `checks`, so nothing heavy is built. The k8s render is the system-independent output `k8s`, which flake check does not evaluate. |
+| `flake-check` | ubuntu-24.04 | `nix flake check --keep-going`: every output evaluates (every NixOS host: the desktop Famine and the servers c4130, r440 and m2mini; Famine's ISO; the packages). Pestilence is archived and not an output, so it is not checked ([pestilence.md](hosts/pestilence.md)). Its only `checks` output is `pki-tools` (`parts/packages.nix`; pytest in its checkPhase), the one thing flake check builds; nothing heavy. The k8s render is the system-independent output `k8s`, which flake check does not evaluate. |
 | `format` | ubuntu-24.04 | `nix fmt -- --check` over every tracked `.nix` file (the flake's formatter, RFC-style nixfmt). Excluded: `hosts/Pestilence/servarr.nix` (its plaintext `rpc-password` line trips the secrets guard on any edit, reformatting included). Run `nix fmt` before committing. |
 | `eval-hosts` (matrix) | x86: ubuntu-24.04, m2mini: ubuntu-24.04-arm | `nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath` with import-from-derivation **disabled**, for c4130, r440 and m2mini. It checks `.system` and writes the drvPath to the job summary. |
+| `docs` | ubuntu-24.04 | `bash scripts/check-docs.sh`: relative markdown links and `docs/…md` references resolve, every doc is linked from [README.md](README.md), and no comment block in code is longer than 15 lines. Exceptions: `.docs-allowlist`. |
 
 `flake check` alone is not enough: it checks that each
 `nixosConfigurations.*` evaluates to *a* configuration, but does not force
@@ -30,7 +35,7 @@ CI never builds a NixOS toplevel. The c4130 closure contains the CUDA 12.x
 toolkit, torch and vLLM: hours of build time and tens of GB, far beyond a
 hosted runner. The server evals pass `--option allow-import-from-derivation
 false` (`$NO_IFD`), so evaluating them can never turn into a build. Builds
-happen on r440 (CLAUDE.md, "Deploying").
+happen on r440 ([build-cache.md](build-cache.md)).
 
 To compare a CI drvPath with what runs on a host, take the drvPath from the
 job summary and, on the host:
@@ -81,8 +86,8 @@ The guard scans only the diff: the PR's merge-base to head, or on a push
   `mac: ENC[...]` and at least one recipient; every value outside that block
   must be `ENC[...]` and every comment `#ENC[...]`. A k8s file may have
   only the top-level keys `apiVersion kind metadata type data stringData
-  sops` (the same set the render's `checkSecret` allows; k8s/README.md,
-  "Secrets"), the first four in the clear (Flux reads them), `data` and
+  sops` (the same set the render's `checkSecret` allows;
+  [k8s/secrets.md](k8s/secrets.md)), the first four in the clear (Flux reads them), `data` and
   `stringData` encrypted. Any other file under `secrets/` (a subdirectory,
   a non-`.yaml` file) fails, as does any file under `k8s/secrets/` without
   the `.sops.yaml` suffix (the k8s render rejects those too).
@@ -107,8 +112,8 @@ the pre-switch check `sopsDecrypt` in `modules/system/sops.nix`.
 It prints only `file:line` (or file and key path), never the matching text.
 Secrets in git are sops-encrypted only (sops-nix on the hosts:
 `modules/system/sops.nix`), the cluster's host certs and CA keys included
-(`secrets/pki/`, `k8s/secrets/cluster-pki/`; `docs/pki.md`). Every secret,
-CI's included, is listed in `docs/cluster.md`, "Secrets (all of them)".
+(`secrets/pki/`, `k8s/secrets/cluster-pki/`; [pki.md](pki.md)). Every secret,
+CI's included, is listed in [secrets.md](secrets.md).
 
 The guard is diff-only on purpose: older plaintext credentials in
 `hosts/Pestilence` (and in git history) only trip it when those lines are
@@ -141,8 +146,8 @@ publish (main only)   flux push artifact oci://ghcr.io/<repo>/manifests:<sha12>
   `…/.github/workflows/render.yml@refs/heads/main`.
 - **Permissions:** `render` is read-only; `publish` has `packages: write`
   (GHCR) and `id-token: write` (keyless signing), nothing else.
-- **Secrets:** `NIX_CACHE_NETRC` (optional, also used by checks and update:
-  r440's binary cache, [below](#binary-cache-r440-read-only)), `FLUX_WEBHOOK_TOKEN` (the HMAC key, the same bytes as the
+- **Secrets:** `NIX_CACHE_NETRC` (optional, shared by every workflow:
+  r440's binary cache, [below](#binary-cache)), `FLUX_WEBHOOK_TOKEN` (the HMAC key, the same bytes as the
   cluster Secret `flux-system/webhook-token`, no trailing newline) and
   `FLUX_WEBHOOK_URL` (`https://<cluster.fluxWebhook.host>` plus the
   Receiver's `status.webhookPath`, which changes when the token does).
@@ -154,59 +159,62 @@ without credentials.
 
 ## update.yml
 
-Mondays and Fridays at 04:00 UTC (or dispatched by hand):
+> This section describes the flow of PR #55 (flake.lock updates pushed
+> straight to `main`). Until #55 merges, `main`'s update.yml still opens a PR
+> from `auto/flake-update`.
 
-1. `nix flake update` updates **every** input, `vllm-fork` included. Nothing to do if no
-   input moved.
-2. `nix flake check` and `nix build .#k8s.manifests` run as the same gates a
-   human change needs.
-3. The new `flake.lock` is force-pushed to `auto/flake-update`, and a PR to
-   `main` is opened, or its body refreshed if one is open. The body lists
-   every changed input (before/after rev) and **warns when `vllm-fork`
-   moved**, because that changes c4130's production vLLM: build it on r440
-   and switch c4130 deliberately.
+Mondays and Fridays at 04:00 UTC (23:00 EST Sun/Thu), or dispatched by
+hand. Hands-free: no PR.
 
-It uses `GITHUB_TOKEN`, so the PR does not start `checks.yml`/`render.yml`
-by itself. Run both from the Actions tab on branch `auto/flake-update`, or
-close and reopen the PR, before merging. Merging deploys the render;
-hosts take the new inputs on their next switch.
+1. `nix flake update` updates **every** input, `vllm-fork` included.
+   Nothing to do if no input moved.
+2. Gates, the same a human change gets: `nix flake check --keep-going`, an
+   eval of each server's toplevel drvPath (c4130, r440, m2mini, on x86_64,
+   with `$NO_IFD` as in `eval-hosts`) and `nix build .#k8s.manifests`.
+3. Only if all pass is the new `flake.lock` committed by
+   `github-actions[bot]` and pushed to `main` (fast-forward; if `main`
+   moved and touched `flake.nix`/`flake.lock` meanwhile, it gives up and the
+   next run retries). Nothing is pushed on failure; the failed run is the
+   signal (GitHub emails the repo owner).
+4. A push made with `GITHUB_TOKEN` triggers no workflows, so the job then
+   dispatches `checks.yml` and `render.yml` on `main`; render's `publish`
+   ships the new render to Flux as for any push to `main`.
 
-It needs the repo setting *Settings → Actions → General → Workflow
-permissions → "Allow GitHub Actions to create and approve pull
-requests"*. Without it the PR step fails, and the run fails visibly.
+The commit message and the run summary list every changed input
+(before/after rev) and **warn when `vllm-fork` moved**, because that
+changes c4130's production vLLM on its next switch: build it on r440, GC
+first, switch outside the GPU window ([c4130.md](hosts/c4130.md)). Hosts
+take the new inputs on their next `git pull && nixos-rebuild switch`.
 
-## Binary cache (r440, read-only)
+Permissions: `contents: write` (push) and `actions: write` (dispatch). It
+needs `main` to accept pushes from `github-actions[bot]` (no branch
+protection against it, or the bot allowed to bypass).
 
-`flake-check`, `eval-hosts`, `render` and `update` add r440's binary
-cache (https://cache.neuros.is, docs/cluster.md "Binary cache") to Nix
-through the local composite action `.github/actions/nix-cache` and
-install-nix-action's `extra_nix_config`:
+## pki-export-image.yml
 
-```
-extra-substituters = https://cache.neuros.is?priority=50   # after cache.nixos.org (40)
-extra-trusted-public-keys = r440-cache-1:…                 # cluster/definition.nix binaryCache.publicKey
-netrc-file = $RUNNER_TEMP/nix-cache.netrc                  # mode 600, from the secret
-connect-timeout = 5
-fallback = true
-```
+Builds `.#packages.x86_64-linux.pki-export-image` (the image of the
+cert-manager → sops export job, `pkgs/pki-tools`) on PRs and pushes to
+`main` that touch `pkgs/pki-tools/**`,
+`k8s/components/infra/cluster-pki/leaves.nix`, `cluster/definition.nix`,
+`parts/packages.nix`, `flake.lock` or the workflow. On `main` (push or
+dispatch) it pushes the image to `ghcr.io/<repo>/pki-export` with tags
+`<sha12>` and `main` (skopeo, `GITHUB_TOKEN`, `packages: write`) and writes
+the digest to the job summary; pin it in
+`k8s/components/infra/cluster-pki/export.nix`. Operations:
+[pki.md](pki.md#export-job-image).
 
-- **Secret `NIX_CACHE_NETRC`**: one netrc line,
-  `machine cache.neuros.is login ci password <password>` (the `ci` user of
-  r440's htpasswd). The action writes it with umask 077 and never prints
-  it; GitHub masks it in logs.
-- **Without the secret** (pull requests from forks, Dependabot) the action
-  outputs nothing and the job runs exactly as before, on cache.nixos.org.
-  A wrong or revoked password also only costs a warning: Nix gets 401,
-  disables the cache for 60 s and carries on.
-- **Read-only.** harmonia serves r440's store; CI cannot push to it. The
-  jobs only evaluate and render, so the gain is small (IFD and render
-  inputs r440 happens to hold); the CUDA/torch closures never matter here.
-- Workflows of same-repo branches can read the secret, as with every
-  Actions secret. It grants read access to r440's store, nothing else;
-  revoke it by deleting the `ci` line on r440.
-- The action pins nothing external (it is a bash step), so the table below
-  is unchanged. The URL and key in it mirror `cluster/definition.nix`;
-  change both together.
+## Binary cache
+
+`flake-check`, `eval-hosts`, `render`, `update` and `pki-export-image` add
+r440's read-only binary cache (https://cache.neuros.is) through the local
+composite action `.github/actions/nix-cache`, which turns the optional
+secret `NIX_CACHE_NETRC` into nix.conf lines for install-nix-action's
+`extra_nix_config`. Without the secret (fork PRs, Dependabot) the jobs run
+on cache.nixos.org alone. What the action writes, the secret's format and
+how to revoke it: [build-cache.md](build-cache.md#github-actions).
+
+The action pins nothing external (it is a bash step), so it is not in the
+table below.
 
 ## Pinned actions
 
@@ -237,12 +245,13 @@ for h in c4130 r440 m2mini; do
 done
 nix build .#k8s.manifests                                     # the render
 nix build .#k8s.checkImages && ./result/bin/k8s-check-images
+bash scripts/check-docs.sh                                    # the docs job
 ```
 
 New files must be `git add`ed before Nix can see them. On r440, Nix's git
 fetcher fails on `catenix/kubernetes-src`; add
 `--override-input catenix/kubernetes-src path:/tmp/k8s-src` after cloning
-the `v1.37.0` tag there (docs/cluster.md).
+the `v1.37.0` tag there ([cluster.md](cluster.md#changing-something-in-the-cluster)).
 
 The catenix CI proposal that used to live here is
-[docs/catenix-ci-proposal.md](catenix-ci-proposal.md).
+[proposals/catenix-ci.md](proposals/catenix-ci.md).
