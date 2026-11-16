@@ -130,7 +130,7 @@ Accounts: `custom.server.legacyCharlie.enable = false` (stage 2) is set in
   admin keeps its own uid. The old hash file `/var/lib/secrets/charlie.passwd`
   is unused and is deleted in stage 2
   ([history/charlie-removal-2026-11.md](../history/charlie-removal-2026-11.md)).
-- Never put a plaintext `password = …` in the config, in any form.
+- Never put a plaintext password (the `password` option) in the config, in any form.
 
 > **Unverified:** whether m2mini has switched to its stage-2 generation, and
 > whether `/var/lib/secrets/charlie.passwd` was deleted, is host state

@@ -1,20 +1,14 @@
 # Flake input updates, pushed straight to main (hands-free).
 #
 # `nix flake update` (every input, vllm-fork included), then the gates a
-# human change gets: `nix flake check`, each server's toplevel eval (no IFD,
-# as checks.yml eval-hosts) and the k8s render. Only if all pass is the new
-# flake.lock committed and pushed to main. Nothing is pushed on failure, so a
-# broken update never lands; the failed run is the signal (GitHub emails the
-# repo owner).
+# human change gets: `nix flake check`, each server's toplevel eval (no IFD)
+# and the k8s render. Only if all pass is flake.lock committed and pushed to
+# main; on failure nothing is pushed and the failed run is the signal.
 #
-# A push made with GITHUB_TOKEN does not trigger other workflows, so after
-# the push this job dispatches checks.yml and render.yml on main. render's
-# publish job ships the new render to Flux, as for any push to main. Hosts
-# pick the new inputs up on their next `git pull && nixos-rebuild switch`;
-# a vllm-fork bump is flagged in the commit message and the run summary.
-#
-# Needs: main not protected against pushes by github-actions[bot] (or the
-# bot allowed to bypass). See docs/ci.md.
+# GITHUB_TOKEN pushes trigger no workflows, so the job then dispatches
+# checks.yml and render.yml on main. A vllm-fork bump is flagged in the
+# commit message and run summary. Needs main to allow pushes by
+# github-actions[bot]. Details: docs/ci.md#updateyml
 name: update
 
 on:

@@ -4,7 +4,7 @@
 | --- | --- | --- |
 | `.github/workflows/checks.yml` | every PR and push to `main` | Checks only: the secrets guard, `nix flake check`, and an eval of each server's toplevel. Never builds or writes. |
 | `.github/workflows/render.yml` | PRs and pushes to `main` that touch a render input | Renders `k8s/`. On `main` it also publishes the render to GHCR (a signed OCI artifact) and pings Flux. |
-| `.github/workflows/update.yml` | Mon + Fri 04:00 UTC, or by hand | `nix flake update` (every input) → flake check + server evals + render → push `flake.lock` to `main`, then dispatch checks and render ([below](#updateyml); PR #55). |
+| `.github/workflows/update.yml` | Mon + Fri 04:00 UTC, or by hand | `nix flake update` (every input) → flake check + server evals + render → push `flake.lock` to `main`, then dispatch checks and render ([below](#updateyml)). |
 | `.github/workflows/pki-export-image.yml` | PRs and pushes to `main` that touch `pkgs/pki-tools/**` or its other inputs | Builds `.#pki-export-image`; on `main` (push or dispatch) pushes it to GHCR ([below](#pki-export-imageyml)). |
 
 Every job that runs Nix substitutes from r440's binary cache when the
@@ -158,10 +158,6 @@ The GHCR package `charlie-horse/flake/manifests` is public, so Flux pulls it
 without credentials.
 
 ## update.yml
-
-> This section describes the flow of PR #55 (flake.lock updates pushed
-> straight to `main`). Until #55 merges, `main`'s update.yml still opens a PR
-> from `auto/flake-update`.
 
 Mondays and Fridays at 04:00 UTC (23:00 EST Sun/Thu), or dispatched by
 hand. Hands-free: no PR.

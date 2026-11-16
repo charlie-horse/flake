@@ -10,7 +10,7 @@ doc and delete the line here.
 | --- | --- |
 | Where does cluster state live? The project plan says catenix; today it is `k8s/` in this repo, and catenix is only the render library. (Flux already pulls a cosign-signed OCI artifact, i.e. gitless.) | [k8s/README.md](k8s/README.md) |
 | Apply the catenix CI proposal (needs push access to catenix); has catenix gained its own CI since? | [proposals/catenix-ci.md](proposals/catenix-ci.md) |
-| `update.yml` pushing straight to main (PR #55) needs branch protection to allow `github-actions[bot]`. ci.md already describes the #55 flow. | [ci.md](ci.md) |
+| Does `main`'s branch protection allow pushes by `github-actions[bot]`? `update.yml` (PR #55) needs it to push `flake.lock`. | [ci.md](ci.md) |
 | Drop the host-side Flint args once vllm-sm70 #36 lands (`TODO(cutover)` in `hosts/c4130/vllm/default.nix`). | [hosts/c4130-vllm.md](hosts/c4130-vllm.md) |
 | Does r440 still need `virtualisation.containers` (charlie's rootless podman), and what happens to `/home/charlie/flint-swebench` (68 GB)? | [hosts/r440.md](hosts/r440.md) |
 | Keep the m2mini input that has `TODO: drop if Gus stops using it` in `flake.nix`? | [hosts/m2mini.md](hosts/m2mini.md) |
