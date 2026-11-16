@@ -1,12 +1,11 @@
-"""Pre-commit check: sops files are fully encrypted, to their .sops.yaml recipients.
+"""sops files are fully encrypted, to their .sops.yaml recipients.
 
-Reads the staged (index) version of every file under secrets/ and k8s/secrets/
-and of .sops.yaml. Run by the devenv git hook `sops-files`; by hand:
-`python3 scripts/check-sops.py` (needs PyYAML).
+Usage: check-sops.py <root>. Checks every file under <root>/secrets and
+<root>/k8s/secrets against <root>/.sops.yaml. Run by the flake check `sops`.
 """
 
+import os
 import re
-import subprocess
 import sys
 
 import yaml
@@ -18,12 +17,19 @@ CERT = re.compile(
 OTHER_KEYS = ("pgp", "kms", "gcp_kms", "azure_kv", "hc_vault")
 
 
-def git(*args):
-    return subprocess.run(["git", *args], check=True, capture_output=True).stdout
+ROOT = sys.argv[1] if len(sys.argv) > 1 else "."
 
 
-def staged(path):
-    return git("show", f":{path}").decode()
+def read(path):
+    with open(os.path.join(ROOT, path)) as fh:
+        return fh.read()
+
+
+def tree(*dirs):
+    for d in dirs:
+        for base, _, names in os.walk(os.path.join(ROOT, d)):
+            for n in names:
+                yield os.path.relpath(os.path.join(base, n), ROOT)
 
 
 def mode_of(f):
@@ -121,12 +127,8 @@ def recipient_errors(f, raw, cfg, names):
 
 
 def main():
-    files = [
-        f
-        for f in git("ls-files", "-z", "--cached", "--", "secrets", "k8s/secrets").decode().split("\0")
-        if f
-    ]
-    raw_cfg = staged(".sops.yaml")
+    files = list(tree("secrets", "k8s/secrets"))
+    raw_cfg = read(".sops.yaml")
     cfg = yaml.safe_load(raw_cfg)
     names = {k: n for n, k in re.findall(r"&(\S+)\s+(age1[0-9a-z]+)", raw_cfg)}
     status = 0
@@ -138,7 +140,7 @@ def main():
             errs = ["only sops-encrypted secrets/<name>.yaml, secrets/pki/<node>.yaml and"
                     " k8s/secrets/<namespace>/<name>.sops.yaml files belong here"]
         else:
-            raw = staged(f)
+            raw = read(f)
             errs = encryption_errors(mode, raw) or recipient_errors(f, raw, cfg, names)
         for e in errs:
             print(f"{f}: {e}", file=sys.stderr)

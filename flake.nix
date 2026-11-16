@@ -83,6 +83,7 @@
         ./parts/hosts.nix
         ./parts/packages.nix
         ./parts/k8s.nix
+        ./parts/checks.nix
       ];
     };
 }

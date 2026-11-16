@@ -13,8 +13,7 @@
       };
     in
     {
-      # `nix fmt`: RFC-style nixfmt over the tracked .nix files (checks.yml
-      # runs it with --check, excluding only hosts/Pestilence/servarr.nix).
+      # `nix fmt`: RFC-style nixfmt (the `format` check, parts/checks.nix).
       formatter = pkgs.nixfmt;
 
       # pytest runs in pki-tools' checkPhase.

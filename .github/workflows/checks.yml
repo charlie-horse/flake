@@ -3,9 +3,7 @@
 # (the c4130 closure alone is CUDA + torch + vLLM, far beyond a hosted
 # runner), never renders k8s (render.yml does) and never writes.
 #
-#   flake-check    every flake output evaluates (nothing heavy is built)
-#   eval-hosts     each server's toplevel drvPath evaluates, for its system
-#   format         every tracked .nix file is nixfmt-formatted (`nix fmt`)
+#   flake-check    `nix flake check`, the single gate (parts/checks.nix)
 #
 # See docs/ci.md.
 name: checks
@@ -24,11 +22,6 @@ concurrency:
   group: checks-${{ github.ref }}
   # PRs: newest push wins. main: every push is checked.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-env:
-  # The server evals must never build: an IFD would be a build (CUDA/vLLM
-  # included).
-  NO_IFD: --option allow-import-from-derivation false
 
 jobs:
   # ------------------------------------------------------------------------
@@ -50,104 +43,6 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
-      # Evaluates every output (all NixOS hosts, ISOs, packages). The k8s
-      # render, which needs import-from-derivation (helm template), is the
-      # system-independent output `k8s` and is not evaluated here
-      # (parts/k8s.nix), so nothing heavy is built. Not $NO_IFD: the desktop
-      # hosts import from the store copy of ./modules (lib mkHost), which a
-      # fresh runner's store can only produce with IFD allowed. The servers
-      # are held to no-IFD by eval-hosts below.
+      # Evaluates every output and builds the light `checks` (parts/checks.nix).
+      # The k8s render (`k8s`) is not evaluated here, so nothing heavy is built.
       - run: nix flake check --keep-going -L
-
-  # ------------------------------------------------------------------------
-  eval-hosts:
-    name: eval ${{ matrix.host }} (${{ matrix.system }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - host: c4130
-            system: x86_64-linux
-            runner: ubuntu-24.04
-          - host: r440
-            system: x86_64-linux
-            runner: ubuntu-24.04
-          # Native arm64 runner (free for public repos). The config also
-          # evaluates on x86_64 (no IFD), so ubuntu-24.04 works as a fallback.
-          - host: m2mini
-            system: aarch64-linux
-            runner: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - id: nix-cache
-        uses: ./.github/actions/nix-cache
-        with:
-          netrc: ${{ secrets.NIX_CACHE_NETRC }}
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-          extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
-
-      - name: Eval toplevel drvPath (no build)
-        env:
-          HOST: ${{ matrix.host }}
-          SYSTEM: ${{ matrix.system }}
-          # ==================================================================
-          # HOOK(Max): extra flags for the m2mini eval. The flake's default
-          # `m2mini-vendorfw` input is the firmware-free placeholder
-          # (hosts/m2mini/vendorfw), which is what CI must use: Apple's
-          # firmware.cpio is proprietary and never on a runner. If the
-          # firmware wiring changes, put the override here, e.g.
-          #   --override-input m2mini-vendorfw path:./hosts/m2mini/vendorfw
-          # (--override-input implies --no-write-lock-file).
-          # ==================================================================
-          M2MINI_EVAL_FLAGS: ""
-        run: |
-          set -euo pipefail
-          flags=()
-          if [ "$HOST" = m2mini ] && [ -n "$M2MINI_EVAL_FLAGS" ]; then
-            read -r -a flags <<< "$M2MINI_EVAL_FLAGS"
-          fi
-          attr=".#nixosConfigurations.$HOST.config.system.build.toplevel"
-          # shellcheck disable=SC2086 # NO_IFD is a list of flags
-          drv=$(nix eval --raw $NO_IFD "${flags[@]}" "$attr.drvPath")
-          # shellcheck disable=SC2086
-          sys=$(nix eval --raw $NO_IFD "${flags[@]}" "$attr.system")
-          if [ "$sys" != "$SYSTEM" ]; then
-            echo "::error::$HOST evaluates for $sys, expected $SYSTEM"
-            exit 1
-          fi
-          echo "$HOST: $drv"
-          {
-            echo "### $HOST ($SYSTEM)"
-            echo
-            echo "\`$drv\`"
-            echo
-            echo "Eval only: compare on the host with"
-            echo "\`nix-diff /run/current-system $drv\` before switching."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # ------------------------------------------------------------------------
-  format:
-    name: nixfmt
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      # The flake's formatter (parts/packages.nix). Excluded:
-      # hosts/Pestilence/servarr.nix (not formatted).
-      - name: nix fmt -- --check
-        run: |
-          set -euo pipefail
-          git ls-files -z '*.nix' \
-            | grep -zvE '^hosts/Pestilence/servarr\.nix$' \
-            | xargs -0 nix fmt -- --check

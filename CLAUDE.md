@@ -42,6 +42,14 @@ workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
 - Never run `ykman piv reset` or touch PIV slot 82 of the admin YubiKey
   ([docs/pki.md](docs/pki.md)).
 
+## Checks
+
+- `nix flake check` is the single source of truth for whether the flake is
+  good to commit. Run it before every commit; `.githooks/pre-commit` does
+  (enable once per clone: `git config core.hooksPath .githooks`).
+- Add any new check as a flake check in `parts/checks.nix`, never as a CI
+  step. CI only runs `nix flake check`.
+
 ## Documentation policy
 
 1. **The flake is the source of truth; docs don't restate it.** Don't describe

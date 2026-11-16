@@ -22,7 +22,7 @@ Who reads a Secret: grep its name in `k8s/components/`.
   `k8s/secrets/` fails the render.
 - **Allowed top-level keys:** `apiVersion kind metadata type data
   stringData sops`, nothing else. The render (`checkSecret` in
-  `render.nix`) and the sops pre-commit hook (`scripts/check-sops.py`,
+  `render.nix`) and the `sops` flake check (`scripts/check-sops.py`,
   [../ci.md](../ci.md)) check the same set;
   change both together. The first four stay in the clear (kustomize and
   Flux read them), `data`/`stringData` are encrypted. No `immutable` (Flux
