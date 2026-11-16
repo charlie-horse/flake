@@ -8,7 +8,7 @@
 #   nix shell <flake>#ca-ceremony-tools
 #   (ykman, step, step-kms-plugin, ca-openssl, ca-pcscd, sops,
 #   age-plugin-yubikey, yq, softhsm2-util; this script is `ca-ceremony`)
-#   CSR_DIR=~/csrs ca-ceremony        # k8s.csr etcd.csr front-proxy.csr from r440
+#   CSR_DIR=~/csrs ca-ceremony        # k8s.csr etcd.csr front-proxy.csr (openssl req, keys in tmpfs)
 # Root is needed only if no pcscd is reachable and ca-pcscd must be started.
 #
 # Rehearsal (node E, software key in SoftHSM through step-kms-plugin, no card):
@@ -230,6 +230,6 @@ cat <<EOF
 Done. Nothing in $REPO was changed. Next, on a branch of the repo:
   cluster/pki/: root.pem (commit as root-ca.pem), attest-9c.pem, attest-f9.pem, fingerprints.txt   (public)
   $SECRET_PATH  <- $OUT/cluster-ca.sops.yaml
-  r440: copy k8s.pem etcd.pem front-proxy.pem, run cluster-pki --ca-import.
+  k8s/secrets/cluster-pki/<ca>-ca.sops.yaml <- each signed intermediate + its key (docs/pki.md).
 Unplug the YubiKey.
 EOF
