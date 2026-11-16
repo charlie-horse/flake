@@ -7,4 +7,4 @@
 # still fails evaluation: append its credential to the SAME line with
 # `pamu2fcfg -n -u admin -o pam://neurosis -i pam://neurosis`
 # (docs/auth.md, "Registering the keys").
-admin:qT9NNgWFHgJQlCuqbEdcMhEnU1XQEtHmD2CCMDSPFLuvBcbFGMPOTuIGCwcFVTs9ss9TXxkg+3jWszaoCOVMHA==,aOx/l/lzPWfDqLn1T+Q/58nKzgdxweTadB/BKDEyzcyGFkaGxnAIYPvS1SEHUzRCSQMHUvE8v8Ja4QZex/jj3Q==,es256,+presence
+admin:qT9NNgWFHgJQlCuqbEdcMhEnU1XQEtHmD2CCMDSPFLuvBcbFGMPOTuIGCwcFVTs9ss9TXxkg+3jWszaoCOVMHA==,aOx/l/lzPWfDqLn1T+Q/58nKzgdxweTadB/BKDEyzcyGFkaGxnAIYPvS1SEHUzRCSQMHUvE8v8Ja4QZex/jj3Q==,es256,+presence:IOlTsz9aEAmlK+9K2qgsvBzahNArCupSP/sUbYjFN4xZlvD9LkptDu+UdEMlF6CucI8YXJCWk1X1405o1nQ1iw==,NPHrZVXWmbDtHUdLpkenHNgFhXRn8xfXq1YLIKYd04t/4mlImlOA4RB7p70ODDoh1rcy81eTRewCktbNOSkELQ==,es256,+presence:GkL5mPIPRL2of8K3AUfmobGU9R3ev5hlTYB1o1C7VvRyYVnaDZBO79SrDVVDtU6i2jvUYPsB/D/axPUJvwwNhQ==,D1dIqcx84swuo0cs1KiZic89x8HqtSGotDLU6zj/H2n8B/OxJ6wtsS4G/FGr3uvUtwJ2b2GRTAmilTvgsyeLbA==,es256,+presence
