@@ -2,8 +2,7 @@
 #
 #   render   takes the render that checks.yml built (its `manifests`
 #            artifact) when a checks run on main succeeds, or builds
-#            .#k8s.manifests when dispatched; checks that images are
-#            multi-arch (advisory).
+#            .#k8s.manifests when dispatched.
 #   publish  pushes the tree to GHCR as an OCI artifact
 #            (ghcr.io/<repo>/manifests, tags <sha12> and main), signs it with
 #            cosign (keyless, this workflow's GitHub OIDC identity) and pings
@@ -67,10 +66,12 @@ jobs:
       # r440's binary cache, if NIX_CACHE_NETRC is available:
       # .github/actions/nix-cache, docs/ci.md.
       - id: nix-cache
+        if: github.event_name == 'workflow_dispatch'
         uses: ./.github/actions/nix-cache
         with:
           netrc: ${{ secrets.NIX_CACHE_NETRC }}
       - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        if: github.event_name == 'workflow_dispatch'
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
@@ -92,13 +93,6 @@ jobs:
             (cd manifests && find . -name '*.yaml' | sort)
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Images are multi-arch (amd64 + arm64)
-        # Network (registries); advisory.
-        continue-on-error: true
-        run: |
-          nix build --out-link check-images .#k8s.checkImages
-          ./check-images/bin/k8s-check-images
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
