@@ -2,7 +2,7 @@
 # (cluster.nodes.<n>.gpu; c4130's 2x V100). Pinned to them by the
 # nodeSelector nvidia.com/gpu.present=true, the label node.nix gives gpu
 # nodes; GPU feature discovery and NFD (the chart's optional extras) stay
-# off. This is the one image not required to be multi-arch.
+# off.
 #
 # It runs under the nvidia RuntimeClass (00-runtime-classes), i.e.
 # nvidia-container-runtime in CDI mode, which injects the driver and

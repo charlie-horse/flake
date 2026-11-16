@@ -23,7 +23,6 @@ are the flake's `checks` (`parts/checks.nix`); CI (`checks.yml`) only runs
 
 ```sh
 actionlint                                   # from nix develop
-nix build .#k8s.checkImages && ./result/bin/k8s-check-images
 ```
 
 To compare a host's config with what runs on it, on the host:

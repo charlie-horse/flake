@@ -3,8 +3,8 @@
 # catenix module, type-checked with `validation.strict`.
 #
 # This file is the registry: which components exist, the cluster values and
-# the Kubernetes version. { inputs, pkgs, lib } -> { manifests, checkImages,
-# components }; the mechanics are ./render.nix, the shared helpers ./lib.nix.
+# the Kubernetes version. { inputs, pkgs, lib } -> { manifests, components };
+# the mechanics are ./render.nix, the shared helpers ./lib.nix.
 # Exposed as the flake output `k8s` (parts/k8s.nix); deployed by
 # .github/workflows/render.yml (signed OCI artifact on GHCR, Flux webhook).
 #
