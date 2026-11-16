@@ -22,14 +22,12 @@
 
       packages = {
         # YubiKey root-CA ceremony tools, entered ad hoc wherever the card is
-        # plugged in (`nix shell .#ca-ceremony-tools`; docs/pki.md,
-        # docs/history/pki-migration-plan-2026-11.md).
+        # plugged in (`nix shell .#ca-ceremony-tools`; docs/pki.md).
         ca-ceremony-tools = pkgs.callPackage ../pkgs/ca-ceremony-tools { };
         pki-export = pkiTools;
         pki-export-image = pkiTools.image;
       }
       # Installer ISO for the desktop host (lib/system/mkHost.nix).
-      # Pestilence is archived, so it has none (parts/hosts.nix).
       // (config.flake.lib.system.${system}.mkHostIso "Famine").${system};
     };
 }

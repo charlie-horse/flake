@@ -3,7 +3,7 @@
 # provider's issuer (.../application/o/headlamp/) with audience `headlamp`
 # (cluster/definition.nix oidc.extraIssuers). authentik generates the client
 # secret; it goes into the Secret headlamp/headlamp-oidc, sops-encrypted
-# in k8s/secrets/ (k8s/README.md, "Headlamp"), never into git in the clear.
+# in k8s/secrets/ (docs/k8s/apps.md#headlamp), never into git in the clear.
 # @HEADLAMP_HOST@ is filled in by blueprints.nix.
 version: 1
 metadata:

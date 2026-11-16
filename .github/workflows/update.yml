@@ -13,7 +13,7 @@ name: update
 
 on:
   schedule:
-    - cron: "0 4 * * Mon,Fri" # 04:00 UTC = 23:00 EST (Sun/Thu)
+    - cron: "0 4 * * Mon,Fri" # 04:00 UTC
   workflow_dispatch:
 
 permissions:
@@ -103,7 +103,7 @@ jobs:
             echo
             if [ "$vllm" = true ]; then
               echo "WARNING: vllm-fork moved. This changes c4130's production vLLM on its"
-              echo "next switch: build it on r440, GC first, switch outside the GPU window."
+              echo "next switch: build it on r440 and GC c4130 first."
               echo
             fi
             echo "$rows"

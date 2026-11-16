@@ -215,7 +215,7 @@ let
     # kustomize re-serialises with keys sorted (kustomize-controller
     # decrypts after its build): a file whose keys were not sorted when it
     # was encrypted fails with "MAC mismatch". Encrypt only key-sorted files
-    # (yq -i 'sort_keys(..)'; docs/k8s/secrets.md#why-sorted).
+    # (yq -i 'sort_keys(..)'; docs/k8s/secrets.md#sorted-keys).
     [ "$($yq 'del(.sops)' "$file")" = "$($yq 'del(.sops) | sort_keys(..)' "$file")" ] \
       || fail "keys not sorted (sort with yq 'sort_keys(..)' BEFORE encrypting, then re-encrypt)"
   '';

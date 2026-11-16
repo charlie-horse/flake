@@ -18,7 +18,7 @@ of the render and Flux: [README.md](README.md).
 | `open-webui/open-webui-secrets` | `OAUTH_CLIENT_SECRET`, `WEBUI_SECRET_KEY` ([apps.md](apps.md#open-webui)) | `deploy/open-webui` (env) |
 | `cloudflared/tunnel-credentials` | `credentials.json` ([apps.md](apps.md#cloudflare-tunnel)) | `deploy/cloudflared` (file, read at start) |
 | `cert-manager/cluster-ca` (`kubernetes.io/tls`) | `ca.crt` (the root), `tls.crt` (intermediate + root), `tls.key` ([apps.md](apps.md#cert-manager)) | nothing: the ClusterIssuer reads it on each signature |
-| `cluster-pki/k8s-ca`, `cluster-pki/etcd-ca`, `cluster-pki/front-proxy-ca` (`kubernetes.io/tls`) | `ca.crt` (the root), `tls.crt` (the intermediate), `tls.key` ([../pki.md](../pki.md#phase-2-operations)) | nothing: the Issuer of the same name reads it on each signature |
+| `cluster-pki/k8s-ca`, `cluster-pki/etcd-ca`, `cluster-pki/front-proxy-ca` (`kubernetes.io/tls`) | `ca.crt` (the root), `tls.crt` (the intermediate), `tls.key` ([../pki.md](../pki.md#in-cluster-issuance)) | nothing: the Issuer of the same name reads it on each signature |
 | `cluster-pki/pki-export-github` | `token` under **`stringData`** ([../pki.md, Export job: GitHub token](../pki.md#export-job-github-token)) | CronJob `pki-export` (each run) |
 | `flux-system/webhook-token` | `token`, no trailing newline (the Receiver's HMAC key; `components/flux/receiver.nix`) | nothing; then update the GitHub secrets `FLUX_WEBHOOK_TOKEN` and `FLUX_WEBHOOK_URL` (the path is derived from the token: [../ci.md](../ci.md#renderyml)) |
 
@@ -37,19 +37,17 @@ of the render and Flux: [README.md](README.md).
   `render.nix`) and CI's secrets guard (`.github/workflows/checks.yml`,
   [../ci.md, Secrets guard](../ci.md#secrets-guard)) check the same set;
   change both together. The first four stay in the clear (kustomize and
-  Flux read them), `data`/`stringData` are encrypted. No `immutable`: the
-  apiserver refuses any change to an immutable Secret's data, so Flux could
-  never apply a rotation.
+  Flux read them), `data`/`stringData` are encrypted. No `immutable` (Flux
+  could not apply a rotation).
 - **Apply.** The Kustomization `secrets` (`components/flux/secrets.nix`;
   rendered only while `k8s/secrets/` has a file) applies
   `./deferred/secrets` from the same signed artifact, `dependsOn:
   flux-system` (the namespaces), with `decryption: { provider: sops,
   secretRef: { name: sops-age } }`. It is fenced off from `flux-system`
-  like the [deferred components](README.md#deferred-components):
-  `flux-system` never decrypts anything, so a missing key, a file encrypted
-  to the wrong key or a broken MAC fails only `secrets`. A new artifact is
-  applied within seconds of its push; besides, `secrets` re-applies every
-  10 minutes (`interval: 10m`).
+  like the [deferred components](README.md#deferred-components): a missing
+  key, a file encrypted to the wrong key or a broken MAC fails only
+  `secrets`. A new artifact is applied within seconds of its push; `secrets`
+  also re-applies every 10 minutes (`interval: 10m`).
 - **Flux owns these Secrets.** Git is the only place to change them. A
   value changed in the cluster by hand (`kubectl edit`, `kubectl apply`) is
   put back to the git value at the next reconcile, at most 10 minutes
@@ -73,8 +71,8 @@ with `nix shell nixpkgs#sops nixpkgs#jq nixpkgs#yq-go nixpkgs#openssl`
 1. Edit the file: `sops k8s/secrets/<namespace>/<name>.sops.yaml` opens it
    decrypted in `$EDITOR` and re-encrypts on save. Values under `data` are
    base64 of the exact bytes (`printf %s "$v" | base64 -w0`; no trailing
-   newline); values under `stringData` (only `pki-export-github` today) are
-   plain text. Keep the keys sorted ([below](#why-sorted)). To replace one
+   newline); values under `stringData` (`pki-export-github`) are
+   plain text. Keep the keys sorted ([below](#sorted-keys)). To replace one
    `data` value without an editor, and without the value on a command line:
 
    ```sh
@@ -143,7 +141,7 @@ metadata:
 type: Opaque
 ```
 
-### Why sorted
+### Sorted keys
 
 `/.sops.yaml` encrypts `k8s/**.sops.yaml` to the admins and Flux, values
 under `data`/`stringData` only. sops' MAC covers every value in document
@@ -163,7 +161,7 @@ never on disk, never copied out. Until it exists the Kustomization
 fresh cluster: none, so the apps wait in `CreateContainerConfigError`).
 
 On a fresh cluster, after the [Bootstrap](README.md#bootstrap-fresh-cluster),
-make a new one as root on a node; the old key went with the old cluster:
+make a new one as root on a node:
 
 ```sh
 sudo -i
@@ -178,8 +176,7 @@ nix shell nixpkgs#age nixpkgs#kubectl -c bash -ec '
 (The key name must end in `.agekey`.) Then re-wrap every file for the new
 recipient: on a branch, set `&flux` in `/.sops.yaml` to the printed
 recipient, run `sops updatekeys -y <file>` for each
-`k8s/secrets/*/*.sops.yaml` with an admin identity (Flux's old key is gone,
-so only an admin key can), PR, merge. The values are unchanged; only the
+`k8s/secrets/*/*.sops.yaml` with an admin identity, PR, merge. The values are unchanged; only the
 wrapped data key is new. The same applies if the Secret is ever lost or
 deleted on a running cluster. Never re-create it with a different key
 without re-wrapping: `secrets` would fail on every file.

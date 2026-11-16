@@ -82,8 +82,7 @@ in
   };
   # Substitutes from r440 through https://cache.neuros.is like every other
   # host (modules/system/nix-cache.nix; netrc: sops key nix-cache-netrc),
-  # not over the link. Cost and the old direct path (commit 6e02db6):
-  # docs/build-cache.md#cost-for-c4130-and-the-direct-path.
+  # not over the link. docs/build-cache.md#binary-cache.
   custom.nixCache.enable = true;
   # Root's own ssh (e.g. `nix store ping --store ssh-ng://nixremote@10.25.0.2`)
   # needs r440's host key too; the daemon uses publicHostKey above. The key

@@ -17,8 +17,7 @@ in
   boot.kernelParams = [ "nvidia_drm.fbdev=1" ];
 
   # Qt plugin paths for the installed profiles. The theme is set with
-  # QT_QPA_PLATFORMTHEME below: NixOS dropped the "gtk2" platform theme and
-  # style (qtstyleplugins; GTK 2 is end-of-life).
+  # QT_QPA_PLATFORMTHEME below.
   qt.enable = true;
 
   services = {
@@ -55,9 +54,8 @@ in
     # nix-cache-netrc in secrets/famine.yaml. docs/hosts/famine.md#binary-cache
     nixCache.enable = true;
 
-    # TODO(famine-yubikey): pam-yubikeys is lost; remake it, add it to
-    # secrets/famine.yaml, then set this to true. Until then login/sudo
-    # take the password only. docs/hosts/famine.md#yubikey
+    # Off: no pam-yubikeys in secrets/famine.yaml, so login/sudo take the
+    # password only. docs/hosts/famine.md#yubikey
     yubikey.enable = false;
   };
 
@@ -83,9 +81,6 @@ in
     mpv
     gimp
     #kicad
-    # cider: removed from nixos-unstable (unmaintained, archived upstream).
-    # Its successor is packaged as cider-2 (unfree, a paid app upstream);
-    # add it here if wanted.
     lutris
     sioyek
     spotify

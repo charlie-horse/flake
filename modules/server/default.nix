@@ -21,10 +21,8 @@
     # The ssh client (cluster Host block, known host keys), shared with the
     # desktops.
     ../programs/ssh.nix
-    # charlie next to admin, mutable users, root untouched until
-    # custom.server.legacyCharlie.enable is turned off; then admin is the
-    # only login and root is locked (docs/history/charlie-removal-2026-11.md;
-    # current state: docs/cluster.md#accounts-on-the-servers).
+    # custom.server.legacyCharlie.enable (off on every server): admin is the
+    # only login, users are immutable, root is locked.
     ./legacy-charlie.nix
   ];
 
@@ -42,18 +40,11 @@
   ];
 
   # /etc/nixos (the git checkout of this flake) belongs to the account that
-  # pulls it: git refuses a repository owned by another user ("dubious
-  # ownership"), so a wrong owner leaves the host un-pullable. That is
-  # charlie while custom.server.legacyCharlie.enable is on (stage 1:
-  # charlie is still the operating account and the fallback if admin does
-  # not work, and the tree stays as it was before the sops switch), admin
-  # once it is off (stage 2; the runbook re-owns the tree to admin by hand
-  # before that pull, and this rule keeps it so). A rollback across the
-  # flip re-owns it back. `Z` re-owns the whole tree (symlinks themselves,
-  # never their targets; modes untouched, `-`) at every boot and every
-  # switch (systemd-tmpfiles-resetup runs on each activation), which also
-  # repairs root-owned files left by a `sudo git ...`. The tree is a few
-  # MB, so the walk is cheap. Does nothing if /etc/nixos is missing.
+  # pulls it (admin; charlie with legacyCharlie on): git refuses a
+  # repository owned by another user ("dubious ownership"). `Z` re-owns the
+  # whole tree (symlinks themselves, never their targets; modes untouched,
+  # `-`) at every boot and every switch, which also repairs root-owned files
+  # left by a `sudo git ...`. Does nothing if /etc/nixos is missing.
   systemd.tmpfiles.settings."10-etc-nixos"."/etc/nixos".Z = {
     user = if config.custom.server.legacyCharlie.enable then "charlie" else "admin";
     group = "root";

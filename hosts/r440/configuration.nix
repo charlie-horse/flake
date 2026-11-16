@@ -35,8 +35,7 @@
   #  useXkbConfig = true; # use xkb.options in tty.
   #};
 
-  # Stage 2 of the charlie removal: admin (modules/system/admin.nix) is the
-  # only login. docs/hosts/r440.md#accounts
+  # admin (modules/system/admin.nix) is the only login.
   custom.server.legacyCharlie.enable = false;
 
   environment.systemPackages = with pkgs; [
@@ -45,8 +44,7 @@
 
   services.openssh.enable = true;
   # Tailscale (modules/server/tailscale.nix, which also turns on IP
-  # forwarding). Live prefs 2026-11-12: exit node + 10.0.1.0/24; tag:node
-  # was set in the admin console, so no tag is advertised.
+  # forwarding). No tag is advertised: tag:node is set in the admin console.
   server.tailscale.advertiseRoutes = [ "10.0.1.0/24" ];
 
   # First NixOS version installed here; never change it (see

@@ -1,23 +1,16 @@
-# neurosis cluster: current state and operations
+# neurosis cluster
 
 Three NixOS 26.05 servers run one Kubernetes cluster (v1.36). The NixOS side
 (etcd, control plane, kubelet, containerd, keepalived, firewall) is
 `modules/cluster/`, fed by `cluster/definition.nix`. Everything inside the
 cluster is `k8s/` (catenix), deployed by Flux ([k8s/README.md](k8s/README.md)).
-How the cluster got here: [history/cluster-handoff-2026-10.md](history/cluster-handoff-2026-10.md)
-(the October 2026 cut-over) and [history/charlie-removal-2026-11.md](history/charlie-removal-2026-11.md)
-(charlie → admin). Every secret: [secrets.md](secrets.md).
+Every secret: [secrets.md](secrets.md).
 
 | Node | Arch | Roles | Notes |
 | --- | --- | --- | --- |
 | c4130 | x86_64 | etcd, control plane, worker | 2× V100 for the host's vLLM ([hosts/c4130.md](hosts/c4130.md)); tainted `nvidia.com/gpu=vllm:NoSchedule` (only one-per-node workloads tolerate it); root on SATA SSD RAID1 |
 | r440 | x86_64 | etcd, control plane, worker | Nix builder for c4130 and the binary cache ([build-cache.md](build-cache.md)); root is a slow HDD shared with etcd's WAL |
 | m2mini | aarch64 (Asahi, 16 KiB pages) | etcd, control plane, worker | NVMe; authentik's PostgreSQL lives here |
-
-> **Unverified:** whether the old PKI directory on r440 (and the old leaves
-> on each node) has been shredded after PKI P9 (#54); until then r440 still
-> holds the pre-P9 cluster PKI in plaintext. The live CAs are in sops
-> ([pki.md](pki.md)).
 
 The apiserver VIP is 10.0.0.200 (keepalived on every node, VRRP unicast on
 the LAN). Every node runs kube-apiserver, controller-manager and scheduler
@@ -29,8 +22,7 @@ Tailscale (MagicDNS names) and the LAN (10.0.0.0/16).
 ## What runs where
 
 - **Hosts (NixOS):** vLLM + LMCache on c4130 ([hosts/c4130-vllm.md](hosts/c4130-vllm.md)),
-  GPU-window timers on c4130 (vLLM stopped 22:00–05:55 EST,
-  [hosts/c4130.md](hosts/c4130.md)), the Nix builder and binary cache on
+  the Nix builder and binary cache on
   r440 (harmonia behind nginx with basic auth, https://cache.neuros.is for
   every host; [build-cache.md](build-cache.md)).
 - **Cluster ([k8s/README.md](k8s/README.md) has the full table):** flannel, CoreDNS, the
@@ -43,7 +35,7 @@ Tailscale (MagicDNS names) and the LAN (10.0.0.0/16).
   issued by cert-manager in namespace `cluster-pki` and reach the hosts as
   sops files (`secrets/pki/<node>.yaml` → `/run/secrets/pki/`); workload TLS
   comes from cert-manager
-  (`issuerRef: {kind: ClusterIssuer, name: cluster-ca}`). Why two:
+  (`issuerRef: {kind: ClusterIssuer, name: cluster-ca}`). Both PKIs:
   [pki.md](pki.md#bootstrap-pki-and-workload-pki).
 
 Public hostnames all go through the tunnel `cluster`: `auth.neuros.is`
@@ -98,7 +90,7 @@ Keep the shape stable: add fields, don't rename them.
 | `trustTailscale` | bool, default true | trust all of `tailscale0`; when false only this node's cluster ports are opened there (c4130) |
 | `extraSANs` | list of string | extra SANs for this node's leaves |
 | `kubeletConfig` | attrs | merged into the KubeletConfiguration (`services.kubernetes.kubelet.extraConfig`), e.g. `evictionHard` and image GC thresholds per node |
-| `rollout.stage` | `"etcd"` \| `"controlPlane"` \| `"full"` (default) | which roles run ([history/cluster-handoff-2026-10.md](history/cluster-handoff-2026-10.md)) |
+| `rollout.stage` | `"etcd"` \| `"controlPlane"` \| `"full"` (default) | which roles run: `etcd` runs only etcd, `controlPlane` adds apiserver, controller-manager, scheduler and keepalived, `full` every role |
 
 ## NixOS side (`modules/cluster`)
 
@@ -130,29 +122,31 @@ serves the VIP itself; the highest-priority node whose **local**
 `https://127.0.0.1:6443/readyz` answers holds it (a not-ready apiserver
 drops its node to FAULT and the VIP moves). `/readyz` is readable
 anonymously (`system:public-info-viewer`), so the check needs no client
-cert. This replaced c4130's old LVS `virtual_server` (VIP:6443 →
-10.0.0.95:6443 with an `SSL_GET /readyz` check).
+cert.
 
-A node without a local apiserver (none today: every node is a controlPlane)
-would run HAProxy on :6443 instead, forwarding to the controlPlane nodes'
-LAN IPs with a `/readyz` health check; the same local `/readyz` check then
-tests "some apiserver is ready via me".
+A node without a local apiserver (every node is a controlPlane, so none)
+runs HAProxy on :6443 instead, forwarding to the controlPlane nodes' LAN IPs
+with a `/readyz` health check; the same local `/readyz` check then tests
+"some apiserver is ready via me".
 
 ## Changing a host
 
 1. Branch → PR → CI (`checks.yml`, [ci.md](ci.md)) → merge.
-2. On the host, as admin (the owner of `/etc/nixos`, [Accounts](#accounts-on-the-servers)):
+2. On the host, as admin:
    `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#<host>`
    (m2mini adds `--override-input m2mini-vendorfw path:/boot/vendorfw`).
 3. One host at a time; after each, `systemctl --failed` (`switch` exiting
    with status 4 means a unit failed) and the etcd check below. Never take
    two etcd members down together.
-4. c4130: GC first (`sudo nix-env -p /nix/var/nix/profiles/system --delete-generations +2 && sudo nix-collect-garbage`),
-   and switch outside the GPU window ([hosts/c4130.md](hosts/c4130.md)).
+4. c4130: GC first (`sudo nix-env -p /nix/var/nix/profiles/system --delete-generations +2 && sudo nix-collect-garbage`;
+   [hosts/c4130.md](hosts/c4130.md)).
 
-Never edit files in `/etc/nixos` or run `nix flake update` on a host, and
-never `sudo git` there (root-owned files break the next pull until a switch
-or boot re-owns the tree). Builds happen on r440 ([build-cache.md](build-cache.md)).
+`/etc/nixos` belongs to `admin:root`: a tmpfiles `Z` rule
+(`modules/server/default.nix`) re-owns the tree at every boot and switch, so
+`git pull` and builds need no sudo. Never edit files in `/etc/nixos` or run
+`nix flake update` on a host, and never `sudo git` there (root-owned files
+break the next pull until a switch or boot re-owns the tree). Builds happen
+on r440 ([build-cache.md](build-cache.md)).
 
 ### etcd health check (any member, in bash)
 
@@ -177,7 +171,7 @@ sudo journalctl -u etcd --since -5min | grep -iE 'x509|tls|handshake'   # empty
    ([ci.md](ci.md), [k8s/README.md](k8s/README.md)).
 
 Check or force it, with your OIDC kubeconfig or, on a node, the
-break-glass one ([Access](#access)):
+break-glass one ([Kubernetes API access](#kubernetes-api-access)):
 
 ```sh
 F="nix shell nixpkgs#fluxcd -c flux"                                # OIDC
@@ -196,7 +190,7 @@ rm -rf /tmp/k8s-src/.git
 nix build --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s.manifests
 ```
 
-## Access
+## Kubernetes API access
 
 - **Admin (break-glass):** on any node,
   `sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig …` (root
@@ -207,61 +201,9 @@ nix build --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s.manife
 - **API address:** `https://10.0.0.200:6443` on the LAN (keepalived VIP), or
   `https://kube-api.leaffish-monster.ts.net:6443` from anywhere on the
   tailnet ([Tailscale Service](#tailscale-service-for-the-api-svckube-api)).
-
-### Accounts on the servers
-
-`admin` is the only login and the only wheel account on c4130, r440 and
-m2mini; users are immutable, root is locked (`!`), and `charlie` is not
-declared (Famine keeps him). `/etc/nixos` belongs to `admin:root` (mode
-0755; a tmpfiles `Z` rule in `modules/server/default.nix` re-owns it at
-every boot and switch). sudo asks for admin's password (sops
-`admin-password`, [secrets.md](secrets.md)) or, with the hardware factor
-on, a FIDO2 key ([auth.md](auth.md)). This is stage 2 of the
-[charlie removal](history/charlie-removal-2026-11.md),
-`custom.server.legacyCharlie.enable = false` in each host's
-`configuration.nix`.
-
-> **Unverified:** whether each host has switched to its stage-2 commit.
-> Check with `getent passwd admin charlie` (only admin should print). On a
-> host still in stage 1, charlie exists next to admin, users are mutable,
-> and `/etc/nixos` belongs to charlie; follow the history doc there.
-
-### Access from a cloud session
-
-A cloud session (Claude Code) holds only `TAIL_AUTH_KEY`: no sudo password,
-no YubiKey PIN, no cluster credentials ([secrets.md](secrets.md)). It
-connects to the hosts only when the user has allowed it for the task.
-
-- **Tailscale** is not preinstalled. Download the static
-  `tailscale_<ver>_amd64.tgz` from pkgs.tailscale.com (piping the install
-  script into `sh` gets blocked), then run
-  `tailscaled --tun=userspace-networking --statedir=/var/lib/tailscale --socket=/var/run/tailscale/tailscaled.sock`
-  in the background and
-  `tailscale up --authkey="$TAIL_AUTH_KEY" --hostname=flake-cloud --accept-routes`.
-  The node can get logged out after container restarts; if `status` shows
-  no peers, run `up` again.
-- **SSH** goes through Tailscale SSH (the tailnet SSH policy permits
-  admin): install `openssh-client` with apt, then
-  `ssh -o ProxyCommand="tailscale --socket=/var/run/tailscale/tailscaled.sock nc %h %p" admin@<host>`.
-  On m2mini the login shell is fish: run sh syntax as
-  `ssh … admin@m2mini bash -s <<'EOF' … EOF` (give `</dev/null` to
-  anything in the script that reads stdin) or `ssh -t … bash`.
-- **sudo** is run by the user, never by the session: write privileged steps
-  as copy-paste blocks for the user to run on the host, as admin. The
-  session runs only read-only checks that need no sudo (`journalctl -u vllm`
-  and the break-glass kubeconfig need sudo).
-- `/etc/nixos` is writable by admin, so `git pull` and building need no
-  sudo; `nixos-rebuild switch` does.
-- Over SSH, `pgrep -f <pattern>` matches its own `bash -c` command line; use
-  `ps -ef | grep '[x]yz'` instead.
-
-### SSH between the hosts
-
-Every host has the same ssh client config (`modules/programs/ssh.nix`), so
-`ssh c4130` works without options from a desktop and between the servers,
-as admin with the YubiKey's `ssh:admin` key from a forwarded agent; host
-keys are pinned from `nodes.<n>.sshHostKey`. Setup (Linux and Windows) and
-details: [auth.md, SSH client](auth.md#ssh-client).
+  Point a kubeconfig at it with
+  `kubectl config set-cluster neurosis --server=https://kube-api.leaffish-monster.ts.net:6443`
+  (same CA).
 
 ## Tailscale
 
@@ -269,11 +211,8 @@ All three servers' Tailscale prefs are in Nix: `modules/server/tailscale.nix`
 (shared flags) and `server.tailscale.*` in each host's `configuration.nix`
 (routes, tags). Tailscale SSH is the only way into the hosts; never turn
 `ssh` off (from a session that came in over it, that locks everyone out).
-Until 2026-11 only `services.tailscale.enable` was in Nix and the rest had
-been set by hand; the flags reproduce the live prefs read on 2026-11-12
-(`tailscale debug prefs`, 1.104.4):
 
-| Pref (live) | Flag | Option |
+| Pref | Flag | Option |
 | --- | --- | --- |
 | RunSSH true | `--ssh=true` | `ssh` |
 | CorpDNS true | `--accept-dns=true` (MagicDNS: the cluster names resolve through it) | `acceptDns` |
@@ -290,10 +229,10 @@ How the NixOS module applies them:
 
 - `tailscaled-set` (oneshot, at every start of the unit: boot and any switch
   that changes the flags) runs `tailscale set <flags>`. `set` only touches
-  the prefs it names, so the flags must stay **exactly** the live state, or
-  a switch silently changes routing or SSH on the node. A hand-made
-  `tailscale set` is undone by the next boot or switch: change the Nix
-  instead.
+  the prefs it names, so the flags must stay **exactly** the live state
+  (`tailscale debug prefs`), or a switch silently changes routing or SSH on
+  the node. A hand-made `tailscale set` is undone by the next boot or
+  switch: change the Nix instead.
 - `tailscaled-autoconnect` runs `tailscale up --auth-key … <flags>`, only
   when the node is logged out or stopped and only when the auth key file
   exists (`ConditionPathExists`). A running node is untouched.
@@ -301,16 +240,9 @@ How the NixOS module applies them:
   `useRoutingFeatures = "server"` turns on IP forwarding for the subnet
   routes and the exit node.
 
-Live prefs (2026-11-12, all 1.104.4, all `tag:node` on the control plane):
-
-| Host | AdvertiseRoutes | AdvertiseTags | SSH, accept-dns, accept-routes, netfilter, SNAT, stateful filtering |
-| --- | --- | --- | --- |
-| c4130 | exit node + 10.0.1.0/24 | `tag:node` | on, on, off, on, on, off |
-| r440 | exit node + 10.0.1.0/24 | none (tag from the admin console) | same |
-| m2mini | exit node + 10.0.0.0/16 | none (tag from the admin console) | same |
-
-`advertiseTags` mirrors AdvertiseTags per host, so `up` never sees a pref
-change; on a reinstall the tag comes from the tagged auth key.
+All three servers are `tag:node`. Keep `advertiseTags` equal to the node's
+live AdvertiseTags, so `up` never sees a pref change; on a reinstall the tag
+comes from the tagged auth key.
 
 **Reinstall:** generate a pre-approved, non-ephemeral auth key tagged
 `tag:node` in the admin console. On the new host, as root (never in git,
@@ -337,8 +269,7 @@ firewall change: tailscaled terminates the TailVIP connection and dials
 `127.0.0.1:6443` over `lo`, which nixos-fw always accepts (also on c4130,
 `trustTailscale = false`). The apiserver sees such clients as 127.0.0.1.
 
-How: nixpkgs 26.05 has no serve/Services options in `services.tailscale`,
-so a oneshot, `tailscale-service-kube-api`, waits up to 60 s for tailscaled
+A oneshot, `tailscale-service-kube-api`, waits up to 60 s for tailscaled
 to be Running and applies a Services config file
 (tailscale.com/kb/1589) with `tailscale serve set-config --all <file>`; the
 file defines only `svc:kube-api`. The unit is bound to `kube-apiserver`
@@ -348,18 +279,11 @@ starting it advertises the node again. There is no `/readyz` check (the
 keepalived VIP has one): a running but unready apiserver still gets
 traffic.
 
-> **Unverified:** `--all` replaced `--service=svc:kube-api` in c8fb285
-> ("the provided config is for defining multiple services"). With `--all`
-> the file is presumably the node's whole Services config, so any other
-> Service configured on a node by hand would be replaced; the old comment
-> ("replaces only this service's handlers") predates that change.
+Requirements: Tailscale ≥ 1.86 on the hosts and tagged hosts; clients
+≥ 1.94 need no `--accept-routes` (older Linux clients do). Until the admin
+console steps below are done, the node advertises, unapproved.
 
-Requirements: Tailscale ≥ 1.86 on the hosts (1.104.4), tagged hosts (all
-three are `tag:node`); clients ≥ 1.94 need no `--accept-routes` (older Linux
-clients do). Until the admin console steps below are done, the node
-advertises, unapproved.
-
-Admin console and policy file (once, before the first switch):
+Admin console and policy file (once per tailnet):
 
 1. Services → Advertise → Define a Service: name `kube-api`, endpoint
    `tcp:6443`, description "neurosis Kubernetes API".
@@ -368,7 +292,7 @@ Admin console and policy file (once, before the first switch):
 
    ```jsonc
    "tagOwners": {
-     "tag:node": ["autogroup:admin"],          // already there
+     "tag:node": ["autogroup:admin"],
    },
    "autoApprovers": {
      "services": {
@@ -391,29 +315,14 @@ tailscale debug prefs | jq .AdvertiseServices   # ["svc:kube-api"]
 kubectl --server=https://kube-api.leaffish-monster.ts.net:6443 get --raw /readyz
 ```
 
-Rollout (after the PR is merged):
+After a change to `apiserverExtraSANs`, cert-manager reissues the
+`apiserver-<node>` Certificates; run the export job
+([pki.md](pki.md#export-job)), merge its PR and switch the hosts. Check each
+with `curl -skf https://127.0.0.1:6443/readyz` (`-f`: a not-ready apiserver
+still answers, with HTTP 500).
 
-> **Unverified:** whether this rollout is complete on all three hosts.
-
-1. Policy and service definition (above).
-2. New apiserver leaves (the SAN list changed): cert-manager reissues the
-   `apiserver-<node>` Certificates at merge; run the export job
-   ([pki.md](pki.md#export-job)) and merge its PR.
-3. Switch the hosts one at a time ([Changing a host](#changing-a-host)): c4130 GC first
-   and outside 22:00–05:55 EST; after each, `systemctl --failed`, the etcd
-   check, `curl -skf https://127.0.0.1:6443/readyz` (`-f`: a not-ready
-   apiserver still answers, with HTTP 500; the new leaf restarts it),
-   `systemctl status tailscale-service-kube-api` and
-   `tailscale debug prefs` (unchanged apart from AdvertiseServices).
-4. kubeconfigs: `kubectl config set-cluster neurosis --server=https://kube-api.leaffish-monster.ts.net:6443`
-   (the CA stays the same).
-
-## Binary cache
+## Binary cache and secrets
 
 r440's binary cache (https://cache.neuros.is), the remote builder and the
-client config on every host: [build-cache.md](build-cache.md).
-
-## Secrets
-
-The inventory of every secret, and how to edit a sops file with the
-YubiKey: [secrets.md](secrets.md).
+client config on every host: [build-cache.md](build-cache.md). Every secret,
+and how to edit a sops file with the YubiKey: [secrets.md](secrets.md).

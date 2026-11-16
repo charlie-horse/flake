@@ -3,7 +3,7 @@
 # modules/server/default.nix; the desktops get it with modules/ wholesale
 # (modules/default.nix imports a directory's default.nix only, so the
 # helper file u2f-keys is not a module). Options, per-service table, PAM
-# stacks, rollout and recovery: docs/auth.md, "custom.auth".
+# stacks, enabling and recovery: docs/auth.md, "custom.auth".
 #
 # hardwareFactor needs a SECOND FIDO2 key registered (u2f-keys: two
 # credentials, rsshKeys: two sk- keys; both asserted). In Linux-PAM
@@ -323,7 +323,7 @@ in
       ];
     }
 
-    # ---- Desktop YubiKey (was modules/system/pam.nix) --------------------
+    # ---- Desktop YubiKey ---------------------------------------------------
     (mkIf cfg.desktopU2f.enable {
       security.pam = {
         u2f = {
@@ -405,7 +405,7 @@ in
         }
         {
           # The u2f mapping and the agent keys are admin's; another wheel
-          # account (charlie in stage 1 of his removal) could not sudo.
+          # account could not sudo.
           assertion = wheelUsers == [ "admin" ];
           message = "custom.auth.hardwareFactor: admin must be the only wheel account (got: ${concatStringsSep ", " wheelUsers}).";
         }

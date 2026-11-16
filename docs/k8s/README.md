@@ -11,15 +11,6 @@ tunnel, Open WebUI), [../pki.md](../pki.md) (the cluster PKI and the
 `cluster-pki` namespace), [../ci.md](../ci.md#renderyml) (`render.yml`),
 [../cluster.md](../cluster.md) (hosts, access, the cluster runbook).
 
-> **Open decision:** the project plan says "catenix holds cluster state,
-> Flux uses gitless GitOps". The code: the cluster state is the Nix source
-> in this repo's `k8s/` (catenix is only the render library, an input), and
-> Flux syncs an `OCIRepository` (`oci://ghcr.io/charlie-horse/flake/manifests`,
-> `k8s/components/flux/sync.nix`), not a `GitRepository`. Pulling OCI
-> artifacts instead of git is what Flux calls "gitless GitOps", so that half
-> matches; whether cluster state should move into the catenix repo is not
-> decided. See [../decisions.md](../decisions.md).
-
 ## Layout
 
 | File | Contents |
@@ -47,15 +38,15 @@ directory in the render. `render.nix` needs no change.
 | Component (`<component>/` in the render) | What | Source |
 | --- | --- | --- |
 | `infra/runtime-classes` | RuntimeClass `runc` and `nvidia` ([Runtime classes](#runtime-classes)) | hand-written |
-| `infra/rbac` | ClusterRoleBindings `system:kube-apiserver:kubelet-api-admin` and `oidc:cluster-admins` ([RBAC](#rbac)) | hand-written (what NixOS's disabled addon manager would create) |
+| `infra/rbac` | ClusterRoleBindings `system:kube-apiserver:kubelet-api-admin` and `oidc:cluster-admins` ([RBAC](#rbac)) | hand-written |
 | `infra/local-storage` | StorageClass `local` (no provisioner, WaitForFirstConsumer): static hostPath PVs pinned to a node (`k8sLib.localVolume`, reclaim `Retain`) | hand-written |
 | `infra/flannel` | flannel VXLAN DaemonSet ([flannel](#flannel)) | flannel chart v0.28.10 |
 | `infra/coredns` | CoreDNS, Service `kube-system/kube-dns` at `dnsServiceIP` (10.96.0.10), zone `clusterDomain` (cluster.local), 2 replicas | coredns chart 1.48.2 (CoreDNS 1.14.7) |
 | `infra/nvidia-device-plugin` | NVIDIA device plugin on `nvidia.com/gpu.present=true` nodes, `runtimeClassName: nvidia`, `DEVICE_ID_STRATEGY=index` (matches the host's index-named CDI spec) | nvidia-device-plugin chart 0.20.1 |
 | `infra/cert-manager` | cert-manager v1.21.3 (namespace `cert-manager`, enforce `restricted`): CRDs, controller and cainjector (1 replica each), webhook (2 replicas, PDB; r440 and m2mini); built-in auto-approver off, **approver-policy** v0.29.0 approves requests instead ([apps.md, cert-manager](apps.md#cert-manager)) | jetstack cert-manager chart v1.21.3, cert-manager-approver-policy chart v0.29.0 |
 | `infra/cert-manager-issuers` (deferred) | the workload CA: ClusterIssuer **`cluster-ca`** over the Secret `cert-manager/cluster-ca`, its CertificateRequestPolicy `cluster-ca` (allow all but CA certs) and the `use` grant for cert-manager's controller ([apps.md, cert-manager](apps.md#cert-manager)) | hand-written (`components/infra/cert-manager/issuers.nix`) |
-| `infra/cluster-pki` | namespace `cluster-pki` (enforce `restricted`) with the bootstrap CAs' Secrets and the export CronJob `pki-export` ([../pki.md, Phase 2 operations](../pki.md#phase-2-operations)) | hand-written (`components/infra/cluster-pki/default.nix`, `export.nix`) |
-| `infra/cluster-pki-issuers` (deferred) | CA Issuers `k8s-ca`, `etcd-ca`, `front-proxy-ca`; one Certificate per host leaf per node (`leaves.nix`, from `cluster/definition.nix`), one CertificateRequestPolicy per leaf, the `use` grant ([../pki.md](../pki.md#phase-2-operations)) | hand-written (`components/infra/cluster-pki/issuers.nix`) |
+| `infra/cluster-pki` | namespace `cluster-pki` (enforce `restricted`) with the bootstrap CAs' Secrets and the export CronJob `pki-export` ([../pki.md, In-cluster issuance](../pki.md#in-cluster-issuance)) | hand-written (`components/infra/cluster-pki/default.nix`, `export.nix`) |
+| `infra/cluster-pki-issuers` (deferred) | CA Issuers `k8s-ca`, `etcd-ca`, `front-proxy-ca`; one Certificate per host leaf per node (`leaves.nix`, from `cluster/definition.nix`), one CertificateRequestPolicy per leaf, the `use` grant ([../pki.md](../pki.md#in-cluster-issuance)) | hand-written (`components/infra/cluster-pki/issuers.nix`) |
 | `flux` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers; OCIRepository `flux-system-oci` + Kustomization `flux-system`, one Kustomization per deferred component, Kustomization `secrets`; Receiver `ghcr` ([Deployment](#deployment)) | fluxcd-community flux2 chart 2.19.1 |
 | `apps/cloudflared` | the single Cloudflare tunnel `cluster`, one replica per node ([apps.md](apps.md#cloudflare-tunnel)) | hand-written |
 | `apps/authentik` | authentik (SSO/OIDC): one server + one worker per node, PostgreSQL 17 on m2mini, daily backup to r440, blueprints ([apps.md](apps.md#authentik)) | authentik chart 2026.8.5 + hand-written |
@@ -64,16 +55,16 @@ directory in the render. `render.nix` needs no change.
 
 Every image is a multi-arch manifest list (linux/amd64 + linux/arm64);
 `nix build .#k8s.checkImages && ./result/bin/k8s-check-images` checks it
-(CI runs it on every render, advisory). Exempt, because they are pinned to
-amd64 nodes: the NVIDIA device plugin and `pki-export`.
+(CI runs it on every render, advisory). Exempt (pinned to amd64 nodes):
+the NVIDIA device plugin and `pki-export`.
 
 ### Runtime classes
 
 `components/infra/runtime-classes.nix` matches the containerd runtime
 handlers that `modules/cluster/node.nix` configures:
 
-- `runc`: every node, containerd's default handler. Pods without a
-  `runtimeClassName` use it already; the object only lets a pod name it.
+- `runc`: every node, containerd's default handler (also used by pods
+  without a `runtimeClassName`).
 - `nvidia`: gpu nodes only (`cluster.nodes.<n>.gpu = true`): runc wrapped
   by nvidia-container-runtime in CDI mode. Its scheduling nodeSelector keeps
   such pods on nodes labelled `nvidia.com/gpu.present=true` (node.nix sets
@@ -86,22 +77,18 @@ handlers that `modules/cluster/node.nix` configures:
 
 ### RBAC
 
-`components/infra/rbac.nix` holds what NixOS would create through the
-addon manager (`services.kubernetes.addonManager.bootstrapAddons`, disabled
-in `modules/cluster/default.nix`):
+`components/infra/rbac.nix` (the NixOS addon manager is disabled in
+`modules/cluster/default.nix`):
 
 - `system:kube-apiserver:kubelet-api-admin`: the apiserver's kubelet client
   cert (`apiserver-kubelet-client-<n>`, `CN=system:kube-apiserver`, no O)
   must be allowed by the kubelets' Webhook authorizer, or
   `kubectl logs/exec/attach/port-forward`, `top` and node proxying get 403.
-  Same binding as nixpkgs `kubernetes/apiserver.nix`
-  (`apiserver-kubelet-api-admin-crb`).
 - `oidc:cluster-admins` → `cluster-admin`: members of the authentik group
   `cluster-admins` (blueprint `apps/authentik/blueprints/kubernetes-oidc.yaml`)
   when they log in with OIDC. The apiserver prefixes OIDC groups with
-  `oidc:` (`modules/cluster/control-plane.nix`), so no OIDC token can claim
-  a built-in group such as `system:masters`. OIDC is on (the `oidc` entry in
-  `cluster/definition.nix`); without it the binding is inert.
+  `oidc:` (`modules/cluster/control-plane.nix`). OIDC is on (the `oidc`
+  entry in `cluster/definition.nix`); without it the binding is inert.
 
 Bootstrap applies this component with the admin cert together with the
 network and DNS ([Bootstrap](#bootstrap-fresh-cluster)); Flux keeps it
@@ -125,12 +112,12 @@ runs flanneld, which writes `/run/flannel/subnet.env` for the plugin.
 - `"lan"` (default): `--public-ip` = the node's InternalIP
   (`status.hostIP` = `cluster.nodes.<n>.lanIP`, the kubelet's `--node-ip`).
   flanneld uses the interface holding that address (`eno1` on c4130/r440,
-  `end0` on m2mini), so it never picks the keepalived VIP (a second address
-  on the VIP holder's LAN NIC), `bond0` or `tailscale0`. The firewall opens
+  `end0` on m2mini), never the keepalived VIP, `bond0` or `tailscale0`.
+  The firewall opens
   udp/8472 from the nodes' LAN IPs (`modules/cluster/firewall.nix`).
 - `"tailscale"`: `--iface=tailscale0`, VXLAN over the tailnet (trusted
   interface, so no firewall change), MTU from tailscale0 (1280 − 50).
-  Slower; use it if the nodes stop sharing a LAN.
+  Slower; for nodes that don't share a LAN.
 
 ## Flake output (parts/k8s.nix)
 
@@ -149,11 +136,10 @@ nix eval .#k8s.components.\"apps/authentik\".config.build.manifests --json
 | `checkImages` | a script: every image in the tree must be a manifest list with linux/amd64 and linux/arm64 (network; not sandboxed) |
 | `components` | the evaluated catenix configurations (for `nix eval`) |
 
-It is deliberately **not** under `packages.<system>`: rendering is
-import-from-derivation (catenix runs `helm template` in a derivation and
-reads the result back), and `nix flake check` must not build it. The NixOS
-configurations never touch `k8s/`. `inputs.catenix` follows the flake's
-`nixpkgs`.
+Keep it out of `packages.<system>`: rendering is import-from-derivation
+(catenix runs `helm template` in a derivation), and `nix flake check` must
+not build it. The NixOS configurations never touch `k8s/`.
+`inputs.catenix` follows the flake's `nixpkgs`.
 
 Validation: catenix type-checks every object against its pinned Kubernetes
 v1.37 OpenAPI spec and the imported charts' CRDs at evaluation time
@@ -168,9 +154,9 @@ Rendering on r440 needs a workaround for `catenix/kubernetes-src`:
 
 - **Files:** one per kind and component, `<component>/<plural kind>.yaml`
   (lower-case plural as kubectl names resources: `deployments`,
-  `networkpolicies`, `ingresses`). Never the singular: Flux's Kustomization
-  kind would become `kustomization.yaml`, the name kustomize reserves for
-  its own config. Each file starts with a "Generated … do not edit" header.
+  `networkpolicies`, `ingresses`; never the singular, or Flux's
+  Kustomization kind would collide with `kustomization.yaml`). Each file
+  starts with a "Generated … do not edit" header.
 - **Order:** namespaces and CRDs get a `00-`/`01-` prefix, so
   `kubectl apply -R` (which walks files alphabetically) creates them first.
 - **Module arguments** of every component: `cluster`, `kubeVersion`,
@@ -221,8 +207,8 @@ On the cluster side (`components/flux/`):
 - **`install.nix`:** the flux2 chart; image-automation/-reflector
   controllers off (nothing writes to git from the cluster), no Helm hooks
   (Flux is applied by kubectl, then by itself). `TUF_ROOT=/tmp/.sigstore`
-  for source-controller: keyless cosign caches Sigstore's TUF root under
-  `$HOME`, which is `/` on a read-only root fs. The webhook-receiver Service
+  for source-controller (keyless cosign needs a writable TUF cache). The
+  webhook-receiver Service
   sits at the fixed ClusterIP `cluster.fluxWebhook.serviceIP` (10.96.0.23).
 
 Check or force a deploy: [../cluster.md, Changing something in the
@@ -230,16 +216,11 @@ cluster](../cluster.md#changing-something-in-the-cluster).
 
 ### Deferred components
 
-The Kustomization `flux-system` applies the whole tree in one go, and Flux
-server-side dry-runs **every** object before applying **any**: one rejected
-object fails the whole apply. Objects guarded by an admission webhook with
-`failurePolicy: Fail` (cert-manager's checks every `cert-manager.io` object,
-dry runs included) would tie the whole cluster's deployment to that
-webhook: with it down, nothing would be applied, including a fix for the
-webhook itself.
-
-Such objects go in a *deferred* component (`deferred.modules` in
-`default.nix`; `render.nix` places it and writes the fence):
+Flux dry-runs every object of a Kustomization before applying any, so one
+rejected object fails the whole apply. Put objects guarded by an admission
+webhook with `failurePolicy: Fail` (everything `cert-manager.io`) in a
+*deferred* component (`deferred.modules` in `default.nix`; `render.nix`
+places it and writes the fence):
 
 - it renders under `deferred/<component>/`; `deferred/kustomization.yaml`
   lists no resources, and Flux's generator takes a directory holding a
@@ -252,8 +233,9 @@ Such objects go in a *deferred* component (`deferred.modules` in
   `retryInterval: 1m` (until the webhook answers) and `wait: true` (Ready
   only when its objects are), `prune: true`, `interval: 10m`.
 
-A failure there stays there: `flux-system` keeps applying the rest. Today:
-`infra/cert-manager-issuers` and `infra/cluster-pki-issuers`. The encrypted
+A failure there stays there: `flux-system` keeps applying the rest.
+Deferred components: `infra/cert-manager-issuers` and
+`infra/cluster-pki-issuers`. The encrypted
 Secrets use the same fence (Kustomization `secrets`,
 [secrets.md](secrets.md#how-they-are-rendered-and-applied)).
 
@@ -281,7 +263,7 @@ flux get kustomizations --watch   # or: kubectl -n flux-system get ks
 In every component, `00-namespaces.yaml` and
 `01-customresourcedefinitions.yaml` sort first, so `kubectl apply -R`
 creates them before the objects that need them. Flux's custom resources
-also need their CRDs *established*, hence the separate step and the wait.
+also need their CRDs *established* (the separate step and the wait).
 Then create `flux-system/sops-age`
 ([secrets.md, The bootstrap key](secrets.md#the-bootstrap-key-flux-systemsops-age))
 so the Kustomization `secrets` can decrypt. The apps and `deferred/` need

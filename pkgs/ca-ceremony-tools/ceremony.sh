@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# neurosis root CA ceremony: the first-time ceremony only (ran 2026-11-13;
-# refuses while slot 9c holds a key). docs/pki.md, "YubiKey root CA";
-# history: docs/history/pki-migration-plan-2026-11.md, node F.
+# neurosis root CA ceremony: the first-time ceremony only (refuses while
+# slot 9c holds a key). docs/pki.md, "YubiKey root CA".
 #
 # Runs on whatever machine the user plugs the admin YubiKey 19830800 into
 # (slot 82, the sops key, is never touched), from a checkout of this repo
@@ -57,9 +56,7 @@ if [[ $MODE == yubikey ]]; then
   # and ours is restarted as needed. ca-pcscd refuses to start while any
   # pcscd runs, so first wait for our previous one to finish exiting.
   # Check PC/SC specifically: `ykman list --serials` also finds the key over
-  # FIDO/HID with no pcscd at all, so ensure_pcscd never started ca-pcscd and
-  # the PIV commands then failed with "PC/SC not available" (c4130,
-  # 2026-11-13). `piv info` goes through PC/SC only.
+  # FIDO/HID with no pcscd at all. `piv info` goes through PC/SC only.
   card_visible() { ykman --device "$SERIAL" piv info >/dev/null 2>&1; }
   OWN_PCSCD=0
   PCSCD_PID=

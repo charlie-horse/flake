@@ -421,8 +421,7 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
       # The flake's formatter (parts/packages.nix). Excluded:
       # hosts/Pestilence/servarr.nix, whose plaintext rpc-password line the
-      # secrets guard flags on any edit, reformatting included; format it
-      # when that secret moves out of git.
+      # secrets guard flags on any edit, reformatting included.
       - name: nix fmt -- --check
         run: |
           set -euo pipefail

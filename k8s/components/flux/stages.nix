@@ -9,7 +9,7 @@
 #   retryInterval 1m        until the webhook answers (first install)
 #   wait                    Ready only when every object is Ready
 #
-# Why (admission webhooks with failurePolicy Fail): docs/k8s/README.md#deferred-components
+# Details: docs/k8s/README.md#deferred-components
 {
   lib,
   deferred,

@@ -10,8 +10,8 @@ tunnel ([Cloudflare tunnel](#cloudflare-tunnel)).
 The workload PKI (`components/infra/cert-manager/`): TLS for things that run
 **in** the cluster. The cluster's own certificates (etcd, apiservers,
 kubelets, …) come from the Issuers in namespace `cluster-pki`, not from
-`cluster-ca`, and the hosts read them as sops files, so none needs the
-cluster to start ([../pki.md](../pki.md#bootstrap-pki-and-workload-pki)).
+`cluster-ca`, and the hosts read them as sops files
+([../pki.md](../pki.md#bootstrap-pki-and-workload-pki)).
 
 | File | What |
 | --- | --- |
@@ -40,9 +40,8 @@ Kustomization `cert-manager-issuers`, which `wait`s) is NotReady and
 nothing else breaks. The key is readable by the admin sops identities and
 Flux's age key, and a backup of the etcd data holds it, like every Secret.
 
-The issuer objects are a deferred component because cert-manager's webhook
-validates every `cert-manager.io` object with `failurePolicy: Fail`
-([README.md, Deferred components](README.md#deferred-components)).
+The issuer objects are a deferred component, like every `cert-manager.io`
+object ([README.md, Deferred components](README.md#deferred-components)).
 
 ### Requesting a certificate
 
@@ -74,10 +73,9 @@ Secret, or the root, `cluster/pki/root-ca.pem` (public, in git).
 `use` that policy. Certificates are turned into CertificateRequests by
 cert-manager's controller, which holds that `use` grant, so whoever may
 create a Certificate in any namespace may get any non-CA name signed by
-`cluster-ca`. Today that is only cluster admins and Flux; per-namespace
-limits would be narrower CertificateRequestPolicies. Nothing outside the
-cluster trusts `cluster-ca`: it is for in-cluster TLS, not public hostnames
-(those go through the Cloudflare tunnel).
+`cluster-ca`: cluster admins and Flux. Nothing outside the cluster trusts
+`cluster-ca`: it is for in-cluster TLS, not public hostnames (those go
+through the Cloudflare tunnel).
 
 ### Webhook and network
 
@@ -88,9 +86,8 @@ being outside `podCidr`, masquerades it to that node's flannel address;
 VXLAN carries it to the pod's node (udp/8472 between LAN IPs, open on every
 node by `modules/cluster/firewall.nix`, c4130 included, whatever
 `trustTailscale`), and the reply returns on the same connection. The NixOS
-firewall filters only INPUT, not forwarded pod traffic. Checked 2026-11-12:
-every apiserver (c4130, r440, m2mini) reaches pods on all three nodes
-through the apiserver proxy. The webhook's own serving cert is
+firewall filters only INPUT, not forwarded pod traffic. The webhook's own
+serving cert is
 self-managed (Secret `cert-manager-webhook-ca`, injected into the webhook
 configurations by the cainjector), so it does not depend on `cluster-ca`.
 
@@ -106,11 +103,11 @@ Issuer in the cluster, the `cluster-pki` Issuers included.
 
 ## authentik
 
-SSO for the cluster and its apps (`components/apps/authentik/`). It runs
-**in** the cluster but the cluster never depends on it: kubelets, the
-control plane and the admin kubeconfig authenticate with x509 certs, Flux
-and pods with service-account tokens. OIDC is only an extra way for people
-to log in. If authentik is down, only those logins fail; the break-glass is
+SSO for the cluster and its apps (`components/apps/authentik/`). The
+cluster never depends on it: kubelets, the control plane and the admin
+kubeconfig authenticate with x509 certs, Flux and pods with
+service-account tokens. If authentik is down, only OIDC logins fail; the
+break-glass is
 `sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig` on any node
 ([../pki.md, Break-glass](../pki.md#break-glass)).
 
@@ -124,9 +121,7 @@ to log in. If authentik is down, only those logins fail; the break-glass is
 The namespace enforces `baseline` (the postgres entrypoint starts as root
 and drops privileges) and warns on `restricted`; server and worker meet
 `restricted`. The PVs are hostPath (`DirectoryOrCreate`, reclaim
-`Retain`): deleting the claim or the component never deletes data. Postgres
-sits on m2mini's NVMe rather than r440, whose root is the 5400 rpm HDD that
-already slows its etcd WAL.
+`Retain`): deleting the claim or the component never deletes data.
 
 ### The Secret (authentik/authentik-secrets)
 
@@ -233,14 +228,13 @@ user's `exec:` in the kubeconfig by hand.
 
 Kubernetes web UI (`components/apps/headlamp.nix`, Headlamp chart, image
 `ghcr.io/headlamp-k8s/headlamp`), namespace `headlamp`. One replica, amd64
-only (nodeSelector): with c4130 tainted for vLLM that means r440. m2mini
-(arm64, 16 KiB pages) is avoided on purpose.
+only (nodeSelector): with c4130 tainted for vLLM that means r440.
 
 Public at **https://k8s.neuros.is** (`cluster.headlamp.host`) through the
 cluster's tunnel, to Service `headlamp/headlamp` at its fixed ClusterIP
 (`cluster.headlamp.serviceIP`, 10.96.0.21, port 80). No Ingress. ClusterIP
 is immutable, so that Service carries Flux's force annotation (recreated,
-not patched, if the IP ever changes).
+not patched, if the IP changes).
 
 **Login** is OIDC with authentik's confidential client `headlamp`, scopes
 `openid profile email groups`, callback
@@ -345,9 +339,6 @@ caches nothing. Setup and secrets: [../build-cache.md](../build-cache.md).
   [../secrets.md](../secrets.md); `~admin/.cloudflared/cert.pem` on c4130,
   run as admin):
   `cloudflared tunnel route dns --overwrite-dns 59a275ca-be31-4f8d-99ce-c536eaf490f8 <hostname>`.
-  > **Unverified:** that the cert has moved from `~charlie` to `~admin` on
-  > c4130 depends on c4130 having switched to stage 2 of the charlie
-  > removal, which the repo can't show.
 - **New hostname.** Add it to `routes` in `components/apps/cloudflared/files.nix`
   (with its `host`/`serviceIP` in `cluster/definition.nix`; the pods roll
   on config change), then add its DNS route.
@@ -360,13 +351,10 @@ namespace `open-webui`, public at **https://chat.neuros.is**
 `open-webui` at its fixed ClusterIP (`cluster.openWebui.serviceIP`,
 10.96.0.22) → pod :8080.
 
-- **History.** Moved here from a NixOS service on c4130 on 2026-11-10, at
-  the same version (0.12.2, so the database schema matched), with its data
-  (`webui.db`, uploads) copied to `r440:/var/lib/open-webui/data`.
-- **Placement.** One replica (SQLite; strategy `Recreate`), data on r440
-  (hostPath PV, `Retain`): amd64 (the image's torch & co. are not tried on
-  m2mini's 16 KiB pages) and off c4130, whose RAM vLLM + LMCache need.
-  r440's disk is slow but Open WebUI's writes are small.
+- **Placement.** One replica (SQLite; strategy `Recreate`), data
+  (`webui.db`, uploads) on r440 at `/var/lib/open-webui/data` (hostPath PV,
+  `Retain`), so the pod runs on r440. Keep it off c4130 (vLLM + LMCache need
+  its RAM).
 - **Login.** The local login form, plus **Continue with authentik**: OIDC
   against authentik's confidential client `open-webui` (blueprint
   `apps/authentik/blueprints/open-webui.yaml`), which only members of the
@@ -383,8 +371,7 @@ namespace `open-webui`, public at **https://chat.neuros.is**
 - **Secrets.** The Secret `open-webui/open-webui-secrets`, sops-encrypted
   in `k8s/secrets/open-webui/open-webui-secrets.sops.yaml`
   ([secrets.md](secrets.md): how to change a value), has
-  `WEBUI_SECRET_KEY` (signs sessions; carried over from c4130's
-  `.webui_secret_key`; changing it logs everyone out) and
+  `WEBUI_SECRET_KEY` (signs sessions; changing it logs everyone out) and
   `OAUTH_CLIENT_SECRET` (authentik's generated secret for `open-webui`,
   readable in the admin UI under Providers). Read at start: after a change,
   `kubectl -n open-webui rollout restart deploy/open-webui`.

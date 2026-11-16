@@ -1,4 +1,4 @@
-# docs/pki.md, "Phase 2 operations"
+# docs/pki.md#export-job-image
 name: pki-export-image
 
 on:

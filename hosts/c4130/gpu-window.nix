@@ -4,7 +4,7 @@
 # - gpu-window-end:   kills the login users' GPU processes (only those in
 #                     their user-<uid>.slice), then starts vllm.service.
 # Timers have Persistent = false; a switch or reboot inside the window starts
-# vllm.service again. Details: docs/hosts/c4130.md#gpu-window
+# vllm.service again.
 {
   config,
   lib,

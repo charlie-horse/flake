@@ -58,7 +58,7 @@ in
       default = cfg.node.rollout.stage or "full";
       defaultText = "cluster.nodes.<name>.rollout.stage or \"full\"";
       description = ''
-        Cut-over stage (docs/history/cluster-handoff-2026-10.md): which of the node's roles
+        Rollout stage: which of the node's roles
         actually run. "etcd": etcd only; "controlPlane": + apiserver,
         controller-manager, scheduler and keepalived; "full": every role.
       '';
@@ -155,11 +155,9 @@ in
         }
       ];
 
-      # dhcpcd runs on every interface unless told otherwise. On 2026-11-11
-      # eno1 lost carrier on r440 and c4130 for 8 h; dhcpcd then dropped the
-      # LAN routes and address and added an IPv4LL default route via
-      # flannel.1, so nothing could reach any apiserver address and Flux,
-      # flannel and cloudflared crash-looped until the link returned.
+      # dhcpcd runs on every interface unless told otherwise; on a LAN
+      # carrier loss it drops the LAN address and routes and adds an IPv4LL
+      # default route via flannel.1, cutting the node off every apiserver.
       #   - deny the CNI, overlay and tailscale interfaces (pod veths, cni0,
       #     flannel.1, tailscale0 are never DHCP clients). A list: merges
       #     with the hosts' own entries (bond0 etc. in hosts/*/builder.nix).

@@ -22,7 +22,7 @@ let
   labels."app.kubernetes.io/name" = "open-webui";
   secretName = "open-webui-secrets";
 
-  # Single instance (SQLite). Data migrated from c4130 on 2026-11-10.
+  # Single instance (SQLite).
   replicas = 1;
 
   port = 8080;
@@ -43,7 +43,7 @@ let
     OPENAI_API_BASE_URL = vllmUrl;
     OPENAI_API_KEY = "none";
 
-    # As on c4130: no local embedding/RAG models, nothing downloaded.
+    # No local embedding/RAG models, nothing downloaded.
     OFFLINE_MODE = "True";
     HF_HUB_OFFLINE = "1";
     BYPASS_EMBEDDING_AND_RETRIEVAL = "True";

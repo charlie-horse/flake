@@ -1,5 +1,5 @@
 # NVIDIA device plugin: advertises nvidia.com/gpu on the gpu nodes
-# (cluster.nodes.<n>.gpu; today c4130's 2x V100). Pinned to them by the
+# (cluster.nodes.<n>.gpu; c4130's 2x V100). Pinned to them by the
 # nodeSelector nvidia.com/gpu.present=true, the label node.nix gives gpu
 # nodes; GPU feature discovery and NFD (the chart's optional extras) stay
 # off. This is the one image not required to be multi-arch.

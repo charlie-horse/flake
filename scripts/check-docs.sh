@@ -7,6 +7,8 @@
 #   md-anchor      #anchor in a markdown link missing from the target .md
 #   docs-ref       a docs/....md reference (any file) to a missing file
 #   orphan-doc     a docs/**/*.md not linked from docs/README.md
+#   no-task        TODO/FIXME/XXX anywhere (tasks live in the project)
+#   doc-scope      history, plan or decision text in docs/ (see rule 6)
 #
 # Usage: scripts/check-docs.sh [--list-comment-blocks] [-h|--help]
 # Env:   MAX_COMMENT_LINES (default 15)
@@ -17,7 +19,7 @@ set -euo pipefail
 MAX="${MAX_COMMENT_LINES:-15}"
 LIST_ONLY=0
 
-usage() { sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
 
 for arg in "$@"; do
   case "$arg" in
@@ -94,7 +96,7 @@ generated() {
   return 1
 }
 
-declare -A COUNT=([comment-block]=0 [md-link]=0 [md-anchor]=0 [docs-ref]=0 [orphan-doc]=0)
+declare -A COUNT=([comment-block]=0 [md-link]=0 [md-anchor]=0 [docs-ref]=0 [orphan-doc]=0 [no-task]=0 [doc-scope]=0)
 report() { # rule file line message hint
   printf '%s:%s: [%s] %s\n    fix: %s\n' "$2" "$3" "$1" "$4" "$5"
   COUNT[$1]=$((COUNT[$1] + 1))
@@ -403,9 +405,44 @@ else
   done
 fi
 
+# ---------------------------------------------------------------- rule 5
+TASK_FILES=()
+for f in "${FILES[@]}"; do
+  case "$f" in
+    k8s/rendered/* | secrets/* | *.sops.yaml | *.lock | scripts/check-docs.sh | CLAUDE.md | AGENTS.md) continue ;;
+  esac
+  [[ -f "$f" ]] && TASK_FILES+=("$f")
+done
+if ((${#TASK_FILES[@]})); then
+  while IFS=: read -r file line _; do
+    allowed "$file" "$line" && continue
+    report no-task "$file" "$line" "TODO/FIXME/XXX marker" \
+      "track the task in the project, not in git; delete the marker (or allowlist '$file:$line')"
+  done < <(grep -nIE '\b(TODO|FIXME|XXX)\b' -- "${TASK_FILES[@]}" 2>/dev/null || true)
+fi
+
+# ---------------------------------------------------------------- rule 6
+for f in "${FILES[@]}"; do
+  case "$f" in
+    docs/history/* | docs/proposals/*)
+      allowed "$f" && continue
+      report doc-scope "$f" 1 "history/proposal doc" \
+        "docs describe how things work now; delete it (plans and tasks live in the project)"
+      continue ;;
+    docs/*.md) ;;
+    *) continue ;;
+  esac
+  [[ -f "$f" ]] || continue
+  while IFS=: read -r line text; do
+    allowed "$f" "$line" && continue
+    report doc-scope "$f" "$line" "history, plan or decision text: ${text:0:80}" \
+      "state how it works now; move tasks/decisions to the project, drop history and rationale"
+  done < <(grep -nIiE '^#+ .*\b(history|why|rationale|decisions?|plans?|roadmap|follow-ups?|todo|changelog)\b|open decision|\*\*unverified|\bas of (19|20)[0-9]{2}' -- "$f" || true)
+done
+
 # ---------------------------------------------------------------- summary
 total=0
-for r in comment-block md-link md-anchor docs-ref orphan-doc; do total=$((total + COUNT[$r])); done
-printf '\ncheck-docs: %d violation(s): comment-block=%d md-link=%d md-anchor=%d docs-ref=%d orphan-doc=%d (max comment lines %s)\n' \
-  "$total" "${COUNT[comment-block]}" "${COUNT[md-link]}" "${COUNT[md-anchor]}" "${COUNT[docs-ref]}" "${COUNT[orphan-doc]}" "$MAX"
+for r in comment-block md-link md-anchor docs-ref orphan-doc no-task doc-scope; do total=$((total + COUNT[$r])); done
+printf '\ncheck-docs: %d violation(s): comment-block=%d md-link=%d md-anchor=%d docs-ref=%d orphan-doc=%d no-task=%d doc-scope=%d (max comment lines %s)\n' \
+  "$total" "${COUNT[comment-block]}" "${COUNT[md-link]}" "${COUNT[md-anchor]}" "${COUNT[docs-ref]}" "${COUNT[orphan-doc]}" "${COUNT[no-task]}" "${COUNT[doc-scope]}" "$MAX"
 [[ $total -eq 0 ]]

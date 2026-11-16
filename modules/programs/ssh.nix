@@ -1,6 +1,5 @@
 # The OpenSSH client on every host (desktops via modules/, servers via
-# modules/server/default.nix). What it sets and why, plus the Windows
-# client: docs/auth.md, "SSH client".
+# modules/server/default.nix).
 #
 #   /etc/ssh/ssh_config  Host block for the cluster nodes, by NAME only:
 #                        User admin, ForwardAgent, IdentitiesOnly and one

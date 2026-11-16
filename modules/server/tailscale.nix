@@ -1,6 +1,6 @@
 # Tailscale on every server (c4130, r440, m2mini), declaratively. The flags
-# below reproduce the live prefs read on 2026-11-12 (`tailscale debug prefs`,
-# 1.104.4); per-host values are server.tailscale.* in configuration.nix.
+# below match the live prefs (`tailscale debug prefs`); per-host values are
+# server.tailscale.* in configuration.nix.
 #
 #   - tailscaled-set (every start of the unit: boot, any switch that changes
 #     the flags) runs `tailscale set <setFlags>`. `set` only touches the
@@ -9,7 +9,7 @@
 #   - tailscaled-autoconnect: `tailscale up --auth-key ... <upFlags>`, only
 #     when logged out and only when the auth key file exists (reinstall).
 #
-# Pref/flag table, tags per host, the reinstall procedure:
+# Pref/flag table, tags, the reinstall procedure:
 # docs/cluster.md#tailscale
 {
   config,

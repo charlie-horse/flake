@@ -2,9 +2,8 @@
 # modules/server/default.nix): admin (the only wheel account, FIDO2 SSH
 # login, password from the plaintext sops key `admin-password` in
 # secrets/common.yaml via custom.sopsPasswords), root locked wherever users
-# are immutable, users.mutableUsers = false by default (servers in stage 1
-# of charlie's removal are mutable). Details and the lockout risk:
-# docs/auth.md, "Accounts".
+# are immutable, users.mutableUsers = false by default. Details and the
+# lockout risk: docs/auth.md, "Login passwords".
 {
   config,
   lib,

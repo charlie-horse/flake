@@ -1,74 +1,68 @@
 # flake: NixOS config for the neurosis cluster
 
-This repo is the source of truth for the three NixOS 26.05 servers that run
-the neurosis cluster (c4130, r440, m2mini), the workstation Famine, and the
-in-cluster resources Flux deploys (`k8s/`). `AGENTS.md` is a symlink to this
-file. Start at [docs/README.md](docs/README.md): it maps every topic to its
-one canonical doc.
+NixOS 26.05 servers c4130, r440 and m2mini (one Kubernetes cluster), the
+workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
+`AGENTS.md` is a symlink to this file. How everything works:
+[docs/README.md](docs/README.md). Changing a host:
+[docs/cluster.md#changing-a-host](docs/cluster.md#changing-a-host).
 
-## Rules for working on the hosts
+## Access
 
-These are the rules most likely to cause damage if missed. Details live in
-the linked docs; don't repeat them here.
-
-- **SSH only when the user has allowed it for the task.** How to reach the
-  hosts from a cloud session (userspace Tailscale, `TAIL_AUTH_KEY`, the
-  `ProxyCommand`): [docs/cluster.md#access-from-a-cloud-session](docs/cluster.md#access-from-a-cloud-session).
-  The login is `admin` (stage 2 of charlie's removal is in config for every
-  server; [docs/cluster.md#accounts-on-the-servers](docs/cluster.md#accounts-on-the-servers)).
-  m2mini's login shell is fish: wrap sh syntax in `bash -s <<'EOF' … EOF`.
-- **The user runs `sudo`, not the cloud session.** Write privileged steps as
-  copy-paste blocks and say which account runs them. The cloud session runs
-  only read-only checks that need no sudo. It holds no sudo password, no
-  YubiKey PIN and no cluster credentials.
-- **Secrets never go in git or on a command line**, except sops-encrypted
-  files in `secrets/` and `k8s/secrets/`. Every secret is listed in
-  [docs/secrets.md](docs/secrets.md); add a row for any new one.
-- **PKI:** never run `ykman piv reset` or touch PIV slot 82 of the admin
-  YubiKey ([docs/pki.md](docs/pki.md)).
-- **Deploying:** change on a branch, CI, merge; then on the host
-  `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#<host>`
-  (m2mini adds `--override-input m2mini-vendorfw path:/boot/vendorfw`).
-  Never `nix flake update`, edit files, or `sudo git` inside `/etc/nixos`
-  on a host. Switch one host at a time and run the etcd health check after
-  each ([docs/cluster.md#changing-a-host](docs/cluster.md#changing-a-host)).
-  Leave etcd alone unless the user asks.
-- **c4130:** GC old generations before every switch, and switch outside the
-  GPU window (22:00–05:55 America/New_York)
-  ([docs/hosts/c4130.md#deploying-c4130](docs/hosts/c4130.md#deploying-c4130)).
-  Builds happen on r440 only ([docs/build-cache.md](docs/build-cache.md)).
-- **GPUs are Volta (sm_70):** CUDA 13 can't target them; anything that
-  compiles or ships GPU kernels uses CUDA 12.x, and models run `--dtype half`
-  ([docs/hosts/c4130-vllm.md](docs/hosts/c4130-vllm.md)).
+- SSH to the hosts only when the user has allowed it for the task.
+- **Tailscale in a cloud session.** Download the static
+  `tailscale_<ver>_amd64.tgz` from pkgs.tailscale.com (piping the install
+  script into `sh` is blocked). Run in the background
+  `tailscaled --tun=userspace-networking --statedir=/var/lib/tailscale --socket=/var/run/tailscale/tailscaled.sock`,
+  then `tailscale up --authkey="$TAIL_AUTH_KEY" --hostname=flake-cloud --accept-routes`.
+  If `tailscale status` shows no peers, run `up` again.
+- **SSH** (Tailscale SSH; the tailnet policy permits `admin`): install
+  `openssh-client`, then
+  `ssh -o ProxyCommand="tailscale --socket=/var/run/tailscale/tailscaled.sock nc %h %p" admin@<host>`.
+  MagicDNS resolves the bare names (tailnet `leaffish-monster.ts.net`).
+  `admin` is the only login on the servers; root is locked.
+- **m2mini's login shell is fish.** Run sh syntax as
+  `ssh … admin@m2mini bash -s <<'EOF' … EOF` (give `</dev/null` to commands
+  that read stdin) or interactively with `ssh -t … bash`.
+- **Between hosts:** `ssh <host>` as admin with the `ssh:admin` FIDO2 key
+  (YubiKey 19830800) from a forwarded agent; by LAN IP when Tailscale is
+  down (`ssh -A admin@10.0.0.95`). Client setup: [docs/auth.md](docs/auth.md).
+- **sudo is run by the user, not the cloud session.** Write privileged steps
+  as copy-paste blocks for the user to run as `admin`. The cloud session holds
+  only `TAIL_AUTH_KEY`: no sudo password, no YubiKey PIN, no cluster
+  credentials. admin's password is in sops (`secrets/common.yaml`,
+  `admin-password`).
+- In `/etc/nixos` (owned by admin), `git pull` and `nixos-rebuild build` need
+  no sudo; `nixos-rebuild switch`, `journalctl -u <unit>` and
+  `systemctl stop/restart` do. Never `sudo git`, edit files or
+  `nix flake update` there.
+- Over SSH, `pgrep -f` matches its own command line; use
+  `ps -ef | grep '[x]yz'`.
+- Secrets never go in git or on a command line, except sops-encrypted files
+  in `secrets/` and `k8s/secrets/`. Every secret is listed in
+  [docs/secrets.md](docs/secrets.md).
+- Never run `ykman piv reset` or touch PIV slot 82 of the admin YubiKey
+  ([docs/pki.md](docs/pki.md)).
 
 ## Documentation policy
 
-Keep the docs in one place, one copy of each fact, and current.
-
-1. **Where docs live.** Prose goes in `docs/`; [docs/README.md](docs/README.md)
+1. **Docs say how things work now.** No history, dates of past events,
+   rationale ("why"), plans, decisions, open questions or status notes.
+   Present tense, terse. A constraint you must follow is written as a rule.
+2. **Tasks live in the project, not in git.** No TODO/FIXME/XXX, follow-ups
+   or "later" notes in code or docs.
+3. **Where docs live.** Prose goes in `docs/`; [docs/README.md](docs/README.md)
    lists every doc and the topic it owns. Per-host docs are
-   `docs/hosts/<host>.md`. Dated snapshots, completed plans and finished
-   procedures go to `docs/history/` (named `<topic>-<yyyy-mm>.md`);
-   unapplied proposals go to `docs/proposals/`. A directory may keep a
-   `README.md` or `CLAUDE.md` of at most 15 lines that points into `docs/`.
-2. **One canonical home per topic.** Before writing, find the topic's home in
-   docs/README.md and edit it there. Elsewhere, link to it instead of
-   restating it. A new topic gets a row in docs/README.md.
-3. **Code comments stay short and local.** Explain why this line or option
-   exists. A contiguous comment block is at most 15 lines; longer prose
-   (procedures, rationale, history, tables) goes to the doc, with a one-line
-   pointer in the code, e.g. `# Procedure: docs/build-cache.md#setting-it-up`.
-4. **Update docs in the same PR as the code.** A change that makes a doc
-   wrong fixes the doc. Moving or renaming a doc or heading fixes every link to
-   it.
-5. **State, not guesses.** Write the current state in the present tense.
-   Something the repo can't prove (host state, whether a manual step was
-   done) is marked `> **Unverified:** …`; an undecided choice is marked
-   `> **Open decision:** …` and listed in [docs/decisions.md](docs/decisions.md).
-   Don't resolve one silently. Don't record values that go stale (disk
-   usage, what a host runs) without a date.
-6. **Enforced by CI.** `scripts/check-docs.sh` (the `docs` job in
-   `.github/workflows/checks.yml`) fails on comment blocks over 15 lines,
-   broken relative links and anchors, references to missing `docs/…md` files, and docs
-   not listed in docs/README.md. Run it locally before pushing. A deliberate
-   exception goes in `.docs-allowlist` with a comment saying why.
+   `docs/hosts/<host>.md`. Access lives only in this file. A directory may
+   keep a `README.md` or `CLAUDE.md` of at most 15 lines that points into
+   `docs/`.
+4. **One home per topic.** Edit a topic in its doc and link to it elsewhere.
+   A new topic gets a row in docs/README.md.
+5. **Code comments stay short and local.** At most 15 contiguous comment
+   lines; longer prose goes to the doc, with a one-line pointer in the code.
+6. **Docs change in the same PR as the code.** Moving or renaming a doc or
+   heading fixes every link to it.
+7. **Enforced by CI.** `scripts/check-docs.sh` (the `docs` job in
+   `.github/workflows/checks.yml`) fails on long comment blocks, broken
+   links and anchors, missing `docs/…md` files, docs missing from the index,
+   TODO markers, and history/plan/decision text in `docs/`. Run it before
+   pushing. A deliberate exception goes in `.docs-allowlist` with a comment.

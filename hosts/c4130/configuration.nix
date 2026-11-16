@@ -5,8 +5,8 @@
   ...
 }:
 {
-  # md RAID (local_store, see hardware-configuration.nix): since nixos-26.05
-  # mdmonitor exits 1 without MAILADDR or PROGRAM. There is no MTA here, so
+  # md RAID (local_store, see hardware-configuration.nix): mdmonitor exits 1
+  # without MAILADDR or PROGRAM. There is no MTA here, so
   # md events (Fail, DegradedArray, ...) go to the journal instead:
   # journalctl -t mdadm.
   boot.swraid.mdadmConf = ''
@@ -36,8 +36,7 @@
   # IP forwarding (v4 and v6) comes from modules/server/tailscale.nix
   # (useRoutingFeatures = "server") and the kubelet module.
 
-  # Tailscale (modules/server/tailscale.nix). Live prefs 2026-11-12: exit
-  # node + 10.0.1.0/24, AdvertiseTags [ tag:node ].
+  # Tailscale (modules/server/tailscale.nix): exit node + 10.0.1.0/24, tag:node.
   server.tailscale = {
     advertiseRoutes = [ "10.0.1.0/24" ];
     advertiseTags = [ "tag:node" ];
@@ -45,10 +44,8 @@
   services.openssh.enable = true;
 
   users.groups.video = { };
-  # Logins: admin (modules/system/admin.nix), plus charlie while
-  # custom.server.legacyCharlie.enable is on (modules/server/legacy-charlie.nix).
-  # Stage 2 of the charlie removal (docs/history/charlie-removal-2026-11.md):
-  # charlie is gone here.
+  # Off: admin (modules/system/admin.nix) is the only login
+  # (modules/server/legacy-charlie.nix).
   custom.server.legacyCharlie.enable = false;
 
   environment.systemPackages = with pkgs; [

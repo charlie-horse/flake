@@ -1,5 +1,5 @@
 # Tailscale Service for the Kubernetes API: every controlPlane node hosts
-# svc:<cluster.apiserverTailscaleService> (today svc:kube-api), TCP 6443 ->
+# svc:<cluster.apiserverTailscaleService> (svc:kube-api), TCP 6443 ->
 # its local apiserver at 127.0.0.1:6443, reachable tailnet-wide as
 # https://kube-api.<cluster.domain>:6443. The apiserver leaves carry that
 # name as a SAN (cluster.apiserverExtraSANs; asserted below).
@@ -9,7 +9,7 @@
 # `tailscale serve set-config --all`. Bound to kube-apiserver.service: on
 # stop it runs `tailscale serve drain`; on start (Upholds) it advertises
 # again. No firewall change: tailscaled dials 127.0.0.1:6443 over lo.
-# Lifecycle details, admin-console setup and rollout:
+# Lifecycle details and admin-console setup:
 # docs/cluster.md#tailscale-service-for-the-api-svckube-api
 {
   config,

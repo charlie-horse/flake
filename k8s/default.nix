@@ -16,7 +16,7 @@
 }:
 let
   definition = import ../cluster/definition.nix;
-  # cluster/definition.nix is pure data today; accept a { lib }: function too.
+  # cluster/definition.nix is pure data; accept a { lib }: function too.
   cluster = if lib.isFunction definition then definition { inherit lib; } else definition;
 
   # Kubernetes version the charts are rendered for (`helm template

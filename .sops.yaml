@@ -16,11 +16,10 @@ keys:
   - &c4130 age1jkfgs08xx6h07x0feqxxh2urnngpu5unt40hrs74t8pz37m3qags2mamet
   - &r440 age13g3xjkuy4fuvc7lusza526vl47ljyc5qx0452dq2z7hufhr45egq9wssep
   - &m2mini age1f25zd3jg5k8unh27rnmrlejmh8lxp2tep33rt5hp25d7k98773uqsdr0pn
-  # Famine: not a recipient yet (offline; its host key is created on first
-  # activation). Before Famine's first sops switch: generate the key there
-  # (`sudo ssh-keygen -A`), add `- &famine <ssh-to-age of it>` here, add
-  # *famine to the common.yaml and famine.yaml rules, then `sops updatekeys`
-  # both files. Until then Famine cannot decrypt and must not switch
+  # Famine: not a recipient; it cannot decrypt and must not switch. To enrol
+  # it: generate the key there (`sudo ssh-keygen -A`), add
+  # `- &famine <ssh-to-age of it>` here, add *famine to the common.yaml and
+  # famine.yaml rules, then `sops updatekeys` both files
   # (docs/hosts/famine.md).
   # Flux (in-cluster decryption of k8s secrets).
   - &flux age1ynj83hcd8zmscx4us80q6hqzxmr0d69hv3vr8extl5kvjqd92agqypgdux # flux-system/sops-age

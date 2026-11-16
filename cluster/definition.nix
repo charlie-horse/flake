@@ -67,8 +67,8 @@
   # r440's Nix binary cache (harmonia). Not a Service: the tunnel's nginx
   # sidecar forwards to http://<nodes.r440.lanIP>:<port>, where nginx on
   # r440 asks for HTTP basic auth (hosts/r440/cache.nix). The signing key
-  # stays on r440 (sops key harmonia-signing-key in secrets/r440.yaml; was
-  # /var/lib/secrets/harmonia.secret); this is its public half.
+  # stays on r440 (sops key harmonia-signing-key in secrets/r440.yaml);
+  # this is its public half.
   binaryCache = {
     host = "cache.neuros.is";
     node = "r440";
@@ -123,9 +123,9 @@
       # 8081 are opened there by hosts/c4130/vllm).
       trustTailscale = false;
       extraSANs = [ ];
-      # / is 96% full (17G free of 366G, 2026-10-31): with the upstream
-      # defaults (nodefs.available<10%, imagefs.available<15%) the node
-      # would sit in DiskPressure forever. Absolute thresholds instead.
+      # / is nearly full: with the upstream defaults (nodefs.available<10%,
+      # imagefs.available<15%) the node sits in DiskPressure. Absolute
+      # thresholds instead.
       # Every signal is listed: a partial evictionHard zeroes the others.
       kubeletConfig = {
         evictionHard = {

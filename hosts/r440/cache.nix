@@ -10,8 +10,7 @@
 # Secrets (sops, secrets/r440.yaml): harmonia-signing-key (`r440-cache-1`),
 # nix-cache-htpasswd (one `<user>:<SHA-512 crypt>` line per client).
 # Read-only: nginx passes only GET/HEAD.
-# Why nginx here, reachability, caching, setup and adding/revoking clients:
-# docs/build-cache.md#binary-cache.
+# Caching, setup and adding/revoking clients: docs/build-cache.md#binary-cache.
 {
   config,
   lib,

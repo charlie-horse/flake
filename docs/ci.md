@@ -17,8 +17,8 @@ Every action is pinned by full commit SHA ([below](#pinned-actions)).
 | Job | Runner | What it does |
 | --- | --- | --- |
 | `secrets-guard` | ubuntu-24.04 | Fails if the diff adds a key file, a kubeconfig or a plaintext password ([details](#secrets-guard)). |
-| `flake-check` | ubuntu-24.04 | `nix flake check --keep-going`: every output evaluates (every NixOS host: the desktop Famine and the servers c4130, r440 and m2mini; Famine's ISO; the packages). Pestilence is archived and not an output, so it is not checked ([pestilence.md](hosts/pestilence.md)). Its only `checks` output is `pki-tools` (`parts/packages.nix`; pytest in its checkPhase), the one thing flake check builds; nothing heavy. The k8s render is the system-independent output `k8s`, which flake check does not evaluate. |
-| `format` | ubuntu-24.04 | `nix fmt -- --check` over every tracked `.nix` file (the flake's formatter, RFC-style nixfmt). Excluded: `hosts/Pestilence/servarr.nix` (its plaintext `rpc-password` line trips the secrets guard on any edit, reformatting included). Run `nix fmt` before committing. |
+| `flake-check` | ubuntu-24.04 | `nix flake check --keep-going`: every output evaluates (every NixOS host: the desktop Famine and the servers c4130, r440 and m2mini; Famine's ISO; the packages). Its only `checks` output is `pki-tools` (`parts/packages.nix`; pytest in its checkPhase), the one thing flake check builds; nothing heavy. The k8s render is the system-independent output `k8s`, which flake check does not evaluate. |
+| `format` | ubuntu-24.04 | `nix fmt -- --check` over every tracked `.nix` file (the flake's formatter, RFC-style nixfmt). Excluded: `hosts/Pestilence/servarr.nix` (any edit to it, reformatting included, trips the secrets guard). Run `nix fmt` before committing. |
 | `eval-hosts` (matrix) | x86: ubuntu-24.04, m2mini: ubuntu-24.04-arm | `nix eval --raw .#nixosConfigurations.<host>.config.system.build.toplevel.drvPath` with import-from-derivation **disabled**, for c4130, r440 and m2mini. It checks `.system` and writes the drvPath to the job summary. |
 | `docs` | ubuntu-24.04 | `bash scripts/check-docs.sh`: relative markdown links and `docs/…md` references resolve, every doc is linked from [README.md](README.md), and no comment block in code is longer than 15 lines. Exceptions: `.docs-allowlist`. |
 
@@ -31,11 +31,10 @@ push is checked.
 
 ### Eval only, never build the hosts
 
-CI never builds a NixOS toplevel. The c4130 closure contains the CUDA 12.x
-toolkit, torch and vLLM: hours of build time and tens of GB, far beyond a
-hosted runner. The server evals pass `--option allow-import-from-derivation
-false` (`$NO_IFD`), so evaluating them can never turn into a build. Builds
-happen on r440 ([build-cache.md](build-cache.md)).
+CI never builds a NixOS toplevel; builds happen on r440
+([build-cache.md](build-cache.md)). The server evals pass `--option
+allow-import-from-derivation false` (`$NO_IFD`), so evaluating them can
+never turn into a build.
 
 To compare a CI drvPath with what runs on a host, take the drvPath from the
 job summary and, on the host:
@@ -50,8 +49,8 @@ with IFD allowed.
 
 ### m2mini (aarch64) and the vendor firmware
 
-m2mini is evaluated on GitHub's native arm64 runner (`ubuntu-24.04-arm`,
-free for public repos). Its configuration has no IFD, so it also evaluates
+m2mini is evaluated on GitHub's native arm64 runner (`ubuntu-24.04-arm`).
+Its configuration has no IFD, so it also evaluates
 on x86_64. If the arm runner is unavailable, set `runner: ubuntu-24.04` on
 its matrix entry.
 
@@ -61,10 +60,9 @@ placeholder `hosts/m2mini/vendorfw`, so CI evaluates with
 `hardware.asahi.extractPeripheralFirmware = false` (`hosts/m2mini/firmware.nix`).
 On the box, deploy with `--override-input m2mini-vendorfw path:/boot/vendorfw`.
 
-**Hook (Max):** the `eval-hosts` step has an env var `M2MINI_EVAL_FLAGS`,
-marked `HOOK(Max)`, for extra m2mini eval flags (e.g. an `--override-input`
-if the firmware wiring changes). It is empty because the placeholder input
-is what CI should use.
+The `eval-hosts` step's env var `M2MINI_EVAL_FLAGS` (marked `HOOK(Max)`)
+takes extra m2mini eval flags, e.g. an `--override-input`. It is empty: CI
+uses the placeholder input.
 
 ### Secrets guard
 
@@ -98,8 +96,7 @@ The guard scans only the diff: the PR's merge-base to head, or on a push
   `ENC[...]`. The content checks (chain, node, completeness, expiry)
   are in the export job, `pkgs/pki-tools/pki/cli_export.py`. Recipients: `.sops.yaml`.
 
-A second step checks **every** sops file in the tree (not only the diff,
-since a `.sops.yaml` change alone can break untouched files): its age
+A second step checks **every** sops file in the tree, not only the diff: its age
 recipients (`sops.age[].recipient`) must equal those of the first
 `.sops.yaml` creation rule whose `path_regex` matches it, i.e. the file was
 re-wrapped with `sops updatekeys` after the last recipient change. When
@@ -115,9 +112,8 @@ Secrets in git are sops-encrypted only (sops-nix on the hosts:
 (`secrets/pki/`, `k8s/secrets/cluster-pki/`; [pki.md](pki.md)). Every secret,
 CI's included, is listed in [secrets.md](secrets.md).
 
-The guard is diff-only on purpose: older plaintext credentials in
-`hosts/Pestilence` (and in git history) only trip it when those lines are
-edited. Rotate them and move them out of git separately.
+The guard scans only the diff, so the plaintext credentials already in
+`hosts/Pestilence` trip it only when those lines are edited.
 
 ## render.yml
 
@@ -136,13 +132,11 @@ publish (main only)   flux push artifact oci://ghcr.io/<repo>/manifests:<sha12>
   reads. The cache key hashes the same set.
 - **Every push to main publishes.** The cache (keyed on the same inputs)
   only skips the `nix build` when an earlier render had identical inputs; it
-  never decides whether to publish. A revert to an earlier state is
-  therefore deployed like any other change, and republishing identical
-  content is a no-op for Flux (same digest). Dispatching `render.yml` on
-  `main` republishes the current render.
+  never decides whether to publish. Republishing identical content is a
+  no-op for Flux (same digest). Dispatching `render.yml` on `main`
+  republishes the current render.
 - **main only:** `publish` never runs for another ref, dispatches included.
-  Flux would reject such an artifact anyway: `components/flux/sync.nix`
-  accepts only cosign signatures whose identity is
+  `components/flux/sync.nix` accepts only cosign signatures whose identity is
   `…/.github/workflows/render.yml@refs/heads/main`.
 - **Permissions:** `render` is read-only; `publish` has `packages: write`
   (GHCR) and `id-token: write` (keyless signing), nothing else.
@@ -159,7 +153,7 @@ without credentials.
 
 ## update.yml
 
-Mondays and Fridays at 04:00 UTC (23:00 EST Sun/Thu), or dispatched by
+Mondays and Fridays at 04:00 UTC, or dispatched by
 hand. Hands-free: no PR.
 
 1. `nix flake update` updates **every** input, `vllm-fork` included.
@@ -177,9 +171,9 @@ hand. Hands-free: no PR.
    ships the new render to Flux as for any push to `main`.
 
 The commit message and the run summary list every changed input
-(before/after rev) and **warn when `vllm-fork` moved**, because that
-changes c4130's production vLLM on its next switch: build it on r440, GC
-first, switch outside the GPU window ([c4130.md](hosts/c4130.md)). Hosts
+(before/after rev) and **warn when `vllm-fork` moved**: that changes
+c4130's production vLLM on its next switch (build it on r440, GC first;
+[c4130.md](hosts/c4130.md)). Hosts
 take the new inputs on their next `git pull && nixos-rebuild switch`.
 
 Permissions: `contents: write` (push) and `actions: write` (dispatch). It
@@ -214,8 +208,7 @@ table below.
 
 ## Pinned actions
 
-Every action is pinned by full commit SHA, with the tag in a comment. Each
-SHA was resolved with `git ls-remote` (the `^{}` line for an annotated tag).
+Every action is pinned by full commit SHA, with the tag in a comment.
 
 | Action | Tag | SHA |
 | --- | --- | --- |
@@ -248,6 +241,3 @@ New files must be `git add`ed before Nix can see them. On r440, Nix's git
 fetcher fails on `catenix/kubernetes-src`; add
 `--override-input catenix/kubernetes-src path:/tmp/k8s-src` after cloning
 the `v1.37.0` tag there ([cluster.md](cluster.md#changing-something-in-the-cluster)).
-
-The catenix CI proposal that used to live here is
-[proposals/catenix-ci.md](proposals/catenix-ci.md).

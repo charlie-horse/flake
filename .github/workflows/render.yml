@@ -11,7 +11,7 @@
 #
 # Every push to main publishes (same digest: Flux does nothing); the cache
 # only skips the nix build, never the publish. Dispatching on main
-# republishes. Rationale and details: docs/ci.md#renderyml.
+# republishes. Details: docs/ci.md#renderyml.
 name: render
 
 on:
