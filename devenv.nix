@@ -14,6 +14,15 @@
     yubikey-manager
   ];
 
+  # Pre-commit: sops files are fully encrypted, to their .sops.yaml recipients.
+  git-hooks.hooks.sops-files = {
+    enable = true;
+    name = "sops files";
+    entry = "${pkgs.python3.withPackages (p: [ p.pyyaml ])}/bin/python3 -I scripts/check-sops.py";
+    files = "^(\\.sops\\.yaml|secrets/.*|k8s/secrets/.*)$";
+    pass_filenames = false;
+  };
+
   enterShell = ''
     git pull
   '';

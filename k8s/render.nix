@@ -183,7 +183,7 @@ let
   # Checks one sops-encrypted Secret (read only; the file is copied as is):
   # a single v1 Secret whose namespace and name match its path, top-level
   # keys only apiVersion kind metadata type data stringData sops (the same
-  # set as checks.yml's secrets-guard; no `immutable`: Flux could not
+  # set as scripts/check-sops.py; no `immutable`: Flux could not
   # rotate such a Secret, docs/k8s/secrets.md), every data/stringData
   # value encrypted, sops
   # metadata with an age recipient and a MAC, encrypted_regex

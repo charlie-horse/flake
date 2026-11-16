@@ -36,12 +36,13 @@ the `v1.37.0` tag there ([cluster.md](cluster.md#changing-something-in-the-clust
 To compare a CI drvPath (from the `eval-hosts` job summary) with what runs
 on a host, on the host: `nix-diff /run/current-system <drvPath>`.
 
-## Secrets guard
+## sops pre-commit hook
 
-Checks that every changed sops file is fully encrypted, and that every sops
-file in the tree is encrypted to its `.sops.yaml` recipients. After changing
-recipients in `.sops.yaml`, run `sops updatekeys` on every file the rule
-matches. It does not scan for plaintext secrets; never commit them.
+`devenv shell` installs a git pre-commit hook (`devenv.nix`,
+`scripts/check-sops.py`) that rejects a commit when a staged sops file is not
+fully encrypted or not encrypted to its `.sops.yaml` recipients. After
+changing recipients in `.sops.yaml`, run `sops updatekeys` on every file the
+rule matches. CI does not check this; commit from the dev shell.
 
 ## render.yml
 
