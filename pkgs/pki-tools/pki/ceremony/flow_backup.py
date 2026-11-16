@@ -44,6 +44,8 @@ def step1(ctx: Context, args, out: Path, root) -> dict:
     card.verify_pin(pin)
     pub = card.generate_9c(pin)
     attestation = card.attest_9c()
+    if attestation is None and card.attested:
+        raise CeremonyError(f"card {card.serial}: no attestation for 9c; refusing")
     if attestation:
         verify_attestation(*attestation, card.serial, pub)
         write_new(out / f"attest-9c-{card.serial}.pem", pem(attestation[0]))
@@ -70,7 +72,7 @@ def step1(ctx: Context, args, out: Path, root) -> dict:
 def run_backup(ctx: Context, args) -> int:
     root_path = Path(args.root)
     if args.cross_sign_with_root:
-        return run_cross(ctx, Path(args.cross_sign_with_root), args.root_serial, root_path)
+        return run_cross(ctx, Path(args.cross_sign_with_root), args.root_serial, root_path, serial=args.serial)
     if args.serial is None or args.index is None or not args.out:
         raise CeremonyError("backup-root needs --serial, --index and --out (or --cross-sign-with-root DIR)")
     if args.serial == args.root_serial:
@@ -81,12 +83,13 @@ def run_backup(ctx: Context, args) -> int:
     root = load_cert(root_path)
     ctx.swap_to(ctx.cards.card(args.serial), None, "the new backup card")
     out.mkdir(parents=True, mode=0o700)
-    step1(ctx, args, out, root)
-    resume = f"pki-ceremony backup-root --cross-sign-with-root {out} {ctx.resume_flags}"
+    state = step1(ctx, args, out, root)
+    resume = f"pki-ceremony backup-root --cross-sign-with-root {out} --serial {args.serial} {ctx.resume_flags}"
     ctx.prompter.say(f"Step 1 done: {out}. Keep card {args.serial} safe; it now holds backup root {args.index}.")
+    ctx.prompter.note(f"Backup root {args.index} SHA-256 {state['backup_sha256']}: write it down; step 2 shows it again before the root signs.")
     try:
         ctx.swap_to(ctx.cards.card(args.root_serial), args.serial, "the root card")
     except Deferred:
         ctx.prompter.say(f"Stopped before the swap. Resume step 2 later with:\n  {resume}")
         return 0
-    return run_cross(ctx, out, args.root_serial, root_path, swapped=True)
+    return run_cross(ctx, out, args.root_serial, root_path, state=state)

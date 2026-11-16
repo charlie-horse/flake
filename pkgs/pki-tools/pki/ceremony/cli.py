@@ -48,7 +48,7 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--out", required=True)
 
     b = sub.add_parser("backup-root", parents=[common], help="backup root on a new card, cross-signed both ways")
-    b.add_argument("--serial", type=int, help="the new card's serial")
+    b.add_argument("--serial", type=int, help="the backup card's serial (step 1, and step 2 to re-check that card)")
     b.add_argument("--index", type=int)
     b.add_argument("--year", type=int, default=2026)
     b.add_argument("--root-serial", type=int, default=ROOT_SERIAL)
@@ -94,8 +94,14 @@ def run(argv: list[str] | None = None) -> int:
     return {"root": run_root, "sign": run_sign, "backup-root": run_backup}[args.cmd](ctx, args)
 
 
+def exit_on_signals() -> None:
+    """Turn SIGTERM, SIGHUP and SIGQUIT into SystemExit, so the tmpfs work dir is shredded on the way out."""
+    for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
+        signal.signal(sig, lambda n, _frame: sys.exit(128 + n))
+
+
 def main(argv: list[str] | None = None) -> int:
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    exit_on_signals()
     try:
         return run(argv)
     except CeremonyError as e:

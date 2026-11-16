@@ -249,7 +249,11 @@ three are rehearsed against SoftHSM in the nix check. Finding: the cross
 cert B′ (backup root signed by A) cannot give A-only clients a path to
 intermediates under a backup root, because A is `pathlen:1` and
 OpenSSL, Go and Python cryptography enforce the anchor's pathlen; the
-backup root certs must be shipped in root-trusting bundles instead.
+backup root certs must be shipped in root-trusting bundles instead. B′
+does let leaves a backup root signs directly verify under A, so the
+backup cards are guarded like the root card. Review: attestations are
+chained to Yubico's PIV attestation CAs (pinned in the package), and a
+resumed step 2 checks the backup card itself before A signs.
 
 **2026-11-16: phase 2 cutover (P8) and retirement (P9).** P8: m2mini
 (#50), c4130 (#51) and r440 (#53) switched to `certSource = "sops"`, one at

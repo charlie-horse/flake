@@ -14,6 +14,7 @@ pki-ceremony = "pki.ceremony.cli:main"
 
 [tool.setuptools]
 packages = ["pki", "pki.ceremony"]
+package-data = { "pki.ceremony" = ["yubico-piv-ca.pem"] }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

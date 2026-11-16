@@ -147,7 +147,9 @@ Rules:
   slot 9c. Never put the PIN on a command line or in shell history. The
   ceremony's only copy is a 0600 `pin-source` file in tmpfs, shredded
   after (step-kms-plugin must have it, or it tries 123456 and burns a
-  try). After an aborted run, `shred -u /dev/shm/ceremony.*/*`.
+  try). Ctrl-C, SIGTERM, SIGHUP (a closed terminal or ssh session) and
+  SIGQUIT shred it on the way out; only after a SIGKILL or a crash,
+  `shred -u /dev/shm/ceremony.*/*`.
 - **Backup roots, not a backup key.** If the card is lost, broken or reset,
   root A's key is gone. Two backup roots on other cards
   ([Backup roots](#backup-roots)) keep a signer that clients already
@@ -214,7 +216,7 @@ the ceremony (the tool refuses any other card).
 | `backup-root-<n>.pem` (B) | itself | 2 | anchors leaf → intermediate (0) → A′ (1) → B. With pathlen:1, OpenSSL, Go and Python cryptography all reject that chain |
 | `root-ca-by-backup-<n>.pem` (A′) | B | 1 | root A's name, key and SKI signed by B, so every chain that ends at A also reaches B. Same pathlen as A (0 fails everywhere) |
 | `backup-root-<n>-by-root.pem` (B′) | A | 1 | B's name, key and SKI signed by A. See the limitation below |
-| `attest-9c-<serial>.pem`, `attest-f9-<serial>.pem` | Yubico | | the B key was generated on that card (serial and policy checked) |
+| `attest-9c-<serial>.pem`, `attest-f9-<serial>.pem` | Yubico | | the B key was generated on that card (serial and policy checked; f9 must chain to a pinned Yubico PIV attestation CA) |
 
 The ceremony is two steps, because only one card can be plugged in:
 
@@ -227,26 +229,48 @@ The ceremony is two steps, because only one card can be plugged in:
    random and PIN-protected on the card. Then: key in 9c, attestation, B
    self-signed and imported into 9c, and B cross-signs A using only
    `cluster/pki/root-ca.pem` (2 touches).
+   Step 1 ends by printing B's SHA-256 fingerprint: write it down.
 2. **Swap to 19830800.** The same gate as `sign` (9c key and cert equal
-   `root-ca.pem`), then A signs B (1 touch). It then checks that the four
-   real intermediates chain to B through A′.
+   `root-ca.pem`). The tool shows B's subject and SHA-256 fingerprint and
+   asks for `yes`; compare it with step 1's. Then A signs B (1 touch) and
+   the tool checks that the four real intermediates chain to B through A′.
 
 Type `later` at the swap prompt to stop after step 1; step 2 runs any time
-from step 1's directory, which it re-verifies first (root fingerprint,
-B unchanged, A′ under B, attestation):
+from step 1's directory, with the backup card's `--serial`. A resumed step 2
+trusts nothing in that directory on its own: it re-verifies the files (root
+fingerprint, B unchanged, A′ under B, attestation chained to a pinned
+Yubico CA, required on a real card whatever `state.json` says), then asks
+for **the backup card first** and refuses unless its 9c key and certificate
+are B's, with PIN + touch always and a fresh attestation; only then does it
+ask for 19830800:
 
 ```sh
 pki-ceremony backup-root --repo /etc/nixos --serial <card> --index 1 --out ~/backup-1
-pki-ceremony backup-root --repo /etc/nixos --cross-sign-with-root ~/backup-1   # step 2 later
+pki-ceremony backup-root --repo /etc/nixos --serial <card> --cross-sign-with-root ~/backup-1   # step 2 later
 ```
 
-**B′ does not protect clients that trust only A.** Root A is `pathlen:1`,
-and OpenSSL 3.6, Go 1.24 and Python cryptography 48 enforce a trust
-anchor's pathlen, so leaf → intermediate under B → B′ → A (two CAs under
-A) is rejected. B′ helps only verifiers that ignore anchor constraints.
-The protection against losing card A is to put each `backup-root-<n>.pem`
-next to `root-ca.pem` in every bundle that trusts the root (workloads, a
-trust-manager bundle) now. The bootstrap side anchors on its own
+The pinned Yubico CAs are `pkgs/pki-tools/pki/ceremony/yubico-piv-ca.pem`,
+taken from developers.yubico.com/PKI (`yubico-ca-certs.txt`,
+`yubico-intermediate.pem`): the roots `Yubico PIV Root CA Serial 263751`
+(SHA-256 `63ece914…07b546`, firmware before 5.7.4; it issued card
+19830800's `attest-f9.pem`) and `Yubico Attestation Root 1` (`62760c6a…
+6cd5a8`), plus the PIV and attestation intermediates under the latter
+(firmware 5.7.4 and later).
+
+**What B′ does and does not do.** Root A is `pathlen:1`, and OpenSSL 3.6,
+Go 1.24 and Python cryptography 48 enforce a trust anchor's pathlen:
+
+- A certificate B signs **directly** (leaf → B′ → A: one CA under A)
+  verifies for every client that trusts only A. So once B′ exists, each
+  backup card can issue leaves that all root-trusting clients accept:
+  guard the backup cards like the root card. It is also a partial
+  recovery if card A is lost.
+- An **intermediate issued under B** does not: leaf → intermediate → B′
+  → A is two CAs under A and is rejected.
+
+The protection for intermediates against losing card A is to put each
+`backup-root-<n>.pem` next to `root-ca.pem` in every bundle that trusts
+the root (workloads, a trust-manager bundle) now. The bootstrap side anchors on its own
 intermediates and is unaffected. For OpenSSL clients that trust only B,
 an untrusted bundle must list A′ before A's self-signed cert (otherwise
 "self-signed certificate in certificate chain").

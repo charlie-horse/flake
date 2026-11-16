@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from importlib.resources import files as package_files
 from pathlib import Path
 
 from cryptography import x509
@@ -37,12 +38,35 @@ def _ext(cert, oid) -> bytes | None:
         return None
 
 
-def attestation_errors(attest, f9, expected_serial: int, pub) -> list[str]:
+def yubico_cas() -> list[x509.Certificate]:
+    """Yubico's PIV attestation roots and intermediates (developers.yubico.com/PKI), pinned in the package."""
+    return load_chain(package_files("pki.ceremony").joinpath("yubico-piv-ca.pem").read_bytes())
+
+
+def issues(issuer: x509.Certificate, cert: x509.Certificate) -> bool:
     try:
-        attest.verify_directly_issued_by(f9)
-    except (InvalidSignature, ValueError, TypeError) as e:
-        return [f"attestation does not chain to the card's f9 certificate ({e.__class__.__name__})"]
-    errs = []
+        cert.verify_directly_issued_by(issuer)
+        return True
+    except (InvalidSignature, ValueError, TypeError):
+        return False
+
+
+def yubico_chain_errors(f9: x509.Certificate, cas: list[x509.Certificate]) -> list[str]:
+    cert = f9
+    for _ in range(4):
+        issuer = next((c for c in cas if issues(c, cert)), None)
+        if issuer is None:
+            return [f"{cert.subject.rfc4514_string()} is not issued by a pinned Yubico PIV attestation CA"]
+        if issuer.subject == issuer.issuer:
+            return []
+        cert = issuer
+    return ["the Yubico attestation chain is too long"]
+
+
+def attestation_errors(attest, f9, expected_serial: int, pub, cas: list[x509.Certificate] | None = None) -> list[str]:
+    if not issues(f9, attest):
+        return ["attestation does not chain to the card's f9 certificate"]
+    errs = yubico_chain_errors(f9, yubico_cas() if cas is None else cas)
     raw = _ext(attest, YK_SERIAL)
     serial = int.from_bytes(raw[2:], "big") if raw and raw[0] == 2 else None
     if serial != expected_serial:
@@ -90,11 +114,7 @@ def intermediates_next_to(root_path) -> dict[str, x509.Certificate]:
 
 
 def issued_errors(cert, root, pathlen: int = 0) -> list[str]:
-    errs = []
-    try:
-        cert.verify_directly_issued_by(root)
-    except (InvalidSignature, ValueError, TypeError):
-        errs.append("signature does not verify under the issuer")
+    errs = [] if issues(root, cert) else ["signature does not verify under the issuer"]
     try:
         bc = cert.extensions.get_extension_for_class(x509.BasicConstraints)
         ku = cert.extensions.get_extension_for_class(x509.KeyUsage)

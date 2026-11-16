@@ -12,13 +12,14 @@ import pytest
 
 pytest.importorskip("yubikit")
 
-from ceremony_fakes import CardSigner, FakeCard, FakeDevices, patch_pivman  # noqa: E402
+from ceremony_fakes import F9_NAME, CardSigner, FakeCard, FakeDevices, attestation, patch_pivman, yubico_root  # noqa: E402
+from ceremony_fakes import cert as fake_cert  # noqa: E402
 from ceremony_helpers import BACKUP_SERIAL, ROOT_SERIAL, SOPS_YAML, make_csr, signer  # noqa: E402
-from cryptography.hazmat.primitives import serialization  # noqa: E402
+from cryptography.hazmat.primitives import hashes, serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import ec  # noqa: E402
 from yubikit.piv import KEY_TYPE, PIN_POLICY, SLOT, TOUCH_POLICY  # noqa: E402
 
-from pki.ceremony import CeremonyError, cli, tmpfs  # noqa: E402
+from pki.ceremony import CeremonyError, checks, cli, tmpfs  # noqa: E402
 from pki.ceremony.card import YubiKeyCards  # noqa: E402
 from pki.ceremony.checks import load_cert  # noqa: E402
 from pki.ceremony.context import Context  # noqa: E402
@@ -43,6 +44,7 @@ class Env:
         patch_pivman(monkeypatch, self.log)
         monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
         monkeypatch.setattr(tmpfs, "fs_type", lambda p: "tmpfs")
+        monkeypatch.setattr(checks, "yubico_cas", lambda: [yubico_root()])
         self.sa = signer()
         self.root = self_signed_root(ROOT_CN, self.sa, 1)
         self.repo = tmp_path / "repo"
@@ -219,6 +221,10 @@ def test_ask_new_pin_rejects_weak_and_mismatch():
         tmpfs.ask_new_pin("PIN", read=lambda prompt: "123456")
 
 
+def resume_args(env, out, serial=BACKUP_SERIAL):
+    return env.args("backup-root", "--cross-sign-with-root", str(out), "--serial", str(serial), "--root", str(env.root_path))
+
+
 def backup_args(env, out):
     return env.args("backup-root", "--serial", str(BACKUP_SERIAL), "--index", "1", "--out", str(out), "--root", str(env.root_path))
 
@@ -234,8 +240,9 @@ def test_backup_step1_later_then_resume(env):
         "attest-9c-22616756.pem", "attest-f9-22616756.pem", "backup-root-1.pem", "puk-22616756.sops.yaml", "root-ca-by-backup-1.pem", "state.json"
     ]
     assert env.encrypted[0][0] == "secrets/admin.yaml" and "yubikey-22616756-piv-puk" in env.encrypted[0][1]
-    env.answers = [ROOT_SERIAL]
-    assert run_backup(env.ctx, env.args("backup-root", "--cross-sign-with-root", str(out), "--root", str(env.root_path))) == 0
+    env.answers = [BACKUP_SERIAL, ROOT_SERIAL, "yes"]
+    assert run_backup(env.ctx, resume_args(env, out)) == 0
+    assert any(load_cert(out / "backup-root-1.pem").fingerprint(hashes.SHA256()).hex() in line for line in env.out)
     b_by_a = load_cert(out / "backup-root-1-by-root.pem")
     b_by_a.verify_directly_issued_by(env.root)
     assert json.loads((out / "state.json").read_text())["step"] == 2
@@ -270,31 +277,78 @@ def b_by_a_exists(env, out):
     (out / "backup-root-1-by-root.pem").write_text("x")
 
 
+def forge(env, out, attest_too=False):
+    """What someone who can write step 1's directory would do: their own B and A', state.json to match."""
+    key = signer()
+    fake_b = self_signed_root("neurosis Backup Root CA 1 2026", key, 2)
+    (out / "backup-root-1.pem").write_bytes(pem(fake_b))
+    (out / "root-ca-by-backup-1.pem").write_bytes(pem(cross(env.root, fake_b, key)))
+    state = json.loads((out / "state.json").read_text())
+    state.update(backup_sha256=fake_b.fingerprint(hashes.SHA256()).hex(), attested=False)
+    (out / "state.json").write_text(json.dumps(state))
+    if attest_too:
+        self_made = ec.generate_private_key(ec.SECP384R1())
+        (out / "attest-9c-22616756.pem").write_bytes(pem(attestation(BACKUP_SERIAL, key.public_key(), self_made)))
+        (out / "attest-f9-22616756.pem").write_bytes(pem(fake_cert(F9_NAME, F9_NAME, self_made.public_key(), self_made)))
+
+
+def forge_with_attestation(env, out):
+    forge(env, out, attest_too=True)
+
+
+def forge_without_attestation(env, out):
+    forge(env, out)
+    for n in ("attest-9c-22616756.pem", "attest-f9-22616756.pem"):
+        (out / n).unlink()
+
+
+def valid_attestation_wrong_card(env, out):
+    forge(env, out)
+    (out / "attest-9c-22616756.pem").write_bytes(pem(attestation(BACKUP_SERIAL, load_cert(out / "backup-root-1.pem").public_key())))
+
+
 @pytest.mark.parametrize("tamper,match", [
     (tamper_root, "not the one step 1 cross-signed"),
     (tamper_backup, "changed since step 1"),
     (tamper_cross, "does not verify under the issuer"),
     (b_by_a_exists, "step 2 already ran"),
+    (forge, "attested key is not the expected key"),
+    (forge_with_attestation, "not issued by a pinned Yubico PIV attestation CA"),
+    (forge_without_attestation, "attest-9c-22616756.pem: cannot read"),
+    (valid_attestation_wrong_card, "9c key is not the key of CN=neurosis Backup Root CA 1 2026"),
 ])
 def test_resume_refusals(env, tamper, match):
     out = step1(env)
     tamper(env, out)
+    env.answers = [BACKUP_SERIAL, ROOT_SERIAL, "yes"]
     with pytest.raises(CeremonyError, match=match):
-        run_backup(env.ctx, env.args("backup-root", "--cross-sign-with-root", str(out), "--root", str(env.root_path)))
+        run_backup(env.ctx, resume_args(env, out))
+    assert not (out / "backup-root-1-by-root.pem").exists() or tamper is b_by_a_exists
+    assert [e[1] for e in env.log if e[0] == "sign"] == [BACKUP_SERIAL, BACKUP_SERIAL]
+
+
+def test_resume_checks_the_card_and_its_fresh_attestation(env):
+    out = step1(env)
+    env.devices.cards[BACKUP_SERIAL].certs[SLOT.SIGNATURE] = self_signed_root("neurosis Backup Root CA 1 2026", signer(), 2)
+    env.answers = [BACKUP_SERIAL]
+    with pytest.raises(CeremonyError, match="9c certificate is not the expected root"):
+        run_backup(env.ctx, resume_args(env, out))
+    with pytest.raises(CeremonyError, match="step 2 needs --serial 22616756"):
+        run_backup(env.ctx, resume_args(env, out, serial=7))
 
 
 def test_resume_with_wrong_card_reprompts_and_keeps_step1(env):
     out = step1(env)
     before = sorted(p.name for p in out.iterdir())
-    env.answers = [BACKUP_SERIAL, "later"]
-    assert run_backup(env.ctx, env.args("backup-root", "--cross-sign-with-root", str(out), "--root", str(env.root_path))) == 0
-    assert any("expected only YubiKey 19830800" in line for line in env.out)
+    env.answers = [ROOT_SERIAL, "later"]
+    assert run_backup(env.ctx, resume_args(env, out)) == 0
+    assert any("expected only YubiKey 22616756" in line for line in env.out)
     assert sorted(p.name for p in out.iterdir()) == before
 
 
 def test_wrong_card_at_the_swap_reprompts(env):
     out = env.tmp / "b1"
-    env.answers = [BACKUP_SERIAL, 7, ROOT_SERIAL]
+    env.answers = [BACKUP_SERIAL, 7, ROOT_SERIAL, "yes"]
     assert run_backup(env.ctx, backup_args(env, out)) == 0
     assert any("expected only YubiKey 19830800, found [7]" in line for line in env.out)
     assert (out / "backup-root-1-by-root.pem").exists()

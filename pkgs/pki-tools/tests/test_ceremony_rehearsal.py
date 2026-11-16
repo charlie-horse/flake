@@ -5,12 +5,12 @@ import subprocess
 import pytest
 from ceremony_helpers import BACKUP_SERIAL, SOPS_YAML, make_csr, signer
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
 
 from pki import sopsfile
 from pki.ceremony import cli, tmpfs
 from pki.ceremony.checks import chain_errors, issued_errors, load_cert
-from pki.ceremony.profiles import ROOT_CN, self_signed_root, ski_of
+from pki.ceremony.profiles import ROOT_CN, cross, self_signed_root, ski_of
 from pki.ceremony.secrets import pem
 
 TOOLS = ("softhsm2-util", "step-kms-plugin", "sops", "age-plugin-yubikey", "openssl")
@@ -38,6 +38,17 @@ def rehearsal(tmp_path, monkeypatch):
 def write_csr(path, extensions=()):
     path.write_bytes(make_csr("neurosis ext CA", extensions=extensions)[0].public_bytes(serialization.Encoding.PEM))
     return path
+
+
+def forge(src, dst, root):
+    """Step 1's directory with someone else's B and A' and a matching state.json (no attestation in rehearsal)."""
+    shutil.copytree(src, dst)
+    key = signer()
+    fake_b = self_signed_root("neurosis Backup Root CA 1 2026", key, 2)
+    (dst / "backup-root-1.pem").write_bytes(pem(fake_b))
+    (dst / "root-ca-by-backup-1.pem").write_bytes(pem(cross(root, fake_b, key)))
+    state = json.loads((dst / "state.json").read_text())
+    (dst / "state.json").write_text(json.dumps({**state, "backup_sha256": fake_b.fingerprint(hashes.SHA256()).hex(), "attested": False}))
 
 
 def openssl_ok(anchor, untrusted, target) -> bool:
@@ -72,9 +83,14 @@ def test_all_three_subcommands(rehearsal, monkeypatch, capsys):
     assert cli.main([*backup, "--serial", str(BACKUP_SERIAL), "--index", "1", "--out", "b1"]) == 0
     assert "Resume step 2 later" in capsys.readouterr().err
     assert json.loads((d / "b1" / "state.json").read_text())["step"] == 1
-    assert cli.main([*backup, "--yes", "--cross-sign-with-root", "b1"]) == 0
-    assert "does NOT let clients" in capsys.readouterr().err
-    assert cli.main([*backup, "--yes", "--cross-sign-with-root", "b1"]) == 1
+    forge(d / "b1", d / "forged", root)
+    resume = [*backup, "--yes", "--serial", str(BACKUP_SERIAL), "--cross-sign-with-root"]
+    assert cli.main([*resume, "forged"]) == 1
+    assert "9c key is not the key of CN=neurosis Backup Root CA 1 2026" in capsys.readouterr().err
+    assert not (d / "forged" / "backup-root-1-by-root.pem").exists()
+    assert cli.main([*resume, "b1"]) == 0
+    assert "guard it like the" in capsys.readouterr().err
+    assert cli.main([*resume, "b1"]) == 1
 
     b, a_by_b, b_by_a = (load_cert(d / "b1" / n) for n in ("backup-root-1.pem", "root-ca-by-backup-1.pem", "backup-root-1-by-root.pem"))
     assert ski_of(a_by_b) == ski_of(root) and issued_errors(a_by_b, b, 1) == []

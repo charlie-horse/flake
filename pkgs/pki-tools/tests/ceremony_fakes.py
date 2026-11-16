@@ -17,23 +17,32 @@ from pki.ceremony import card as card_module
 from pki.ceremony.checks import YK_POLICY, YK_SERIAL
 from pki.ceremony.profiles import now
 
-F9_KEY = ec.generate_private_key(ec.SECP384R1())
+F9_KEY, YUBICO_KEY = ec.generate_private_key(ec.SECP384R1()), ec.generate_private_key(ec.SECP384R1())
 F9_NAME = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "Fake Yubico PIV Attestation")])
+YUBICO_NAME = x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "Fake Yubico PIV Root CA")])
 
 
-def attestation(serial: int, pub) -> x509.Certificate:
+def attestation(serial: int, pub, key=F9_KEY) -> x509.Certificate:
     return (
         x509.CertificateBuilder().subject_name(x509.Name([x509.NameAttribute(x509.NameOID.COMMON_NAME, "YubiKey PIV Attestation 9c")]))
         .issuer_name(F9_NAME).public_key(pub).serial_number(1).not_valid_before(now()).not_valid_after(now() + timedelta(days=1))
         .add_extension(x509.UnrecognizedExtension(YK_SERIAL, b"\x02\x04" + serial.to_bytes(4, "big")), False)
         .add_extension(x509.UnrecognizedExtension(YK_POLICY, bytes([PIN_POLICY.ALWAYS, TOUCH_POLICY.ALWAYS])), False)
-        .sign(F9_KEY, hashes.SHA256())
+        .sign(key, hashes.SHA256())
     )
 
 
+def cert(subject, issuer, pub, key) -> x509.Certificate:
+    b = x509.CertificateBuilder().subject_name(subject).issuer_name(issuer).public_key(pub).serial_number(2)
+    return b.not_valid_before(now()).not_valid_after(now() + timedelta(days=1)).sign(key, hashes.SHA256())
+
+
 def f9_cert() -> x509.Certificate:
-    b = x509.CertificateBuilder().subject_name(F9_NAME).issuer_name(F9_NAME).public_key(F9_KEY.public_key()).serial_number(2)
-    return b.not_valid_before(now()).not_valid_after(now() + timedelta(days=1)).sign(F9_KEY, hashes.SHA256())
+    return cert(F9_NAME, YUBICO_NAME, F9_KEY.public_key(), YUBICO_KEY)
+
+
+def yubico_root() -> x509.Certificate:
+    return cert(YUBICO_NAME, YUBICO_NAME, YUBICO_KEY.public_key(), YUBICO_KEY)
 
 
 @dataclass

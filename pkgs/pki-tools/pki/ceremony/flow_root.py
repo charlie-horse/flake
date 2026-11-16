@@ -4,7 +4,7 @@ from pki.ceremony import CeremonyError
 from pki.ceremony.checks import fingerprints_txt, verify_attestation
 from pki.ceremony.context import Context, write_new
 from pki.ceremony.flow_sign import check_slot82, csr_item, issue, new_item, prepare_out, preview
-from pki.ceremony.profiles import BOOTSTRAP_CAS, ROOT_LIFE, ROOT_PATHLEN, now, self_signed_root
+from pki.ceremony.profiles import BOOTSTRAP_CAS, ROOT_LIFE, ROOT_PATHLEN, name, now, self_signed_root
 from pki.ceremony.secrets import pem
 
 MIN_FIRMWARE = (5, 3, 0)
@@ -42,7 +42,7 @@ def make_root(ctx: Context, card, pin: str, cn: str, out: Path):
 def run_root(ctx: Context, args) -> int:
     date = args.cn_date or f"{now():%Y-%m-%d}"
     items = [new_item("workload", date), *bootstrap_items(args, date)]
-    preview(ctx, items, None)
+    preview(ctx, items, None, name(args.cn))
     card = ctx.cards.card(args.serial)
     ctx.swap_to(card, None, "the root card")
     firmware = card.firmware()

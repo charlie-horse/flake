@@ -1,5 +1,10 @@
 import base64
+import os
 import shutil
+import signal
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 import yaml
@@ -103,3 +108,26 @@ def test_encryption_errors_catch_plaintext(repo):
     with pytest.raises(CeremonyError, match="not encrypted"):
         k8s_secrets.encrypt(str(repo), "secrets/admin.yaml", "data:\n  tls.key: abc\n", encrypt_stdin=lambda *a: plain)
 
+
+
+SIGNAL_CHILD = """
+import time
+from pki.ceremony import cli, tmpfs
+tmpfs.fs_type = lambda p: "tmpfs"
+cli.exit_on_signals()
+with tmpfs.workdir() as work:
+    tmpfs.pin_file(work, "123456")
+    print(work, flush=True)
+    time.sleep(60)
+"""
+
+
+@pytest.mark.parametrize("sig", [signal.SIGHUP, signal.SIGQUIT, signal.SIGTERM])
+def test_signals_shred_the_pin_file(tmp_path, sig):
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(sys.path), "XDG_RUNTIME_DIR": str(tmp_path)}
+    child = subprocess.Popen([sys.executable, "-c", SIGNAL_CHILD], stdout=subprocess.PIPE, env=env, text=True)
+    work = Path(child.stdout.readline().strip())
+    assert (work / "pin").exists()
+    child.send_signal(sig)
+    assert child.wait(timeout=20) == 128 + sig
+    assert not work.exists()

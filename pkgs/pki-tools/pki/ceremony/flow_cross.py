@@ -21,11 +21,13 @@ from pki.ceremony.secrets import pem
 from pki.ceremony.signer import spki
 
 LIMITATION = """\
-Note: B' (backup root cross-signed by the root) does NOT let clients that trust only the root
-verify intermediates issued under the backup root: the root is pathlen:1, and OpenSSL, Go and
-Python cryptography enforce a trust anchor's pathlen (leaf -> intB -> B' -> root is 2 CAs).
-The real protection against losing the root card is shipping the backup root certs in every
-root-trusting bundle now (docs/pki.md, "Backup roots")."""
+Note: B' (backup root cross-signed by the root) lets clients that trust only the root accept
+certificates the backup root signs DIRECTLY (leaf -> B' -> root fits the root's pathlen:1), so
+the backup card can now issue leaves that every root-trusting client accepts: guard it like the
+root card. B' does NOT carry intermediates issued under the backup root (leaf -> intB -> B' -> root
+is two CAs under a pathlen:1 anchor; OpenSSL, Go and Python cryptography refuse it). To keep those
+working after losing the root card, ship the backup root certs in every root-trusting bundle
+(docs/pki.md, "Backup roots")."""
 
 
 def files(out: Path, index: int) -> dict[str, Path]:
@@ -47,7 +49,7 @@ def cross_errors(crossed: x509.Certificate, subject: x509.Certificate, issuer: x
     return errs
 
 
-def reload_step1(d: Path, state: dict, root: x509.Certificate) -> tuple[x509.Certificate, x509.Certificate]:
+def reload_step1(d: Path, state: dict, root: x509.Certificate, require_attest: bool) -> tuple[x509.Certificate, x509.Certificate]:
     f = files(d, state["index"])
     backup, a_by_b = load_cert(f["backup"]), load_cert(f["a_by_b"])
     errs = []
@@ -59,32 +61,59 @@ def reload_step1(d: Path, state: dict, root: x509.Certificate) -> tuple[x509.Cer
     errs += [f"{f['a_by_b'].name}: {e}" for e in cross_errors(a_by_b, root, backup)]
     if errs:
         raise CeremonyError(f"{d}: " + "; ".join(errs))
-    if state["attested"]:
-        attest = load_cert(d / f"attest-9c-{state['serial']}.pem")
-        verify_attestation(attest, load_cert(d / f"attest-f9-{state['serial']}.pem"), state["serial"], backup.public_key())
+    if require_attest:
+        attest, f9 = (load_cert(d / f"attest-{s}-{state['serial']}.pem") for s in ("9c", "f9"))
+        verify_attestation(attest, f9, state["serial"], backup.public_key())
     return backup, a_by_b
 
 
-def run_cross(ctx: Context, d: Path, root_serial: int, root_path: Path, swapped: bool = False) -> int:
+def check_backup_card(ctx: Context, card, backup: x509.Certificate) -> None:
+    """The backup card itself must hold B: key, certificate, policy and a fresh attestation."""
+    gate_root_card(ctx, card, backup)
+    if not card.attested:
+        ctx.prompter.note("rehearsal: no PIV attestation (SoftHSM)")
+        return
+    attestation = card.attest_9c()
+    if attestation is None:
+        raise CeremonyError(f"card {card.serial}: no attestation for 9c; refusing")
+    verify_attestation(*attestation, card.serial, backup.public_key())
+
+
+def load_state(d: Path, serial: int | None) -> dict:
     try:
         state = json.loads((d / "state.json").read_text())
     except (OSError, ValueError) as e:
         raise CeremonyError(f"{d}: no readable state.json from step 1 ({e})") from None
+    if serial != state["serial"]:
+        raise CeremonyError(f"step 2 needs --serial {state['serial']} (the backup card of step 1), got {serial}")
+    return state
+
+
+def run_cross(ctx: Context, d: Path, root_serial: int, root_path: Path, serial: int | None = None, state: dict | None = None) -> int:
+    """Step 2. `state` comes from step 1 in this process; without it, step 1's directory is re-checked against the backup card."""
+    resumed = state is None
+    state = load_state(d, serial) if resumed else state
     if state["root_serial"] != root_serial:
         raise CeremonyError(f"step 1 named root card {state['root_serial']}, not {root_serial}")
     f = files(d, state["index"])
     if f["b_by_a"].exists():
         raise CeremonyError(f"{f['b_by_a']} exists; step 2 already ran")
     root = load_cert(root_path)
-    backup, a_by_b = reload_step1(d, state, root)
-    card = ctx.cards.card(root_serial)
-    if not swapped:
+    card_b, card = ctx.cards.card(state["serial"]), ctx.cards.card(root_serial)
+    backup, a_by_b = reload_step1(d, state, root, card_b.attested)
+    if resumed:
         try:
-            ctx.swap_to(card, None, "the root card")
+            ctx.swap_to(card_b, None, f"backup card {state['index']}")
+            check_backup_card(ctx, card_b, backup)
+            ctx.swap_to(card, card_b.serial, "the root card")
         except Deferred:
-            ctx.prompter.say(f"Stopped. Resume with: pki-ceremony backup-root --cross-sign-with-root {d} {ctx.resume_flags}")
+            ctx.prompter.say(f"Stopped. Resume with: pki-ceremony backup-root --cross-sign-with-root {d} --serial {serial} {ctx.resume_flags}")
             return 0
     before = gate_root_card(ctx, card, root)
+    ctx.prompter.confirm(
+        f"Root card {root_serial} signs {backup.subject.rfc4514_string()}, key on card {state['serial']},\n"
+        f"  SHA-256 {fingerprint(backup)} (as printed after step 1). Sign it?"
+    )
     pin = ctx.ask_pin(f"PIV PIN of root card {root_serial}")
     card.verify_pin(pin)
     with ctx.signing(card, pin, root.public_key()) as signer:

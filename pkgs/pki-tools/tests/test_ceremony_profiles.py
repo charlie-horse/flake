@@ -3,14 +3,16 @@ import subprocess
 from datetime import timedelta
 
 import pytest
-from ceremony_helpers import BACKUP_SERIAL, CLUSTER_PKI, ROOT_SERIAL, Hierarchy, make_csr, signer
+from ceremony_helpers import BACKUP_SERIAL, CLUSTER_PKI, ROOT_SERIAL, Hierarchy, make_csr, make_leaf, signer
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.x509.oid import ExtendedKeyUsageOID, SignatureAlgorithmOID
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID, SignatureAlgorithmOID
 
 from pki.ceremony import CeremonyError
 from pki.ceremony.checks import (
+    YK_POLICY,
+    YK_SERIAL,
     attestation_errors,
     chain_errors,
     cross_chain_ok,
@@ -18,12 +20,16 @@ from pki.ceremony.checks import (
     intermediates_next_to,
     issued_errors,
     load_cert,
+    yubico_cas,
 )
+from pki.ceremony.flow_sign import csr_item
 from pki.ceremony.profiles import (
     BOOT_LIFE,
+    WORKLOAD_LIFE,
     ROOT_CN,
     backup_cn,
     cross,
+    name,
     csr_errors,
     intermediate,
     lifetime_errors,
@@ -95,6 +101,33 @@ def test_csr_refusals(h, case):
     assert csr_errors(csr)
     with pytest.raises(CeremonyError, match="refusing"):
         intermediate(csr, h.a, h.sa, BOOT_LIFE)
+
+
+def subject_csr(subject: x509.Name):
+    key = ec.generate_private_key(ec.SECP384R1())
+    return x509.CertificateSigningRequestBuilder().subject_name(subject).sign(key, hashes.SHA384())
+
+
+@pytest.mark.parametrize("subject,match", [
+    (x509.Name([]), "no CN"),
+    (x509.Name([x509.NameAttribute(x509.NameOID.ORGANIZATION_NAME, "neurosis")]), "no CN"),
+    (name(ROOT_CN), "the issuer's name"),
+    (name("neurosis Root CA 2027"), "names a root CA"),
+    (name(backup_cn(1, 2026)), "names a root CA"),
+])
+def test_csr_subject_refusals(h, subject, match):
+    csr = subject_csr(subject)
+    assert any(match in e for e in csr_errors(csr, h.a.subject))
+    with pytest.raises(CeremonyError, match=match):
+        intermediate(csr, h.a, h.sa, BOOT_LIFE)
+
+
+def test_external_workload_csr_gets_two_years(tmp_path):
+    path = tmp_path / "w.csr"
+    path.write_bytes(make_csr()[0].public_bytes(serialization.Encoding.PEM))
+    assert csr_item("workload", path).lifetime == WORKLOAD_LIFE
+    assert csr_item("k8s-ca", path).lifetime == csr_item("x", path).lifetime == BOOT_LIFE
+    assert csr_item("workload", path, timedelta(days=9)).lifetime == timedelta(days=9)
 
 
 def test_csr_pathlen0_and_ku_accepted(h):
@@ -202,8 +235,9 @@ def test_pathlen_matrix(h):
 
 
 def test_direction_b_limitation_is_pinned(h):
-    """leaf -> intB -> B' -> A fails: A is pathlen:1 and verifiers enforce the anchor's pathlen."""
+    """leaf -> intB -> B' -> A fails (A is pathlen:1); a leaf B signs directly verifies under A alone."""
     assert not chain_ok(h.a, [h.intb, h.b_by_a], h.leafb)
+    assert chain_ok(h.a, [h.b_by_a], make_leaf(h.b, h.sb.key))
 
 
 @pytest.mark.skipif(not shutil.which("openssl"), reason="openssl not on PATH")
@@ -223,6 +257,7 @@ def test_pathlen_matrix_openssl(h, tmp_path):
     assert not verify(weak.b, [weak.int, weak.a_by_b], weak.leaf)
     assert not verify(narrow.b, [narrow.int, narrow.a_by_b], narrow.leaf)
     assert not verify(h.a, [h.intb, h.b_by_a], h.leafb)
+    assert verify(h.a, [h.b_by_a], make_leaf(h.b, h.sb.key))
 
 
 @needs_real
@@ -232,6 +267,42 @@ def test_real_attestation():
     assert "attested serial 19830800, expected 22616756" in attestation_errors(attest, f9, BACKUP_SERIAL, root.public_key())
     assert "attested key is not the expected key" in attestation_errors(attest, f9, ROOT_SERIAL, signer().public_key())
     assert attestation_errors(attest, root, ROOT_SERIAL, root.public_key())
+
+
+YUBICO_ROOTS = {
+    "CN=Yubico PIV Root CA Serial 263751": "63ece914e54dd87915f34033c85af4c0696ba1512f8add66ced738331207b546",
+    "CN=Yubico Attestation Root 1": "62760c6a6ef91679f454c8902b80fd009825b3f25da90f1fbace2ec6586cd5a8",
+}
+
+
+def test_pinned_yubico_cas():
+    cas = yubico_cas()
+    roots = {c.subject.rfc4514_string(): c.fingerprint(hashes.SHA256()).hex() for c in cas if c.subject == c.issuer}
+    assert roots == YUBICO_ROOTS
+    assert sorted(c.subject.rfc4514_string().removeprefix("CN=Yubico ") for c in cas if c.subject != c.issuer) == [
+        "Attestation Intermediate A 1", "Attestation Intermediate B 1", "PIV Attestation A 1", "PIV Attestation B 1", "PIV Attestation B2 1"
+    ]
+
+
+def test_self_made_f9_is_refused():
+    """A 'Yubico PIV Attestation' f9 made by anyone but Yubico does not anchor an attestation."""
+    key, card = ec.generate_private_key(ec.SECP384R1()), signer()
+    f9_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Yubico PIV Attestation")])
+    start, end = now(), now() + timedelta(days=1)
+
+    def build(subject, issuer, pub, ext=()):
+        b = x509.CertificateBuilder().subject_name(subject).issuer_name(issuer).public_key(pub).serial_number(1)
+        for e in ext:
+            b = b.add_extension(e, False)
+        return b.not_valid_before(start).not_valid_after(end).sign(key, hashes.SHA256())
+
+    yubico_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Yubico PIV Root CA Serial 263751")])
+    fake_root, f9 = build(yubico_name, yubico_name, key.public_key()), build(f9_name, yubico_name, key.public_key())
+    exts = [x509.UnrecognizedExtension(YK_SERIAL, b"\x02\x04" + BACKUP_SERIAL.to_bytes(4, "big")), x509.UnrecognizedExtension(YK_POLICY, bytes([3, 2]))]
+    attest = build(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "YubiKey PIV Attestation 9c")]), f9_name, card.public_key(), exts)
+    assert attestation_errors(attest, f9, BACKUP_SERIAL, card.public_key(), cas=[fake_root]) == []
+    errs = attestation_errors(attest, f9, BACKUP_SERIAL, card.public_key())
+    assert errs == ["CN=Yubico PIV Attestation is not issued by a pinned Yubico PIV attestation CA"]
 
 
 def test_fingerprints_txt(h):

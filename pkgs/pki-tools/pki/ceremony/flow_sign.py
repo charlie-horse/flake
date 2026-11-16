@@ -29,7 +29,7 @@ class Item:
 
 
 def default_life(ca: str) -> timedelta:
-    return WORKLOAD_LIFE if ca == "workload" else BOOT_LIFE
+    return WORKLOAD_LIFE if ca.removesuffix("-ca") == "workload" else BOOT_LIFE
 
 
 def new_item(ca: str, date: str, lifetime: timedelta | None = None) -> Item:
@@ -43,13 +43,13 @@ def csr_item(label: str, path: Path, lifetime: timedelta | None = None) -> Item:
         csr = x509.load_pem_x509_csr(Path(path).read_bytes())
     except (OSError, ValueError) as e:
         raise CeremonyError(f"{path}: not a PEM CSR ({e})") from None
-    return Item(label, csr, lifetime or BOOT_LIFE)
+    return Item(label, csr, lifetime or default_life(label))
 
 
-def preview(ctx: Context, items: list[Item], root: x509.Certificate | None) -> None:
+def preview(ctx: Context, items: list[Item], root: x509.Certificate | None, issuer: x509.Name | None = None) -> None:
     errs = []
     for it in items:
-        errs += [f"{it.label}: {e}" for e in csr_errors(it.csr)]
+        errs += [f"{it.label}: {e}" for e in csr_errors(it.csr, issuer or root.subject)]
         if root is not None:
             errs += [f"{it.label}: {e}" for e in lifetime_errors(root, it.lifetime, ctx.now)]
     if errs:

@@ -81,8 +81,20 @@ def lifetime_errors(root: x509.Certificate, lifetime: timedelta, at=None) -> lis
     return []
 
 
-def csr_errors(csr: x509.CertificateSigningRequest) -> list[str]:
+def subject_errors(subject: x509.Name, issuer: x509.Name | None) -> list[str]:
+    cns = [a.value for a in subject.get_attributes_for_oid(NameOID.COMMON_NAME)]
+    if not cns:
+        return ["subject has no CN"]
+    if subject == issuer:
+        return ["subject is the issuer's name"]
+    if any("root ca" in cn.lower() for cn in cns):
+        return [f"subject CN {cns[0]!r} names a root CA"]
+    return []
+
+
+def csr_errors(csr: x509.CertificateSigningRequest, issuer: x509.Name | None = None) -> list[str]:
     errs = [] if csr.is_signature_valid else ["bad CSR signature"]
+    errs += subject_errors(csr.subject, issuer)
     pub = csr.public_key()
     if not (isinstance(pub, ec.EllipticCurvePublicKey) and isinstance(pub.curve, ec.SECP384R1)):
         errs.append("key is not ECDSA P-384")
@@ -98,7 +110,7 @@ def csr_errors(csr: x509.CertificateSigningRequest) -> list[str]:
 
 def intermediate(csr, root: x509.Certificate, signer: Signer, lifetime: timedelta, at=None) -> x509.Certificate:
     start = at or now()
-    errs = csr_errors(csr) + lifetime_errors(root, lifetime, start)
+    errs = csr_errors(csr, root.subject) + lifetime_errors(root, lifetime, start)
     if errs:
         raise CeremonyError(f"refusing {csr.subject.rfc4514_string()}: " + "; ".join(errs))
     pub = csr.public_key()
