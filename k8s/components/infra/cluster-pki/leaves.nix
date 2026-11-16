@@ -1,5 +1,5 @@
-# Must match what pkgs/cluster-pki/cluster-pki.sh issues (SPECS, node_sans,
-# apiserver_sans, cfssl profiles). modules/cluster/pki-sops.nix checks SPECS.
+# Every node's cluster leaves, by role: issued by cert-manager, exported to
+# secrets/pki/<node>.yaml and installed by modules/cluster/pki-sops.nix.
 { lib, cluster }:
 let
   columns = [

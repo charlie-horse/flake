@@ -5,32 +5,20 @@ from datetime import UTC, datetime, timedelta
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import ExtendedKeyUsageOID
 from cryptography.x509.verification import Criticality, ExtensionPolicy, PolicyBuilder, Store, VerificationError
 
-KEY_USAGES = {
-    "digital_signature": "Digital Signature", "content_commitment": "Non Repudiation",
-    "key_encipherment": "Key Encipherment", "data_encipherment": "Data Encipherment",
-    "key_agreement": "Key Agreement", "key_cert_sign": "Certificate Sign", "crl_sign": "CRL Sign",
-}
 CLIENT_AUTH = "TLS Web Client Authentication"
 EKU_NAMES = {ExtendedKeyUsageOID.SERVER_AUTH: "TLS Web Server Authentication", ExtendedKeyUsageOID.CLIENT_AUTH: CLIENT_AUTH}
-CURVES = {"secp256r1": "P256", "secp384r1": "P384", "secp521r1": "P521"}
 
 
 @dataclass(frozen=True)
 class Summary:
-    subject: frozenset[tuple[str, str]]
     cn: str | None
     dns: frozenset[str]
     ips: frozenset[str]
-    key_usage: frozenset[str]
     ext_key_usage: frozenset[str]
     is_ca: bool
-    key: str
-    issuer: str
-    aki: str | None
     not_before: datetime
     not_after: datetime
     sha256: str
@@ -47,41 +35,17 @@ def _ext(cert: x509.Certificate, cls):
         return None
 
 
-def _key_usage(ku: x509.KeyUsage | None) -> frozenset[str]:
-    if ku is None:
-        return frozenset()
-    names = {name for attr, name in KEY_USAGES.items() if getattr(ku, attr)}
-    if ku.key_agreement:
-        names |= {n for a, n in (("encipher_only", "Encipher Only"), ("decipher_only", "Decipher Only")) if getattr(ku, a)}
-    return frozenset(names)
-
-
-def key_name(cert: x509.Certificate) -> str:
-    k = cert.public_key()
-    if isinstance(k, rsa.RSAPublicKey):
-        return f"RSA-{k.key_size}"
-    if isinstance(k, ec.EllipticCurvePublicKey):
-        return f"EC-{CURVES.get(k.curve.name, k.curve.name)}"
-    return type(k).__name__.removeprefix("_").removesuffix("PublicKey")
-
-
 def summarize(cert: x509.Certificate) -> Summary:
     san = _ext(cert, x509.SubjectAlternativeName)
     eku = _ext(cert, x509.ExtendedKeyUsage)
     bc = _ext(cert, x509.BasicConstraints)
-    aki = _ext(cert, x509.AuthorityKeyIdentifier)
     cns = cert.subject.get_attributes_for_oid(x509.NameOID.COMMON_NAME)
     return Summary(
-        subject=frozenset((a.rfc4514_attribute_name, str(a.value)) for a in cert.subject),
         cn=str(cns[0].value) if cns else None,
         dns=frozenset(san.get_values_for_type(x509.DNSName)) if san else frozenset(),
         ips=frozenset(str(i) for i in san.get_values_for_type(x509.IPAddress)) if san else frozenset(),
-        key_usage=_key_usage(_ext(cert, x509.KeyUsage)),
         ext_key_usage=frozenset(EKU_NAMES.get(o, o.dotted_string) for o in eku) if eku else frozenset(),
         is_ca=bool(bc and bc.ca),
-        key=key_name(cert),
-        issuer=cert.issuer.rfc4514_string(),
-        aki=aki.key_identifier.hex() if aki and aki.key_identifier else None,
         not_before=cert.not_valid_before_utc,
         not_after=cert.not_valid_after_utc,
         sha256=cert.fingerprint(hashes.SHA256()).hex(),

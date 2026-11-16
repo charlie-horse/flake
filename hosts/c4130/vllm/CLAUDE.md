@@ -9,7 +9,7 @@ c4130 is one of the three NixOS 26.05 cluster servers (c4130, r440, m2mini). Its
 - SSH to c4130 over the tailnet uses Tailscale SSH (auth method 'none'). The tailnet ACLs are reviewed and intended by the owner; don't flag it as a security issue.
 - `sudo` is run by the user: write privileged steps as blocks for the user to run on the host; the cloud session runs only read-only checks. Plaintext secrets never go in git or on a command line (sops-encrypted files in `secrets/` and `k8s/secrets/` are the exception). `/etc/nixos` is writable by its owner (charlie, then admin), so `git pull` and building need no sudo; `nixos-rebuild switch` and `journalctl -u vllm` do.
 - etcd and the k8s apiserver also run on this box (3-member etcd with r440 and m2mini). Switch one host at a time and run the etcd health check from `docs/cluster.md` after each; never take two members down together, or etcd loses quorum. `switch` exiting with status 4 means a unit failed (read `systemctl --failed`). Leave etcd alone unless the user asks.
-- The cluster PKI (CA keys) lives only on r440 (`~admin/.local/share/cluster-pki/neurosis`; in `~charlie` until stage 2); never copy it elsewhere or into git.
+- Cluster PKI: CA keys in sops (`k8s/secrets/cluster-pki/`), host certs in `secrets/pki/` → `/run/secrets/pki/`; break-glass is `sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig` (the root CLAUDE.md and `docs/pki.md` have the rest).
 
 ## Deploying
 - Every change, including a model entry or a fork re-lock, goes through this repo: branch → CI → merge. Then on c4130: `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#c4130`. Never run `nix flake update` or edit files inside `/etc/nixos` on the host.

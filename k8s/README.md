@@ -39,7 +39,7 @@ with one line in `components` in `default.nix` (or in `deferred.modules`,
 | `infra/cert-manager` | cert-manager v1.21.3 (namespace `cert-manager`, enforce `restricted`): CRDs, controller and cainjector (1 replica each), webhook (2 replicas, PDB); r440 and m2mini; built-in auto-approver off, **approver-policy** v0.29.0 (CRD `CertificateRequestPolicy`, 1 replica) approves requests instead ([cert-manager](#cert-manager)) | jetstack cert-manager chart v1.21.3, cert-manager-approver-policy chart v0.29.0 |
 | `infra/cert-manager-issuers` (deferred: `deferred/infra/cert-manager-issuers/`) | the workload CA: CA ClusterIssuer **`cluster-ca`** over the Secret `cert-manager/cluster-ca` (workload intermediate under the YubiKey root, from sops: [Secrets](#secrets), [docs/pki-migration-plan.md](../docs/pki-migration-plan.md)); applied by the Kustomization `cert-manager-issuers`; its allow-all CertificateRequestPolicy `cluster-ca` (no CA certs) and `use` of it for cert-manager's controller | hand-written (`components/infra/cert-manager/issuers.nix`) |
 | `infra/cluster-pki` | namespace `cluster-pki` (enforce `restricted`, no pods), where the bootstrap CAs' Secrets go ([docs/pki-migration-plan.md](../docs/pki-migration-plan.md), phase 2) | hand-written (`components/infra/cluster-pki/default.nix`) |
-| `infra/cluster-pki-issuers` (deferred: `deferred/infra/cluster-pki-issuers/`) | CA Issuers `k8s-ca`, `etcd-ca`, `front-proxy-ca` over the Secrets of the same names in `cluster-pki` (NotReady until those exist); one Certificate per cluster-pki leaf per node (`<component>-<node>`, CN/O/SANs/usages as `pkgs/cluster-pki` issues them, from `cluster/definition.nix` via `leaves.nix`); one exact CertificateRequestPolicy per leaf (`cluster-pki-<component>-<node>`) and a Role granting cert-manager's controller `use` of them; applied by the Kustomization `cluster-pki-issuers` | hand-written (`components/infra/cluster-pki/`) |
+| `infra/cluster-pki-issuers` (deferred: `deferred/infra/cluster-pki-issuers/`) | CA Issuers `k8s-ca`, `etcd-ca`, `front-proxy-ca` over the Secrets of the same names in `cluster-pki` (NotReady until those exist); one Certificate per host leaf per node (`<component>-<node>`, CN/O/SANs/usages from `cluster/definition.nix` via `leaves.nix`; the export job brings them to the hosts, [docs/pki.md](../docs/pki.md#where-certs-come-from)); one exact CertificateRequestPolicy per leaf (`cluster-pki-<component>-<node>`) and a Role granting cert-manager's controller `use` of them; applied by the Kustomization `cluster-pki-issuers` | hand-written (`components/infra/cluster-pki/`) |
 | `flux` | Flux v2.9.5: CRDs, source/kustomize/helm/notification controllers; OCIRepository `flux-system-oci` (the signed GHCR artifact) + Kustomization `flux-system`, one Kustomization per deferred component (`cert-manager-issuers`, `cluster-pki-issuers`), Kustomization `secrets` (sops decryption, [Secrets](#secrets)); Receiver `ghcr` (push webhook) | fluxcd-community flux2 chart 2.19.1 |
 | `apps/cloudflared` | the single Cloudflare tunnel `cluster`: cloudflared, one replica per node (hostNetwork), nginx sidecar that sets `X-Forwarded-For` from `Cf-Connecting-Ip`; routes auth/k8s/chat, the Flux webhook host (`/hook/` only) and `cache.neuros.is` (r440's Nix cache, outside the cluster) | hand-written |
 | `apps/authentik` | authentik (SSO/OIDC): one server + one worker per node, PostgreSQL 17 StatefulSet on m2mini (hostPath PV), daily `pg_dump` CronJob to r440, blueprints (one file per OIDC client: `kubernetes`, `headlamp`, `open-webui`). Secrets from `authentik/authentik-secrets`, sops in git ([below](#the-secret-authentikauthentik-secrets)) | authentik chart 2026.8.5 + hand-written |
@@ -202,7 +202,7 @@ branch, with `nix shell nixpkgs#sops nixpkgs#jq nixpkgs#yq-go nixpkgs#openssl`
 2. PR. CI renders it (sorted keys, path, encryption) and runs the secrets
    guard. Merge.
 3. `render.yml` publishes and Flux applies it within seconds; to force or
-   check it (r440 as admin, admin kubeconfig):
+   check it (OIDC, or the break-glass kubeconfig on a node, docs/pki.md):
    `flux reconcile kustomization secrets --with-source`, then
    `flux get kustomizations secrets` (Ready, the new revision).
 4. Restart what reads it (table above): environment variables and files
@@ -269,11 +269,12 @@ never on disk, never copied out. Until it exists the Kustomization
 `secrets` is not Ready and the Secrets keep their last applied values (on
 a fresh cluster: none, so the apps wait in `CreateContainerConfigError`).
 
-On a fresh cluster, after the [Bootstrap](#bootstrap-fresh-cluster-operator-with-an-admin-kubeconfig)
-(r440 as admin), make a new one; the old key went with the old cluster:
+On a fresh cluster, after the [Bootstrap](#bootstrap-fresh-cluster-operator-with-an-admin-kubeconfig),
+make a new one as root on a node; the old key went with the old cluster:
 
 ```sh
-export KUBECONFIG=~/.local/share/cluster-pki/neurosis/admin.kubeconfig
+sudo -i
+export KUBECONFIG=/etc/kubernetes/admin.kubeconfig   # break-glass (docs/pki.md)
 nix shell nixpkgs#age nixpkgs#kubectl -c bash -ec '
   age-keygen 2>/dev/null \
     | kubectl -n flux-system create secret generic sops-age --from-file=age.agekey=/dev/stdin
@@ -294,6 +295,9 @@ without re-wrapping: `secrets` would fail on every file.
 
 Flux can't run before the pod network and DNS do, so the first apply is
 manual; afterwards Flux owns everything in the render, itself included.
+The admin kubeconfig is the break-glass one on any node
+(`/etc/kubernetes/admin.kubeconfig`, root only; docs/pki.md): build as
+admin, run `kubectl` and `flux` as root.
 
 ```sh
 nix build .#k8s.manifests && R=./result
@@ -347,8 +351,9 @@ and one authentik server per node.
 
 The workload PKI (`components/infra/cert-manager/`): TLS for things that run
 **in** the cluster. The cluster's own certificates (etcd, apiservers,
-kubelets, …) are not cert-manager's: they are files from `cluster-pki`, made
-before the cluster exists ([docs/pki.md](../docs/pki.md#bootstrap-pki-and-workload-pki)).
+kubelets, …) come from the Issuers in namespace `cluster-pki`, not from
+`cluster-ca`, and the hosts read them as files delivered through sops, so
+none needs the cluster to start ([docs/pki.md](../docs/pki.md#bootstrap-pki-and-workload-pki)).
 
 | Object | What |
 | --- | --- |
@@ -429,9 +434,9 @@ SSO for the cluster and its apps (`components/apps/authentik/`). It runs
 **in** the cluster but the cluster never depends on it: kubelets, the
 control plane and the admin kubeconfig authenticate with x509 certs, Flux
 and pods with service-account tokens. OIDC is only an extra way for people
-to log in. If authentik is down, only those logins fail; the admin cert
-(`r440:~admin/.local/share/cluster-pki/neurosis/admin.kubeconfig`) is the
-break-glass.
+to log in. If authentik is down, only those logins fail; the break-glass
+is `sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig` on any node
+(docs/pki.md, "Break-glass").
 
 | Piece | Where | Data |
 | --- | --- | --- |

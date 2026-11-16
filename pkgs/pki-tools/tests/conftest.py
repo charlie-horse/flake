@@ -1,7 +1,6 @@
 import ipaddress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 
 import pytest
 from cryptography import x509
@@ -62,7 +61,7 @@ def name(cn: str, orgs=()) -> x509.Name:
 
 
 def leaf_specs(node: str) -> list[LeafSpec]:
-    """The leaves cluster-pki issues for `node` (every node has every role here)."""
+    """The leaves `node` is issued (every node has every role here)."""
     node_dns = (node, f"{node}.{DOMAIN}", "localhost")
     node_ips = ("100.64.0.%d" % (NODES.index(node) + 1), "127.0.0.1")
     api_dns = node_dns + ("kubernetes", "kubernetes.default", "kubernetes.default.svc", "kubernetes.default.svc.cluster.local")
@@ -105,33 +104,20 @@ class Factory:
             .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(issuer_key.public_key()), False)
         )
 
-    def issue(self, ca: CA, spec: LeafSpec, key=None, days: int = 365, eku=None, orgs=None, dns=None):
-        """Issue `spec` from `ca`; key/days/eku/orgs/dns override the spec. Returns (cert, key)."""
-        key = key or rsa.generate_private_key(65537, 2048)
+    def issue(self, ca: CA, spec: LeafSpec, days: int = 365, dns=None):
+        """Issue `spec` from `ca`; days/dns override the spec. Returns (cert, key)."""
+        key = rsa.generate_private_key(65537, 2048)
         dns = spec.dns if dns is None else dns
         b = (
-            self._base(name(spec.cn, spec.orgs if orgs is None else orgs), ca.cert.subject, key, ca.key, days)
+            self._base(name(spec.cn, spec.orgs), ca.cert.subject, key, ca.key, days)
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), True)
             .add_extension(x509.KeyUsage(True, False, True, False, False, False, False, False, False), True)
-            .add_extension(x509.ExtendedKeyUsage([EKUS[e] for e in (eku or PROFILES[spec.profile])]), False)
+            .add_extension(x509.ExtendedKeyUsage([EKUS[e] for e in PROFILES[spec.profile]]), False)
         )
         if dns or spec.ips:
             alt = [x509.DNSName(d) for d in dns] + [x509.IPAddress(ipaddress.ip_address(i)) for i in spec.ips]
             b = b.add_extension(x509.SubjectAlternativeName(alt), False)
         return b.sign(ca.key, hashes.SHA256()), key
-
-    def write_set(self, dest: Path, node: str, style: str) -> dict[str, LeafSpec]:
-        """Write a node's leaves: style "cluster-pki" chains server/peer leaves only, "cert-manager" all."""
-        dest.mkdir(parents=True, exist_ok=True)
-        specs = {s.stem: s for s in leaf_specs(node)}
-        for s in specs.values():
-            ca = self.cas[s.ca]
-            cert, key = self.issue(ca, s)
-            chained = style == "cert-manager" or s.profile != "client"
-            (dest / f"{s.stem}.pem").write_bytes(pem(cert, ca.cert) if chained else pem(cert))
-            (dest / f"{s.stem}-key.pem").write_bytes(key_pem(key))
-        return specs
-
 
     def leaf(self, name: str, node: str, ca: str, cn: str, days: int = 365, dns=None) -> tuple[bytes, bytes]:
         """A Secret-style leaf: (tls.crt with the intermediate appended, tls.key)."""

@@ -106,10 +106,9 @@ the pre-switch check `sopsDecrypt` in `modules/system/sops.nix`.
 
 It prints only `file:line` (or file and key path), never the matching text.
 Secrets in git are sops-encrypted only (sops-nix on the hosts:
-`modules/system/sops.nix`); cluster PKI key material lives under
-`/var/lib/kubernetes/secrets/` on the hosts and the CA key on r440
-(`docs/pki.md`). Every secret, CI's included, is listed in
-`docs/cluster.md`, "Secrets (all of them)".
+`modules/system/sops.nix`), the cluster's host certs and CA keys included
+(`secrets/pki/`, `k8s/secrets/cluster-pki/`; `docs/pki.md`). Every secret,
+CI's included, is listed in `docs/cluster.md`, "Secrets (all of them)".
 
 The guard is diff-only on purpose: older plaintext credentials in
 `hosts/Pestilence` (and in git history) only trip it when those lines are
