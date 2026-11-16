@@ -27,6 +27,8 @@ happened is in [History](#history).
 - **Root key backup: none.** The key is generated on the device and is not
   exportable. Accepted risk: if the key is lost or the card is reset, every
   intermediate must be re-rooted. Mitigations are in [Risks](#risks).
+  Since 2026-11-16 two backup roots on other cards are planned instead
+  (pending a ceremony; pki.md, "Backup roots").
 
 ## Why slot 9c
 
@@ -115,7 +117,8 @@ PIN, PUK or management key (already set for sops), never touches slot 82
 
 0. Plug the card into the machine of your choice and enter
    `nix shell <flake>#ca-ceremony-tools` (includes sops, age-plugin-yubikey
-   and yq-go) and run `ca-ceremony` (`MODE=rehearsal` uses SoftHSM, no card).
+   and yq-go) and run `ca-ceremony` (`MODE=rehearsal` used SoftHSM, no card;
+   today `pki-ceremony root`, pki.md).
    A desktop that runs pcscd (Famine) needs nothing else. A server has no
    pcscd: there, follow the ad-hoc procedure for sops on a server
    (docs/cluster.md, "Secrets (all of them)"), i.e. as admin `sudo -i`,
@@ -380,11 +383,18 @@ separate open TODO.
 
 ### Open follow-ups
 
-- ~~A sign-only mode for `ca-ceremony`.~~ Done 2026-11-16: `pki-ceremony
-  sign` (docs/pki.md, "Signing an intermediate under the existing root")
-  signs only under the root already in slot 9c, after checking the card's
-  serial, its 9c key and cert against `cluster/pki/root-ca.pem`, and every
-  CSR and lifetime. `ceremony.sh` is replaced by `pki-ceremony root`.
+- ~~A sign-only mode for `ca-ceremony`.~~ Done 2026-11-16, pending merge:
+  `pki-ceremony sign` (docs/pki.md, "Signing an intermediate under the
+  existing root") signs only under the root already in slot 9c, after
+  checking the card's serial, its 9c key and cert against
+  `cluster/pki/root-ca.pem`, and every CSR and lifetime. `ceremony.sh` is
+  replaced by `pki-ceremony root`.
+- **Backup roots** (planned, pending a ceremony with two new YubiKeys):
+  `pki-ceremony backup-root` once per card, then the public files and
+  `roots.pem` into `cluster/pki/`, each PUK into `secrets/admin.yaml`, and
+  the cluster.md Secrets rows filled in (docs/pki.md, "Backup roots").
+  Open decision: whether to ship `roots.pem` as the workloads' `ca.crt` or
+  in a trust-manager Bundle.
 
 ### Open questions
 

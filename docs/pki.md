@@ -130,9 +130,9 @@ FIDO2 key `ssh:admin` ([cluster.md, Secrets](cluster.md#secrets-all-of-them),
 | Key | ECDSA P-384, generated on the card, not exportable |
 | Policies | `--pin-policy ALWAYS --touch-policy ALWAYS`: one signature per PIN entry plus a physical touch. Nobody signs without the user, not even root on the host it is plugged into |
 | Root cert | `CN=neurosis Root CA 2026, O=neurosis`, 20 y, `CA:TRUE, pathlen:1`, `keyCertSign, cRLSign`. Also imported into slot 9c |
-| Signs | the four intermediates only: workload (every 2 y), k8s, etcd, front-proxy (every 5 y, or on rotation) |
+| Signs | the four intermediates: workload (every 2 y), k8s, etcd, front-proxy (every 5 y, or on rotation); and once per [backup root](#backup-roots) its cross cert |
 | In git (public) | `cluster/pki/`: the root cert `root-ca.pem`, the slot attestation `attest-9c.pem` (it chains to the card's attestation cert `attest-f9.pem`: the key was generated on the card and cannot be exported), the four intermediate certs `{k8s,etcd,front-proxy,workload}-ca.pem` (the bootstrap ones are also the hosts' trust bundles) and `fingerprints.txt` |
-| Where it runs | ad hoc, on whatever machine the user plugs the card into; nothing about the root depends on a particular host. Tools: `nix shell <flake>#ca-ceremony-tools`. A desktop that runs pcscd (Famine) needs nothing else; on a server, use the ad-hoc procedure for sops on a server (`sudo -i`, then `ca-pcscd &` for a temporary pcscd; [cluster.md, Secrets](cluster.md#secrets-all-of-them)). The user runs every step; a cloud session holds no PIN and runs no sudo |
+| Where it runs | ad hoc, on whatever machine the user plugs the card into; nothing about the root depends on a particular host. Tools: `nix shell <flake>#ca-ceremony-tools`, which has [`pki-ceremony`](#the-ceremony-tool-pki-ceremony). A desktop that runs pcscd (Famine) needs nothing else; on a server, use the ad-hoc procedure for sops on a server (`sudo -i`, then `ca-pcscd &` for a temporary pcscd; [cluster.md, Secrets](cluster.md#secrets-all-of-them)). The user runs every step; a cloud session holds no PIN and runs no sudo |
 
 Rules:
 
@@ -202,14 +202,37 @@ For every subcommand:
 On a server (`sudo -i` first; pki-ceremony starts `ca-pcscd` itself when
 no PC/SC reader sees the card). As root, pass `--repo /etc/nixos`.
 
+```sh
+nix shell /etc/nixos#ca-ceremony-tools
+pki-ceremony root --rehearsal ~/hsm --yes --new k8s --new etcd --new front-proxy --out ~/reh/root
+pki-ceremony sign --rehearsal ~/hsm --yes --root ~/reh/root/root-ca.pem --new workload --out ~/reh/sign
+pki-ceremony backup-root --rehearsal ~/hsm --yes --root ~/reh/root/root-ca.pem --serial <card> --index 1 --out ~/reh/b1
+```
+
+`root` is only for a new root A. On 19830800 it refuses (9c is in use
+since 2026-11-13); after losing that card it would make a new root on a
+new card (`--serial`, `--cn`), and every intermediate must then be
+re-rooted. It always makes the workload intermediate; `--new` adds the
+bootstrap ones (or `--csr-dir` with `<ca>.csr`):
+
+```sh
+pki-ceremony root --repo /etc/nixos --serial <card> --new k8s --new etcd --new front-proxy --out ~/root-$(date +%F)
+```
+
+`sign` and `backup-root`: [below](#signing-an-intermediate-under-the-existing-root)
+and [Backup roots](#backup-roots).
+
 ### Backup roots
 
 Two more YubiKeys each hold a backup root, made with
 `pki-ceremony backup-root --serial <card> --index <n>`:
 `CN=neurosis Backup Root CA <n> 2026, O=neurosis`, P-384 in slot 9c, PIN +
-touch always, attested, 20 y, `pathlen:2`. Planned: backup root 1 and 2 on
-two dedicated cards; read each serial with `ykman list --serials` before
-the ceremony (the tool refuses any other card).
+touch always, attested, 20 y, `pathlen:2`.
+
+**Status (2026-11-16): planned, pending a ceremony with two new
+YubiKeys.** Nothing is in `cluster/pki/` yet. Read each card's serial with
+`ykman list --serials` (only that card plugged in) and pass exactly that
+number as `--serial`; the tool refuses any other card.
 
 | File (public, for `cluster/pki/`) | Issuer | pathlen | Why |
 | --- | --- | --- | --- |
@@ -268,20 +291,48 @@ Go 1.24 and Python cryptography 48 enforce a trust anchor's pathlen:
 - An **intermediate issued under B** does not: leaf → intermediate → B′
   → A is two CAs under A and is rejected.
 
-The protection for intermediates against losing card A is to put each
-`backup-root-<n>.pem` next to `root-ca.pem` in every bundle that trusts
-the root (workloads, a trust-manager bundle) now. The bootstrap side anchors on its own
-intermediates and is unaffected. For OpenSSL clients that trust only B,
+The protection for intermediates against losing card A is to ship
+`roots.pem` (A plus each B, below) wherever the root is trusted, before
+the card is lost; that is still your decision. The bootstrap side anchors
+on its own intermediates and is unaffected. For OpenSSL clients that trust only B,
 an untrusted bundle must list A′ before A's self-signed cert (otherwise
 "self-signed certificate in certificate chain").
 
-After the ceremony, on a branch: the public files into `cluster/pki/`
-(and their lines into `fingerprints.txt`), the PUK into
-`secrets/admin.yaml` (the tool prints the `sops decrypt | sops set
---value-stdin` pipe), and a row per card in
-[cluster.md, Secrets](cluster.md#secrets-all-of-them). If initialising a
-**backup** card goes wrong, the recovery is `ykman --device <that serial>
-piv reset` by hand, and only on that card; never on 19830800.
+Each backup card gets its own PIN (chosen by you, held offline like
+19830800's), a random PUK and a random PIN-protected management key; none
+is ever typed on a command line. The PUK goes into sops
+`secrets/admin.yaml` (admin keys only) as `yubikey-<serial>-piv-puk`: you
+run the pipe the tool prints, from `puk-<serial>.sops.yaml`, so the value
+only passes through sops.
+
+After the ceremony, on a branch:
+
+```sh
+cp ~/backup-1/{backup-root-1.pem,root-ca-by-backup-1.pem,backup-root-1-by-root.pem,attest-9c-<card>.pem,attest-f9-<card>.pem} cluster/pki/
+cat cluster/pki/root-ca.pem cluster/pki/backup-root-{1,2}.pem > cluster/pki/roots.pem
+```
+
+plus each card's lines from its `fingerprints.txt` into
+`cluster/pki/fingerprints.txt`, the PUK as above, and the backup-root rows
+in [cluster.md, Secrets](cluster.md#secrets-all-of-them) filled in. If
+initialising a **backup** card goes wrong, the recovery is
+`ykman --device <that serial> piv reset` by hand, and only on that card;
+never on 19830800.
+
+**Who trusts which root.** Today:
+
+- **Hosts** (etcd, apiserver, kubelet, front-proxy) trust only their own
+  intermediate ([anchor rule](#the-anchor-rule)), no root at all. Backup
+  roots change nothing there, and `roots.pem` never goes into a bootstrap
+  bundle.
+- **Workloads** trust root A only: `ca.crt` of `cert-manager/cluster-ca`
+  (and so of every Secret it issues) is `root-ca.pem`.
+
+`cluster/pki/roots.pem` (A, then each B) is the bundle for clients that
+trust the root. Nothing reads it until you decide to ship it (the
+`ca.crt` of `cluster-ca`, or a trust-manager Bundle). The cross certs are
+not trust anchors: they are intermediates for chain building (OpenSSL
+`-untrusted`, Go's `Intermediates` pool, or appended to a server's chain).
 
 ## Where certs come from
 
