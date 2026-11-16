@@ -241,8 +241,7 @@ sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig -s https://127.0.0.1:
 ```
 
 People use OIDC ([k8s/apps.md](k8s/apps.md#authentik)). The admin
-cert never leaves the node; a cloud session runs no sudo, so it has no
-cluster credentials.
+cert never leaves the node.
 
 ## Offline signing when the cluster is down
 

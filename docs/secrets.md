@@ -56,6 +56,6 @@ idle. The offline backup age key works anywhere without any of this
 | YubiKey PIV PUK (serial 19830800) | sops `yubikey-19830800-piv-puk` in `secrets/admin.yaml` (admin keys only, never on a host) | unblocks the PIV PIN after 3 wrong tries (the PIN guards slot 82 and slot 9c). While the PIN is blocked the card can't decrypt, so read `admin.yaml` with `admin_backup`; random |
 | Desktop YubiKey files | sops `pam-yubikeys` in `secrets/famine.yaml` (`modules/system/yubikey.nix`, off until the key exists). ssh and git signing use the `ssh:admin` key from the agent | pam on Famine; made at Famine with the YubiKey ([hosts/famine.md](hosts/famine.md)) |
 | Pestilence Transmission `rpc-password` | **plaintext in git**, `hosts/Pestilence/servarr.nix` (archived host; excluded from the format check) | Transmission on Pestilence; rotate and move to sops before restoring the host |
-| Cloud-session secrets | env vars of the Claude Code cloud environment: `TAIL_AUTH_KEY` only (no sudo password, no YubiKey PIN) | joins the session to the tailnet; environment settings |
+| Cloud-session secrets | env vars of the Claude Code cloud environment: `TAIL_AUTH_KEY`, `SUDO_PASSWORD`, `YK_PIN` | tailnet join, sudo on the hosts, YubiKey PIN; environment settings |
 
 None of the plaintext secrets may go into git, the Nix store or a command line (the Pestilence `rpc-password` is the one exception, above); in git they exist only sops-encrypted (`secrets/`, `k8s/secrets/`).

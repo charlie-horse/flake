@@ -31,10 +31,13 @@ in
     users.admin = {
       isNormalUser = true;
       description = "Local administrator";
+      group = "admin";
       extraGroups = [ "wheel" ];
       # hashedPasswordFile: custom.sopsPasswords.admin (above).
       openssh.authorizedKeys.keys = adminAuthorizedKeys;
     };
+
+    groups.admin = { };
 
     # Only applied to an existing root when users are immutable.
     users.root.hashedPassword = lib.mkIf (!config.users.mutableUsers) "!";

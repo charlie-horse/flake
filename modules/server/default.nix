@@ -39,15 +39,15 @@
     pkgs.cloudflared
   ];
 
-  # /etc/nixos (the git checkout of this flake) belongs to the account that
-  # pulls it (admin; charlie with legacyCharlie on): git refuses a
+  # Every file and folder in /etc/nixos (the git checkout of this flake) is
+  # owned by admin:admin (charlie with legacyCharlie on): git refuses a
   # repository owned by another user ("dubious ownership"). `Z` re-owns the
   # whole tree (symlinks themselves, never their targets; modes untouched,
   # `-`) at every boot and every switch, which also repairs root-owned files
   # left by a `sudo git ...`. Does nothing if /etc/nixos is missing.
   systemd.tmpfiles.settings."10-etc-nixos"."/etc/nixos".Z = {
     user = if config.custom.server.legacyCharlie.enable then "charlie" else "admin";
-    group = "root";
+    group = if config.custom.server.legacyCharlie.enable then "root" else "admin";
     mode = "-";
   };
 }

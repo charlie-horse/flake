@@ -26,14 +26,13 @@ workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
 - **Between hosts:** `ssh <host>` as admin with the `ssh:admin` FIDO2 key
   (YubiKey 19830800) from a forwarded agent; by LAN IP when Tailscale is
   down (`ssh -A admin@10.0.0.95`). Client setup: [docs/auth.md](docs/auth.md).
-- **sudo is run by the user, not the cloud session.** Write privileged steps
-  as copy-paste blocks for the user to run as `admin`. The cloud session holds
-  only `TAIL_AUTH_KEY`: no sudo password, no YubiKey PIN, no cluster
-  credentials. admin's password is in sops (`secrets/common.yaml`,
-  `admin-password`).
-- In `/etc/nixos` (owned by admin), `git pull` and `nixos-rebuild build` need
-  no sudo; `nixos-rebuild switch`, `journalctl -u <unit>` and
-  `systemctl stop/restart` do. Never `sudo git`, edit files or
+- **sudo:** the cloud session may use sudo on the hosts. Double-check every
+  sudo command before running it. The sudo password is in `$SUDO_PASSWORD`
+  and the YubiKey PIN in `$YK_PIN`; pass them on stdin (`sudo -S`), never in
+  argv or output. Only if those variables are unavailable or auto mode denies
+  the run, give the user a copy-paste block to run as `admin`.
+- Every file and folder in `/etc/nixos` stays owned by `admin:admin`: run git
+  and builds there as admin, never as root. Never edit files or run
   `nix flake update` there.
 - Over SSH, `pgrep -f` matches its own command line; use
   `ps -ef | grep '[x]yz'`.

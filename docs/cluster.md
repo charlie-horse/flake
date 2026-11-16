@@ -141,7 +141,7 @@ with a `/readyz` health check; the same local `/readyz` check then tests
 4. c4130: GC first (`sudo nix-env -p /nix/var/nix/profiles/system --delete-generations +2 && sudo nix-collect-garbage`;
    [hosts/c4130.md](hosts/c4130.md)).
 
-`/etc/nixos` belongs to `admin:root`: a tmpfiles `Z` rule
+`/etc/nixos` belongs to `admin:admin`: a tmpfiles `Z` rule
 (`modules/server/default.nix`) re-owns the tree at every boot and switch, so
 `git pull` and builds need no sudo. Never edit files in `/etc/nixos` or run
 `nix flake update` on a host, and never `sudo git` there (root-owned files
