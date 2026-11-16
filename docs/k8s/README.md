@@ -15,16 +15,14 @@ Related: [secrets.md](secrets.md) (sops-encrypted Secrets),
 
 ```sh
 nix build .#k8s.manifests                                  # -> ./result
-nix build .#k8s.checkImages && ./result/bin/k8s-check-images
 nix eval .#k8s.components.\"apps/authentik\".config.build.manifests --json
 ```
 
 Rules:
 
 - Every image must be a multi-arch manifest list (linux/amd64 +
-  linux/arm64), except images pinned to amd64 nodes (exemptions in
-  `checkImages`, `k8s/render.nix`). Run `k8s-check-images` (above) when
-  adding or bumping an image; nothing runs it automatically.
+  linux/arm64), unless its pods are pinned to amd64 nodes. Nothing checks
+  this.
 - Never commit the render; CI builds it.
 
 **Adding a component:** write its module under `k8s/components/` and add

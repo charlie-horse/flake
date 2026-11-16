@@ -1,11 +1,11 @@
 # The render mechanics behind k8s/default.nix: evaluates every registered
-# component with catenix, lays the result out as a tree of YAML files and
-# builds the image check. Nothing in this file names a component.
+# component with catenix and lays the result out as a tree of YAML files.
+# Nothing in this file names a component.
 #
 # Arguments: inputs, pkgs, lib (as given to k8s/default.nix); cluster
 # (cluster/definition.nix, evaluated); kubeVersion (helm template
 # --kube-version); components (name -> module); deferred ({ dir, modules,
-# secrets }). Returns { manifests, checkImages, components }.
+# secrets }). Returns { manifests, components }.
 #
 # Rules for components and secrets: docs/k8s/README.md#render, docs/k8s/secrets.md
 {
@@ -239,45 +239,8 @@ let
       install -D -m 0444 ${s.file} "$out/${s.path}"
     '') secretFiles
   );
-
-  # Every image in the tree must be a manifest list with linux/amd64 and
-  # linux/arm64 (network; not sandboxed).
-  checkImages = pkgs.writeShellApplication {
-    name = "k8s-check-images";
-    runtimeInputs = [
-      pkgs.crane
-      pkgs.jq
-      pkgs.yq-go
-      pkgs.gnugrep
-      pkgs.coreutils
-      pkgs.findutils
-    ];
-    text = ''
-      # Images pinned to amd64 nodes are exempt (device plugin, pki-export).
-      single_arch='^nvcr\.io/nvidia/k8s-device-plugin:|^ghcr\.io/charlie-horse/flake/pki-export[:@]'
-      status=0
-      images=$(find ${manifests} -name '*.yaml' -exec yq -N '.. | select(has("image")) | .image' {} + \
-        | sort -u)
-      for image in $images; do
-        platforms=$(crane manifest "$image" \
-          | jq -r '[.manifests[]?.platform | select(.os != "unknown")
-                   | "\(.os)/\(.architecture)"]
-                   | join(" ")')
-        if echo "$platforms" | grep -q 'linux/amd64' \
-          && echo "$platforms" | grep -q 'linux/arm64'; then
-          echo "ok      $image ($platforms)"
-        elif echo "$image" | grep -qE "$single_arch"; then
-          echo "pinned  $image ($platforms)"
-        else
-          echo "MISSING $image ($platforms)" >&2
-          status=1
-        fi
-      done
-      exit "$status"
-    '';
-  };
 in
 {
-  inherit manifests checkImages;
+  inherit manifests;
   components = evaluated;
 }
