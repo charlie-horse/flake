@@ -84,6 +84,8 @@ in
   # host (modules/system/nix-cache.nix; netrc: sops key nix-cache-netrc),
   # not over the link. docs/build-cache.md#binary-cache.
   custom.nixCache.enable = true;
+  # CUDA redist packages (nvcc, cuBLAS, ...) from nixpkgs' CUDA cache.
+  custom.nixCache.cuda.enable = true;
   # Root's own ssh (e.g. `nix store ping --store ssh-ng://nixremote@10.25.0.2`)
   # needs r440's host key too; the daemon uses publicHostKey above. The key
   # is r440's entry from modules/programs/ssh.nix (cluster/definition.nix,

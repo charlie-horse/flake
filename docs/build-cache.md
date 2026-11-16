@@ -17,6 +17,11 @@ secrets are listed in [secrets.md](secrets.md).
 
 ## Binary cache
 
+- Substituters are ordered by `?priority=` (lower first): public caches
+  first, r440's cache last. A new public cache gets a priority below
+  `custom.nixCache.priority`, never equal to it.
+- Every host that builds or runs CUDA code, r440 included, sets
+  `custom.nixCache.cuda.enable`.
 - Never add a Cloudflare "Cache Everything" page rule or a Cache Rule
   covering the cache host.
 - If requests get 403/503 challenge pages, turn off Browser Integrity Check
