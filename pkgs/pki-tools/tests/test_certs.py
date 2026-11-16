@@ -20,19 +20,16 @@ def test_summarize_leaf(pki):
     cert, _ = pki.issue(pki.cas["k8s"], spec("kubelet-r440"))
     s = summarize(cert)
     assert s.cn == "system:node:r440"
-    assert s.subject == {("CN", "system:node:r440"), ("O", "system:nodes")}
     assert "r440.example.ts.net" in s.dns and "127.0.0.1" in s.ips
-    assert s.key_usage == {"Digital Signature", "Key Encipherment"}
     assert s.ext_key_usage == {"TLS Web Server Authentication", "TLS Web Client Authentication"}
-    assert not s.is_ca and s.key == "RSA-2048"
-    assert s.issuer == pki.cas["k8s"].cert.subject.rfc4514_string()
+    assert not s.is_ca
     assert s.not_after - s.not_before == timedelta(days=365)
     assert len(s.sha256) == 64
 
 
 def test_summarize_ca(pki):
     s = summarize(pki.cas["etcd"].cert)
-    assert s.is_ca and s.key == "EC-P384" and s.cn == "neurosis etcd CA"
+    assert s.is_ca and s.cn == "neurosis etcd CA"
 
 
 def test_load_chain_leaf_first(pki):

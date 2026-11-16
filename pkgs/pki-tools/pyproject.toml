@@ -10,7 +10,6 @@ dependencies = ["cryptography", "pyyaml"]
 
 [project.scripts]
 pki-export = "pki.cli_export:main"
-pki-diff = "pki.cli_diff:main"
 
 [tool.setuptools]
 packages = ["pki"]
