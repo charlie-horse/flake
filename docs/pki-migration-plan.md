@@ -1,9 +1,8 @@
 # Plan: YubiKey root CA, intermediates, cert-manager (2026-11-13)
 
-Status (2026-11-13): **A–F done; the ceremony ran on 2026-11-13.** G goes
-live when the PR with `k8s/secrets/cert-manager/cluster-ca.sops.yaml`
-merges. H is next. Current state is in [pki.md](pki.md); what happened is
-in [History](#history).
+Status (2026-11-16): **complete.** Phase 1 (A–H) was done on 2026-11-13,
+phase 2 (P1–P9) on 2026-11-16. Current state is in [pki.md](pki.md); what
+happened is in [History](#history).
 
 ## Decisions (made 2026-11-13)
 
@@ -84,15 +83,15 @@ branch, CI run and PR each.
 
 ```
 A tools (done) ──────┐
-B cluster-pki (done) ┼─► E rehearsal (done) ─► F ceremony (done) ─► G workload cutover (at merge)
-C cert-manager (done)┤                                          └─► H front-proxy → k8s → etcd (next)
+B cluster-pki (done) ┼─► E rehearsal (done) ─► F ceremony (done) ─► G workload cutover (done)
+C cert-manager (done)┤                                          └─► H front-proxy → k8s → etcd (done)
 D docs (done) ───────┘
 ```
 
 | Node | What | Output |
 | --- | --- | --- |
 | **A** tools | **Done, no host change.** Flake package `ca-ceremony-tools`: `yubikey-manager`, `yubico-piv-tool` (ykcs11), `step-cli` + `step-kms-plugin`, `openssl` + `pkcs11-provider` (wrapper `ca-openssl`; unused, it crashed in E), and `ca-pcscd`, a temporary pcscd for hosts that don't run one. Used through `nix shell <flake>#ca-ceremony-tools`; nothing is installed on any host, so no switch. | Package |
-| **B** cluster-pki | **Done.** New modes: `--ca-csr <ca>` (generate the intermediate key and CSR in `ca/<ca>/next/`; don't self-sign) and `--ca-import <ca> <cert>` (check that the cert matches the key, `pathlen:0`, and that it chains to `cluster/pki/root-ca.pem`). Wire into `--rotate-ca … --phase begin`. Leaves get chain files. Trust bundles hold the intermediate only, with the anchor check described above. Also fix the `--out` default to XDG and the `.gitignore` patterns (open TODOs). | PR |
+| **B** cluster-pki | **Done.** New modes: `--ca-csr <ca>` (generate the intermediate key and CSR in `ca/<ca>/next/`; don't self-sign) and `--ca-import <ca> <cert>` (check that the cert matches the key, `pathlen:0`, and that it chains to `cluster/pki/root-ca.pem`). Wire into the rotation's `begin` phase. Leaves get chain files. Trust bundles hold the intermediate only, with the anchor check described above. Also fix the `--out` default to XDG and the `.gitignore` patterns (open TODOs). | PR |
 | **C** cert-manager | **Done** (merged in #43; the old Certificate was confirmed gone from the cluster on 2026-11-13, before the ceremony). `issuers.nix`: drop the `selfsigned` → `cluster-ca` root Certificate. `cluster-ca` ClusterIssuer reads the Secret `cert-manager/cluster-ca` (`tls.crt` = intermediate + root, `tls.key`, `ca.crt` = root), which comes from sops (G). Optional: trust-manager `Bundle` that distributes the root to namespaces. Nothing requests from `cluster-ca` today, so the swap has no consumers to break. | Merge before G (see G). Until then the issuer stays Ready on the old self-signed Secret. trust-manager deferred until `cluster/pki/root-ca.pem` exists. |
 | **D** docs | **Done.** `pki.md`: one root and two branches, the anchor rule, a YubiKey root CA section. `cluster.md` Secrets table: the root key as a second PIV use on the existing admin YubiKey rows, the workload intermediate as a sops Secret, and the root cert in git (public). | PR |
 | **E** rehearsal | **Done (software rehearsal):** the ceremony commands ran against a SoftHSM key through step-kms-plugin. All PASS: Go TLS and etcd 3.7.3 accept a client cert when the trust file holds only the k8s intermediate; they reject a workload-signed `system:masters` cert with that same trust file; they **accept** it if the root is in the trust file (so the anchor rule is needed); a server cert file with leaf + intermediate verifies against the root alone. The openssl/pkcs11 fallback crashed and is dropped. | Ceremony commands and gotchas (F) |
@@ -242,9 +241,20 @@ day with `ykman piv access change-pin` (only the PIN changes; the keys in
 slots 9c and 82 are unaffected), and the plaintext PIN and sudo-password
 files on c4130 were deleted.
 
+**2026-11-16: phase 2 cutover (P8) and retirement (P9).** P8: m2mini
+(#50), c4130 (#51) and r440 (#53) switched to `certSource = "sops"`, one at
+a time; etcd health, `readyz` and `systemctl --failed` green after each.
+P9 removed `certSource`, `cluster-pki` and `cluster-pki-deploy`
+(`pkgs/cluster-pki`), `pki-diff` and the `/var/lib/kubernetes/secrets`
+path, and added `/etc/kubernetes/admin.kubeconfig` (root only, the node's
+`admin-<node>` cert, the VIP) on every node. After merge the user shreds
+`/var/lib/kubernetes/secrets/` on each node and
+`r440:~admin/.local/share/cluster-pki/neurosis` (its `admin.kubeconfig`
+included). No archive.
+
 ## Phase 2: host certs from in-cluster issuers, delivered by sops (planned 2026-11-13)
 
-Status: **P1–P5 built in PR #45; P6–P9 pending.** Phase 1 is complete: the root, all four
+Status: **done 2026-11-16 (P1–P9).** Phase 1 is complete: the root, all four
 intermediates and the rotations of the front-proxy, k8s and etcd CAs (H) were
 done on 2026-11-13.
 
@@ -314,10 +324,10 @@ value must be `ENC[`.
 3. **The CA keys enter the cluster through sops.** They go in
    `k8s/secrets/cluster-pki/{k8s,etcd,front-proxy}-ca.sops.yaml` (admins +
    `&flux`), applied by the Flux Kustomization `secrets`. That file is also
-   the **break-glass backup**: an admin key can decrypt it on r440 and sign
-   leaves offline (`cluster-pki` or `step`) while the cluster is down. After
-   the cutover, the plaintext copies in `r440:~admin/.local/share/cluster-pki`
-   are retired.
+   the **break-glass backup**: an admin key can decrypt it and sign leaves
+   offline with `step` while the cluster is down (pki.md, "Offline signing
+   when the cluster is down"). The plaintext copies on r440 are shredded
+   after P9.
 4. **etcd snapshots now contain the bootstrap CA keys.** Treat every snapshot
    (`/var/lib/etcd-snap-*.db`) as cluster-admin material.
 5. **The export job reads only the leaves.** Its Role is `get` on the 39
@@ -339,14 +349,11 @@ P5 cert diff tool ──┘
 
 | Node | What | Output |
 | --- | --- | --- |
-| **P1–P5** | **Done in PR #45.** P1: namespace `cluster-pki`, three CA `Issuer`s, approver-policy with one `CertificateRequestPolicy` per leaf, one `Certificate` per leaf from `cluster/definition.nix`. P2: `pki-export` image and daily CronJob (`get` on the 39 leaf Secrets only); validates each node, then pushes `pki-renew/<date>` and opens a PR when fingerprints differ from `main`. P3: per-node `certSource = "files" \| "sops"`, sops-nix paths under `/run/secrets/pki/` with `restartUnits`. P4: `.sops.yaml` rules for `secrets/pki/<host>.yaml` (`encrypted_regex: -key\.pem$`) and `k8s/secrets/cluster-pki/`, plus the secrets guard rule for `secrets/pki/`. P5: `pki-diff`, which compares cert-manager's leaves with cluster-pki's. | PR #45 |
+| **P1–P5** | **Done in PR #45.** P1: namespace `cluster-pki`, three CA `Issuer`s, approver-policy with one `CertificateRequestPolicy` per leaf, one `Certificate` per leaf from `cluster/definition.nix`. P2: `pki-export` image and daily CronJob (`get` on the 39 leaf Secrets only); validates each node, then pushes `pki-renew/<date>` and opens a PR when fingerprints differ from `main`. P3: per-node `certSource = "files" \| "sops"`, sops-nix paths under `/run/secrets/pki/` with `restartUnits`. P4: `.sops.yaml` rules for `secrets/pki/<host>.yaml` (`encrypted_regex: -key\.pem$`) and `k8s/secrets/cluster-pki/`, plus the secrets guard rule for `secrets/pki/`. P5: a diff tool comparing cert-manager's leaves with cluster-pki's (removed in P9). | PR #45 |
 | **P6** keys into the cluster | **Done 2026-11-13** (live at merge). Encrypted on r440 straight from `ca/<ca>/current/` (pipe into sops, public recipients only, no YubiKey needed) into `k8s/secrets/cluster-pki/{k8s,etcd,front-proxy}-ca.sops.yaml`, after checking each cert matches `cluster/pki/` and its key. Flux creates the Secrets and the Issuers go Ready. | Issuers Ready |
-| **P7** dry run | cert-manager issues all leaves, and the export job opens its first PR. Run the diff tool against cluster-pki's current leaves: everything must match except serials and validity. Merge it. No host switches yet (`certSource` is still `"files"`). | Certs in git |
-| **P8** cutover | One host at a time (m2mini → c4130 → r440): set `certSource = "sops"`, PR, merge, `git pull && switch`, etcd health check, `readyz`. It's a **leaf swap under the same intermediates**, so no trust change and no bundle change: lower risk than phase 1's rotations. Roll back by switching the host back to `"files"` (the old files stay in `/var/lib/kubernetes/secrets/` until P9). | All hosts on sops |
-| **P9** retire | Remove `certSource = "files"` and `cluster-pki deploy`. Shred the leaves in `/var/lib/kubernetes/secrets/`. Move the r440 PKI directory to an offline archive (the keys are in sops now). Update `docs/pki.md` and the Secrets table in `docs/cluster.md`. | PR |
-
-P6–P8 need you: one sops step and three host switches, about 1 h in
-total.
+| **P7** dry run | **Done** (the export job's first PR, #48). cert-manager issues all leaves, and the export job opens its first PR. Run the diff tool against cluster-pki's current leaves: everything must match except serials and validity. Merge it. No host switches yet (`certSource` is still `"files"`). | Certs in git |
+| **P8** cutover | **Done 2026-11-16:** m2mini #50, c4130 #51, r440 #53; all checks green. One host at a time: set `certSource = "sops"`, PR, merge, `git pull && switch`, etcd health check, `readyz`. A **leaf swap under the same intermediates**, so no trust change and no bundle change. | All hosts on sops |
+| **P9** retire | **Done in this PR** ([History](#history)): the per-host cert source, the operator-side tool with its deploy and diff commands, and the old on-host secrets path are gone from the code; every node has a root-only break-glass kubeconfig; docs are at the post-P9 state. The user then shreds the old leaves on each node and the r440 PKI directory. No archive: everything still needed is in sops or git. | PR |
 
 ### Renewal, once live
 
@@ -357,11 +364,20 @@ starts failing once a cert on `main` is within 14 days of expiry: a failed
 `pki-export` run is the signal. Leaf-expiry monitoring beyond that is a
 separate open TODO.
 
+### Open follow-ups
+
+- **A sign-only mode for `ca-ceremony`.** `ceremony.sh` is the first-time
+  root ceremony: it refuses to run while slot 9c holds a key and always
+  creates a new root. Renewing the workload intermediate (before
+  2028-11-12) or a bootstrap CA rotation needs a mode that only signs a CSR
+  with the existing root. Until then: `step certificate sign` by hand
+  (pki.md, "Signing an intermediate under the existing root").
+
 ### Open questions
 
 - Should the kubelet client cert use the kubelet's own rotation (CSR API)
   instead? No: that needs the k8s CA key on every control-plane node in the
   controller-manager. Keep one path.
 - When does the workload `cluster-ca` (expires 2028-11-12) get renewed? It
-  stays a root signature at a ceremony (`docs/pki-migration-plan.md`, step
-  F); phase 2 doesn't change that.
+  stays a root signature with the YubiKey (see the follow-up above); phase 2
+  doesn't change that.

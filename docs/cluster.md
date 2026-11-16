@@ -32,7 +32,9 @@ Tailscale (MagicDNS names) and the LAN (10.0.0.0/16).
   node); authentik (one server + worker per node); Headlamp; Open WebUI (on
   r440).
 - **Certificates:** the cluster's own (etcd, apiservers, kubelets, …) are
-  files from `cluster-pki` on r440; workload TLS comes from cert-manager
+  issued by cert-manager in namespace `cluster-pki` and reach the hosts as
+  sops files (`secrets/pki/<node>.yaml` → `/run/secrets/pki/`); workload TLS
+  comes from cert-manager
   (`issuerRef: {kind: ClusterIssuer, name: cluster-ca}`). Why two:
   [pki.md](pki.md#bootstrap-pki-and-workload-pki).
 
@@ -58,7 +60,7 @@ Never edit files in `/etc/nixos` or run `nix flake update` on a host.
 ### etcd health check (any member, in bash)
 
 ```sh
-D=/var/lib/kubernetes/secrets; n=$(hostname); C=$D/etcd-server-$n
+D=/run/secrets/pki; n=$(hostname); C=$D/etcd-server-$n
 E="sudo etcdctl --endpoints=https://r440:2379,https://c4130:2379,https://m2mini:2379 \
    --cacert=$D/etcd-ca.pem --cert=$C.pem --key=$C-key.pem"
 $E endpoint health --cluster -w table     # 3 x true
@@ -77,14 +79,15 @@ sudo journalctl -u etcd --since -5min | grep -iE 'x509|tls|handshake'   # empty
    artifact and pings Flux's webhook; Flux applies it within seconds
    (docs/ci.md, k8s/README.md).
 
-Check or force it (r440 as admin, admin kubeconfig; as charlie with `~charlie/…`
-until stage 2 of [Removing charlie from the servers](#removing-charlie-from-the-servers-2026-11)):
+Check or force it, with your OIDC kubeconfig or, on a node, the
+break-glass one ([Access](#access)):
 
 ```sh
-export KUBECONFIG=~/.local/share/cluster-pki/neurosis/admin.kubeconfig
-nix shell nixpkgs#fluxcd -c flux get sources oci                    # Ready, SourceVerified
-nix shell nixpkgs#fluxcd -c flux reconcile kustomization flux-system --with-source
-nix shell nixpkgs#fluxcd -c flux get kustomizations                 # flux-system, cert-manager-issuers Ready
+F="nix shell nixpkgs#fluxcd -c flux"                                # OIDC
+F="sudo $(nix build --no-link --print-out-paths nixpkgs#fluxcd)/bin/flux --kubeconfig /etc/kubernetes/admin.kubeconfig"   # break-glass
+$F get sources oci                    # Ready, SourceVerified
+$F reconcile kustomization flux-system --with-source
+$F get kustomizations                 # flux-system, cert-manager-issuers Ready
 ```
 
 Rendering on r440 needs a workaround (Nix's git fetcher fails on
@@ -98,8 +101,9 @@ nix build --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s.manife
 
 ## Access
 
-- **Admin (break-glass):** `r440:~admin/.local/share/cluster-pki/neurosis/admin.kubeconfig`
-  (x509, never copied off r440; in `~charlie` until stage 2 of charlie's removal).
+- **Admin (break-glass):** on any node,
+  `sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig …` (root
+  only; the node's `admin-<node>` cert and the VIP; docs/pki.md, "Break-glass").
 - **People:** OIDC through authentik (group `cluster-admins` →
   `cluster-admin`): kubectl with kubelogin, or Headlamp at
   `https://k8s.neuros.is` (k8s/README.md).
@@ -230,19 +234,14 @@ kubectl --server=https://kube-api.leaffish-monster.ts.net:6443 get --raw /readyz
 Rollout (after the PR is merged):
 
 1. Policy and service definition (above).
-2. New apiserver leaves on r440, as admin (the SAN list changed):
-   `cd /etc/nixos && git pull && nix run /etc/nixos#cluster-pki -- --out ~/.local/share/cluster-pki/neurosis`
-   (reports 3 apiserver leaves issued), then one node at a time
-   `nix run /etc/nixos#cluster-pki-deploy -- <node> --out ~/.local/share/cluster-pki/neurosis`,
-   paste the printed `sudo install` commands, `sudo systemctl restart kube-apiserver`
-   and wait for `curl -skf https://127.0.0.1:6443/readyz` (`-f`: a
-   not-ready apiserver still answers, with HTTP 500) before the next node.
-   For r440 itself `cluster-pki-deploy` fails (it cannot ssh to itself):
-   `sudo install` the changed pair straight from the PKI dir instead. The
-   switch below does not restart the apiserver.
+2. New apiserver leaves (the SAN list changed): cert-manager reissues the
+   `apiserver-<node>` Certificates at merge; run the export job
+   (docs/pki.md, "Export job") and merge its PR.
 3. Switch the hosts one at a time (Changing a host, above): c4130 GC first
    and outside 22:00–05:55 EST; after each, `systemctl --failed`, the etcd
-   check, `systemctl status tailscale-service-kube-api` and
+   check, `curl -skf https://127.0.0.1:6443/readyz` (`-f`: a not-ready
+   apiserver still answers, with HTTP 500; the new leaf restarts it),
+   `systemctl status tailscale-service-kube-api` and
    `tailscale debug prefs` (unchanged apart from AdvertiseServices).
 4. kubeconfigs: `kubectl config set-cluster neurosis --server=https://kube-api.leaffish-monster.ts.net:6443`
    (the CA stays the same).
@@ -419,11 +418,11 @@ idle. The offline backup age key works anywhere without any of this
 
 | Secret | Where | Made by |
 | --- | --- | --- |
-| Cluster PKI (CA keys + leaves) | `r440:~admin/.local/share/cluster-pki/neurosis` (back it up; in `~charlie` until stage 2 of [Removing charlie from the servers](#removing-charlie-from-the-servers-2026-11)) | `cluster-pki` (docs/pki.md) |
-| Node keys and certs | `/var/lib/kubernetes/secrets/` on each node | `cluster-pki deploy` |
+| Host certs and keys (`<component>-<node>.pem` / `-key.pem`: etcd, apiserver, kubelet, admin, …; 1 y, renewed 30 days before expiry) | `secrets/pki/<node>.yaml` in git: certs plaintext, `-key.pem` values sops-encrypted (admins + that host) → `/run/secrets/pki/` on the node (sops-nix; keys 0600, owned by their unit's user) | cert-manager Issuers in namespace `cluster-pki`; the CronJob `cluster-pki/pki-export` opens the PR, you merge and switch (docs/pki.md, "Where certs come from") |
+| Break-glass kubeconfig `/etc/kubernetes/admin.kubeconfig` (`cluster-admin`, `O=system:masters`, server the VIP) | every node, root only; uses the node's `admin-<node>` cert and key from `/run/secrets/pki/`, so it renews with the admin cert. Never copied off the node | NixOS (`modules/cluster`); `sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig …` (docs/pki.md, "Break-glass") |
 | `cert-manager/cluster-ca` (workload intermediate CA key, `tls.crt` = intermediate + root, `tls.key`, `ca.crt` = root; expires 2028-11-12) | sops file `k8s/secrets/cert-manager/cluster-ca.sops.yaml` in git (admins + `&flux`) → Kubernetes Secret, applied by the Flux Kustomization `secrets` (owns it: prune, hand edits reverted within 10 min). It replaces cert-manager's old self-signed root once the PR that adds it merges | made at the ceremony (2026-11-13): key made in tmpfs, signed by the YubiKey root, encrypted straight from tmpfs with `sops` into that path, PR, merge; then the tmpfs is shredded (docs/pki-migration-plan.md, nodes F and G). Renewal (every 2 y) is the same, by hand |
-| `cluster-pki/{k8s,etcd,front-proxy}-ca` (bootstrap intermediate CA keys: `tls.crt` = intermediate, `tls.key`, `ca.crt` = root; expire 2031-11-13; cluster-admin equivalent) | sops files `k8s/secrets/cluster-pki/{k8s,etcd,front-proxy}-ca.sops.yaml` in git (admins + `&flux`) → Kubernetes Secrets in `cluster-pki`, applied by the Flux Kustomization `secrets`. Also the offline break-glass copy: an admin key decrypts them on r440 to sign leaves while the cluster is down. Same keys as `ca/<ca>/current/` in the r440 PKI directory until phase 2's P9 | encrypted on r440 straight from the PKI directory, 2026-11-13 (phase 2, P6; docs/pki-migration-plan.md) |
-| Service-account keypair `sa.key` / `sa.pub` (signs and verifies every ServiceAccount token; the same on all control planes) | sops `sa.key`, `sa.pub` in `secrets/cluster-sa.yaml` (admins + c4130, r440, m2mini) → `/run/secrets/pki/sa.{key,pub}` on hosts with `certSource = "sops"`; until then `/var/lib/kubernetes/secrets/sa.{key,pub}` from `cluster-pki deploy`. Same key as `sa.key` in the r440 PKI directory | `cluster-pki` (2026-10-31); encrypted on r440 straight from the PKI directory into the sops file, 2026-11-13 (phase 2, before P8) |
+| `cluster-pki/{k8s,etcd,front-proxy}-ca` (bootstrap intermediate CA keys: `tls.crt` = intermediate, `tls.key`, `ca.crt` = root; expire 2031-11-13; cluster-admin equivalent) | sops files `k8s/secrets/cluster-pki/{k8s,etcd,front-proxy}-ca.sops.yaml` in git (admins + `&flux`) → Kubernetes Secrets in `cluster-pki`, applied by the Flux Kustomization `secrets`. Also the offline copy, the only one: an admin key decrypts one into tmpfs to sign leaves while the cluster is down (docs/pki.md, "Offline signing when the cluster is down") | encrypted on r440 straight from the old PKI directory, 2026-11-13 (phase 2, P6; docs/pki-migration-plan.md); a new one at a ceremony (docs/pki.md, "CA rotation") |
+| Service-account keypair `sa.key` / `sa.pub` (signs and verifies every ServiceAccount token; the same on all control planes) | sops `sa.key`, `sa.pub` in `secrets/cluster-sa.yaml` (admins + c4130, r440, m2mini) → `/run/secrets/pki/sa.{key,pub}` on every control plane. Never renews: a new keypair invalidates every ServiceAccount token | the old `cluster-pki` tool (2026-10-31); encrypted on r440 straight from its PKI directory into the sops file, 2026-11-13 (phase 2, before P8) |
 | `cluster-pki/pki-export-github` (key `token`: fine-grained GitHub token, charlie-horse/flake only, Contents + Pull requests read/write; expires at most 1 year after creation, renew before) | sops file `k8s/secrets/cluster-pki/pki-export-github.sops.yaml` in git (admins + `&flux`) → Kubernetes Secret, applied by the Flux Kustomization `secrets`; read only by the CronJob `cluster-pki/pki-export` | you: GitHub fine-grained token, then `sops` the file (docs/pki.md, "Export job: GitHub token"), PR, merge |
 | Root and intermediate CA certs, attestations (public, not secret) | `cluster/pki/` in git (`root-ca.pem`, `{k8s,etcd,front-proxy,workload}-ca.pem`, `attest-9c.pem`, `attest-f9.pem`, `fingerprints.txt`) | the ceremony (docs/pki.md, "YubiKey root CA") |
 | `authentik/authentik-secrets` | sops file `k8s/secrets/authentik/authentik-secrets.sops.yaml` in git (admins + `&flux`) → Kubernetes Secret, applied by the Flux Kustomization `secrets` (owns it: prune, hand edits reverted within 10 min) | you: `sops k8s/secrets/authentik/authentik-secrets.sops.yaml`, PR, merge, restart its readers (k8s/README.md, "Secrets", "authentik") |
@@ -672,7 +671,7 @@ ps -u charlie -o pid=,cgroup=,comm= | grep 'user-1000\.slice'   # nothing listed
 | Host | Copied (to the same path under `/home/admin`) | Left in `/home/charlie` (and the backup) |
 | --- | --- | --- |
 | c4130 | `archive` (scripts, `nixos-backups`, notes, results), `vllm-hand` (the active hand harness), `.cloudflared` (account cert) | `vllm-sm70-work` (71 GB), `.cache`, `.triton`, `calib-cache`, `.claude`, dotfiles |
-| r440 | `archive`, `.local/share/cluster-pki` (the cluster PKI and `admin.kubeconfig`, certs embedded), `.kube` | `flint-swebench` (68 GB, rootless podman under charlie's subuids), `vllm-sm70-work`, `work`, `prebuild`, `tls`, `.cache`, podman config/storage |
+| r440 | `archive`, `.kube` (then also the old cluster PKI directory, shredded after PKI phase 2's P9; the original in `/home/charlie` and the backups still hold it, the live `sa.key` included) | `flint-swebench` (68 GB, rootless podman under charlie's subuids), `vllm-sm70-work`, `work`, `prebuild`, `tls`, `.cache`, podman config/storage |
 | m2mini | `archive` | `catenix` (a checkout; clone again if needed), `tls`, `.ssh` (admin uses the YubiKey), `.cache` |
 | all | `.config/sops` if present (age-plugin-yubikey identity stub, not secret) | |
 
@@ -696,7 +695,7 @@ cp_item() {
 }
 case $(hostname) in
   c4130)  items="archive vllm-hand .cloudflared" ;;
-  r440)   items="archive .local/share/cluster-pki .kube" ;;
+  r440)   items="archive .kube" ;;
   m2mini) items="archive" ;;
 esac
 for i in $items .config/sops; do cp_item "$i"; done
@@ -731,9 +730,8 @@ The activation prints `removing user ‘charlie’`. Then the etcd health check.
 getent passwd charlie || echo "charlie gone"; id admin
 stat -c '%U:%G' /etc/nixos; find /etc/nixos ! -user admin | head    # admin:root, nothing listed
 ls -ld ~ ~/archive && ls ~/archive | head
-# r440: the moved kubeconfigs and the PKI
-nix shell nixpkgs#kubectl -c kubectl --kubeconfig ~/.local/share/cluster-pki/neurosis/admin.kubeconfig get nodes </dev/null
-nix run /etc/nixos#cluster-pki -- status --out ~/.local/share/cluster-pki/neurosis </dev/null | tail -5
+# r440: the moved kubeconfigs
+ls -l ~/.kube
 # c4130: the account cert (read-only call)
 ls -l ~/.cloudflared/cert.pem ~/archive/scripts/verify_vllm.py && cloudflared tunnel list </dev/null | head -3
 # m2mini: groups and shell
@@ -765,6 +763,3 @@ Then the next host, from its preconditions.
   deleting them (they hold secrets; listed in [Secrets](#secrets-all-of-them)).
 - Tailnet SSH policy: drop `charlie` as a login user for the servers
   (admin console); keep it wherever Famine needs it.
-- `cluster-pki-deploy` runs as admin on r440 (after stage 2) and ssh-es as
-  admin to the nodes: the tailnet SSH policy must allow admin from r440
-  (`tag:node`) to the other nodes.
