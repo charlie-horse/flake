@@ -1,18 +1,10 @@
-# Per-system packages and apps.
-#
-# cluster-pki uses inputs.nixpkgs (nixos-26.05, what the nodes run). The
-# k8s render is not here: it is the system-independent output `k8s`
-# (parts/k8s.nix). The desktop ISOs come from the flake lib
-# (nixpkgs-unstable, see parts/hosts.nix).
+# Per-system packages. The k8s render is the system-independent output `k8s`
+# (parts/k8s.nix); the desktop ISOs come from the flake lib (parts/hosts.nix).
 { inputs, config, ... }: {
   perSystem =
     { system, ... }:
     let
       pkgs = inputs.nixpkgs.legacyPackages.${system};
-      # Operator-side PKI tool (docs/pki.md).
-      pki = pkgs.callPackage ../pkgs/cluster-pki {
-        definition = import ../cluster/definition.nix;
-      };
       pkiTools = pkgs.callPackage ../pkgs/pki-tools {
         leaves = import ../k8s/components/infra/cluster-pki/leaves.nix {
           inherit (pkgs) lib;
@@ -29,33 +21,14 @@
       checks.pki-tools = pkiTools;
 
       packages = {
-        cluster-pki = pki;
         # YubiKey root-CA ceremony tools, entered ad hoc as root on c4130
         # (`nix shell .#ca-ceremony-tools`; docs/pki-migration-plan.md).
         ca-ceremony-tools = pkgs.callPackage ../pkgs/ca-ceremony-tools { };
-        pki-diff = pkiTools // {
-          meta = pkiTools.meta // {
-            mainProgram = "pki-diff";
-          };
-        };
         pki-export = pkiTools;
         pki-export-image = pkiTools.image;
       }
       # Installer ISO for the desktop host (lib/system/mkHost.nix).
       # Pestilence is archived, so it has none (parts/hosts.nix).
       // (config.flake.lib.system.${system}.mkHostIso "Famine").${system};
-
-      # nix run .#cluster-pki             -> ~/.local/share/cluster-pki/<cluster>
-      # nix run .#cluster-pki-deploy -- <node>  (stage + print sudo cmds)
-      apps = {
-        cluster-pki = {
-          type = "app";
-          program = "${pki}/bin/cluster-pki";
-        };
-        cluster-pki-deploy = {
-          type = "app";
-          program = "${pki}/bin/cluster-pki-deploy";
-        };
-      };
     };
 }

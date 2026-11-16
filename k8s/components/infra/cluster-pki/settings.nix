@@ -8,7 +8,6 @@ rec {
     front-proxy = "front-proxy-ca";
   };
 
-  # Must match cluster-pki.sh: KEY_SIZE, LEAF_HOURS, RENEW_BEFORE_DAYS.
   keySize = 2048;
   duration = "8760h";
   renewBefore = "720h";

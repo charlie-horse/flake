@@ -5,14 +5,13 @@
 #   - modules/cluster (NixOS host config: etcd, control plane, kubelet,
 #     containerd, keepalived, firewall), via the `cluster` specialArg that
 #     lib/system/mkServer.nix passes in;
-#   - pkgs/cluster-pki (cert subjects/SANs, which leaves each node gets);
+#   - k8s/components/infra/cluster-pki/leaves.nix (cert subjects/SANs,
+#     which leaves each node gets);
 #   - k8s/ (catenix manifests: CoreDNS IP, pod CIDR for flannel, ...).
 #
 # Shape (keep it stable; add fields, don't rename them):
-#   name                 string  cluster name: kube-controller-manager
-#                                --cluster-name, and the subject of any CA
-#                                cluster-pki creates (existing CAs keep
-#                                theirs; docs/pki.md)
+#   name                 string  cluster name (kube-controller-manager
+#                                --cluster-name)
 #   domain               string  tailnet DNS domain; nodes are <name>.<domain>
 #                                and MagicDNS resolves the bare <name> to the
 #                                node's tailnet IP (etcd/apiserver use that)
@@ -26,7 +25,6 @@
 #   kubernetesServiceIP  string  first IP of serviceCidr (apiserver SAN)
 #   dnsServiceIP         string  CoreDNS Service IP (kubelet clusterDNS)
 #   clusterDomain        string  cluster DNS domain
-#   secretsDir           string  where every key/cert lives on a node
 #   nodes.<name>         attrs, keyed by hostname (= etcd member name =
 #                        Kubernetes node name = cert CN suffix):
 #     system             "x86_64-linux" | "aarch64-linux"
@@ -55,24 +53,8 @@
 #     kubeletConfig      attrs  merged into the KubeletConfiguration
 #                        (services.kubernetes.kubelet.extraConfig), e.g.
 #                        evictionHard / image GC thresholds per node
-#     rollout            { stage; etcdPhase; certSource; }  where this node is in the
-#                        cut-over from the legacy cluster (docs/
-#                        history/cluster-handoff-2026-10.md). The cut-over is done: every
-#                        node is at stage "full", etcdPhase "final".
-#                        Flip these per step:
-#       stage      "etcd"          only etcd (+ firewall) runs
-#                  "controlPlane"  + apiserver/controller-manager/scheduler
-#                                  + keepalived (the VIP)
-#                  "full"          + kubelet/kube-proxy/containerd (end state)
-#       etcdPhase  "trust"  new etcd-ca.pem bundle (new + legacy CA), but the
-#                           LEGACY leaves, copied to secretsDir as
-#                           legacy-etcd-peer-<n>{,-key}.pem and (control
-#                           planes) legacy-etcd-client-apiserver-<n>{,-key}.pem;
-#                           peerClientCertAuth off, as today
-#                  "final"  new etcd-server/-peer/-client-apiserver leaves,
-#                           peerClientCertAuth on (end state)
-#       certSource "files"  from `cluster-pki deploy` (default)
-#                  "sops"   modules/cluster/pki-sops.nix; needs etcdPhase "final"
+#     rollout.stage      "etcd" | "controlPlane" | "full" (default): which
+#                        roles run (docs/history/cluster-handoff-2026-10.md)
 #   apiserverTailscaleService  optional string  name of the Tailscale Service
 #                        (svc:<name>) every controlPlane node hosts for the
 #                        apiserver port; clients use <name>.<domain>:6443.
@@ -129,8 +111,7 @@
   # apiserver, reachable tailnet-wide as kube-api.<domain>:6443.
   apiserverTailscaleService = "kube-api";
 
-  # Extra SANs on every apiserver leaf. Re-issue all apiserver leaves with
-  # cluster-pki (on r440) and deploy them after changing this (docs/pki.md).
+  # Extra SANs on every apiserver leaf (cert-manager re-issues on change).
   # The Tailscale Service name must be here for kubectl to verify TLS.
   apiserverExtraSANs = [ "kube-api.leaffish-monster.ts.net" ];
 
@@ -195,8 +176,6 @@
     ];
   };
 
-  secretsDir = "/var/lib/kubernetes/secrets";
-
   nodes = {
     c4130 = {
       system = "x86_64-linux";
@@ -243,11 +222,7 @@
         imageGCHighThresholdPercent = 98;
         imageGCLowThresholdPercent = 97;
       };
-      rollout = {
-        stage = "full";
-        etcdPhase = "final";
-        certSource = "sops";
-      };
+      rollout.stage = "full";
     };
 
     r440 = {
@@ -267,11 +242,7 @@
       labels = { };
       taints = { };
       extraSANs = [ ];
-      rollout = {
-        stage = "full";
-        etcdPhase = "final";
-        certSource = "sops";
-      };
+      rollout.stage = "full";
     };
 
     m2mini = {
@@ -291,11 +262,7 @@
       labels = { };
       taints = { };
       extraSANs = [ ];
-      rollout = {
-        stage = "full";
-        etcdPhase = "final";
-        certSource = "sops";
-      };
+      rollout.stage = "full";
     };
   };
 }

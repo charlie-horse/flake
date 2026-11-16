@@ -9,7 +9,6 @@
 let
   cfg = config.clusterNode;
   name = cfg.name;
-  sops = cfg.certSource == "sops";
 
   # By roles, not rollout stage: the set the export job writes to secrets/pki/<node>.yaml.
   leaves = map (l: l.component) (
@@ -18,23 +17,10 @@ let
     )
   );
 
-  # What `cluster-pki deploy` installs; must equal `leaves` while hosts mix "files" and "sops".
-  specLeaves =
-    let
-      script = builtins.readFile ../../pkgs/cluster-pki/cluster-pki.sh;
-      parts = lib.splitString "\nSPECS='" script;
-      body = lib.head (lib.splitString "'" (lib.elemAt parts 1));
-      fields = map (lib.splitString "|") (lib.filter (l: l != "") (lib.splitString "\n" body));
-    in
-    if lib.length parts != 2 || lib.any (f: lib.length f != 7) fields then
-      throw "modules/cluster/pki-sops.nix: cannot parse SPECS in pkgs/cluster-pki/cluster-pki.sh"
-    else
-      map lib.head (lib.filter (f: lib.elem (lib.elemAt f 6) cfg.node.roles) fields);
-
   hasEtcd = lib.elem "etcd" cfg.node.roles;
   hasCP = lib.elem "controlPlane" cfg.node.roles;
 
-  # node_files in cluster-pki.sh: key owners.
+  # Each key belongs to the user of the unit that reads it.
   keyOwner =
     component:
     if
@@ -101,10 +87,9 @@ let
     lib.nameValuePair "pki/${file}" {
       inherit sopsFile owner;
       group = owner;
-      # Keys 0600, certs and sa.pub 0644 (cluster-pki node_files).
       mode = if lib.hasSuffix "-key.pem" file || file == "sa.key" then "0600" else "0644";
       key = file;
-      path = "${cfg.secretsDir}/${file}";
+      path = cfg.secret file;
       restartUnits = units restart;
     };
 
@@ -151,7 +136,7 @@ let
     file: src: restart:
     lib.nameValuePair "pki/${file}" {
       file = src;
-      path = "${cfg.secretsDir}/${file}";
+      path = cfg.secret file;
       owner = "root";
       group = "root";
       mode = "0644";
@@ -177,45 +162,42 @@ let
   );
 
   owners = lib.unique (map (s: s.value.owner) (leafSecrets ++ saSecrets));
+
+  # Root-only break-glass (works without authentik); file paths only, nothing secret in the store.
+  adminKubeconfig = config.services.kubernetes.lib.mkKubeConfig "cluster-admin" {
+    server = config.services.kubernetes.apiserverAddress;
+    caFile = cfg.secret "ca.pem";
+    certFile = (cfg.leaf "admin").cert;
+    keyFile = (cfg.leaf "admin").key;
+  };
 in
 {
-  config = lib.mkIf (cfg.enable && sops) {
+  config = lib.mkIf cfg.enable {
     assertions = [
       {
         assertion = pkiSopsExists;
         message = ''
-          clusterNode.certSource = "sops" on ${name}, but secrets/pki/${name}.yaml
-          does not exist (the export job's PR must be merged first).
-        '';
-      }
-      {
-        assertion = lib.sort lib.lessThan leaves == lib.sort lib.lessThan specLeaves;
-        message = ''
-          clusterNode.certSource = "sops" on ${name}: the leaves in
-          k8s/components/infra/cluster-pki/leaves.nix (${toString leaves})
-          differ from SPECS in pkgs/cluster-pki/cluster-pki.sh
-          (${toString specLeaves}); keep the two in step.
-        '';
-      }
-      {
-        assertion = cfg.etcd.phase == "final";
-        message = ''
-          clusterNode.certSource = "sops" needs etcd.phase "final" on ${name}:
-          the legacy-etcd-* leaves of "trust" are not in secrets/pki/.
+          clusterNode: secrets/pki/${name}.yaml does not exist (the export
+          job's PR must be merged first).
         '';
       }
     ]
     ++ map (u: {
       assertion = config.users.users ? ${u};
       message = ''
-        clusterNode.certSource = "sops": user ${u} owns cluster keys on
-        ${name} but does not exist here (etcd/kubernetes create it).
+        clusterNode: user ${u} owns cluster keys on ${name} but does not
+        exist here (etcd/kubernetes create it).
       '';
     }) owners;
 
-    clusterNode.secretsDir = "/run/secrets/pki";
-
     sops.secrets = lib.listToAttrs (leafSecrets ++ saSecrets);
     sops.templates = lib.listToAttrs bundles;
+
+    environment.etc."kubernetes/admin.kubeconfig" = lib.mkIf (lib.elem "admin" leaves) {
+      source = adminKubeconfig;
+      mode = "0600";
+      user = "root";
+      group = "root";
+    };
   };
 }
