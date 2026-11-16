@@ -4,8 +4,9 @@
 # webhook's caBundle). The CRDs come from the chart too (crds.enabled), so
 # they land in 01-customresourcedefinitions.yaml and Flux owns them.
 #
-# The pods meet `restricted` with the chart's defaults (non-root, seccomp RuntimeDefault,
-# all capabilities dropped, no privilege escalation, read-only root fs).
+# The pods meet `restricted` with the chart's defaults (non-root, seccomp
+# RuntimeDefault, all capabilities dropped, no privilege escalation,
+# read-only root fs).
 # Nothing tolerates c4130's GPU taint: they run on r440 and m2mini.
 {
   pkgs,
