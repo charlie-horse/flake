@@ -54,15 +54,6 @@ $F reconcile kustomization flux-system --with-source
 $F get kustomizations                 # all Ready
 ```
 
-Rendering on r440 needs a workaround (Nix's git fetcher fails on
-`catenix/kubernetes-src` there):
-
-```sh
-git clone --depth 1 --branch v1.37.0 https://github.com/kubernetes/kubernetes /tmp/k8s-src
-rm -rf /tmp/k8s-src/.git
-nix build --override-input catenix/kubernetes-src path:/tmp/k8s-src .#k8s.manifests
-```
-
 ## Kubernetes API access
 
 - **Break-glass:** on any node,

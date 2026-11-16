@@ -26,10 +26,6 @@ nix build .#k8s.manifests                                     # the render
 nix build .#k8s.checkImages && ./result/bin/k8s-check-images
 ```
 
-On r440, Nix's git fetcher fails on `catenix/kubernetes-src`; add
-`--override-input catenix/kubernetes-src path:/tmp/k8s-src` after cloning
-the `v1.37.0` tag there ([cluster.md](cluster.md#changing-something-in-the-cluster)).
-
 To compare a host's config with what runs on it, on the host:
 `nix-diff /run/current-system $(nix eval --raw /etc/nixos#nixosConfigurations.<host>.config.system.build.toplevel.drvPath)`.
 

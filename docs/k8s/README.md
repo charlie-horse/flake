@@ -27,8 +27,6 @@ Rules:
   linux/arm64), except images pinned to amd64 nodes (exemptions in
   `checkImages`, `k8s/render.nix`).
 - Never commit the render; CI builds it.
-- Rendering on r440 needs a workaround for `catenix/kubernetes-src`:
-  [../cluster.md](../cluster.md) ("Changing something in the cluster").
 
 **Adding a component:** write its module under `k8s/components/` and add
 one line to `components` in `k8s/default.nix` (or to `deferred.modules`,
