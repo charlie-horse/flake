@@ -270,7 +270,7 @@
       rollout = {
         stage = "full";
         etcdPhase = "final";
-        certSource = "files";
+        certSource = "sops";
       };
     };
 
