@@ -14,6 +14,5 @@
     ./hardware-configuration.nix
     ./vllm
     ./builder.nix
-    ./gpu-window.nix
   ];
 }
