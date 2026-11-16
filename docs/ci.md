@@ -9,8 +9,6 @@ are the flake's `checks` (`parts/checks.nix`); CI (`checks.yml`) only runs
 - A new check goes in `parts/checks.nix` as a flake check, never as a CI
   step. It must fetch only through fixed-output derivations and build
   nothing heavier than the k8s render.
-- The render check (`k8s-render`) runs only on x86_64-linux: commit k8s
-  changes from an x86_64-linux machine or rely on CI.
 - CI never builds a NixOS toplevel; builds happen on r440
   ([build-cache.md](build-cache.md)).
 - `nix fmt` fixes what the `format` check reports.
@@ -33,8 +31,9 @@ To compare a host's config with what runs on it, on the host:
 
 ## render.yml
 
-- Every push to `main` publishes; dispatching `render.yml` on `main`
-  republishes the current render. Flux accepts only artifacts signed by this
+- Every push to `main` publishes the render its `checks` run built;
+  dispatching `render.yml` on `main` builds and republishes the current
+  render. Flux accepts only artifacts signed by this
   workflow on `main`.
 - Secrets: `FLUX_WEBHOOK_TOKEN` must be the same bytes as the cluster
   Secret `flux-system/webhook-token`, no trailing newline.

@@ -4,9 +4,9 @@
 #   nix build .#k8s.checkImages      script: are all images amd64 + arm64?
 #   nix eval  .#k8s.components...    the evaluated catenix configurations
 #
-# The YAML is the same for every system, so one build with the nodes' 26.05
-# nixpkgs on x86_64-linux serves all; `nix flake check` builds it there
-# (parts/checks.nix). It needs import-from-derivation (helm template).
+# The YAML is the same for every system; this output is the x86_64-linux
+# build, which CI publishes. `nix flake check` renders it with each system's
+# nixpkgs (parts/checks.nix). It needs import-from-derivation (helm template).
 { inputs, ... }:
 {
   flake.k8s = import ../k8s {

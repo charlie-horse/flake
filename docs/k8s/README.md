@@ -35,8 +35,9 @@ one line to `components` in `k8s/default.nix` (or to `deferred.modules`,
 
 ## Deployment
 
-Merging to `main` deploys: `render.yml` renders, pushes and cosign-signs the
-artifact, then pokes Flux's Receiver. Pull requests only render. Flux
+Merging to `main` deploys: `checks.yml` renders (`nix flake check`), then
+`render.yml` pushes and cosign-signs the artifact and pokes Flux's
+Receiver. Flux
 applies only artifacts signed by `render.yml` on `main`, re-applies every
 10 minutes (reverting hand edits) and prunes what is removed from the
 render. Check or force a deploy: [../cluster.md](../cluster.md)

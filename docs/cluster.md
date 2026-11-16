@@ -37,10 +37,11 @@ sudo journalctl -u etcd --since -5min | grep -iE 'x509|tls|handshake'   # empty
 
 ## Changing something in the cluster
 
-1. Edit `k8s/` (or `cluster/definition.nix`), branch → PR. `render.yml`
-   renders the PR's commit (and `checks.yml` runs).
-2. Merge. `render.yml` pushes the render to GHCR as a cosign-signed OCI
-   artifact and pings Flux's webhook; Flux applies it within seconds
+1. Edit `k8s/` (or `cluster/definition.nix`), branch → PR. `checks.yml`
+   renders the PR's commit (`nix flake check`).
+2. Merge. Once `checks.yml` passes on `main`, `render.yml` pushes the
+   render to GHCR as a cosign-signed OCI artifact and pings Flux's
+   webhook; Flux applies it within seconds
    ([ci.md](ci.md), [k8s/README.md](k8s/README.md)).
 
 Check or force it, with your OIDC kubeconfig or, on a node, the

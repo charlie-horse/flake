@@ -46,10 +46,10 @@
               find . -name '*.nix' -print0 | xargs -0 nixfmt --check
               touch $out
             '';
-      }
-      # The k8s render (parts/k8s.nix), built where it is pinned.
-      // lib.optionalAttrs (system == "x86_64-linux") {
-        k8s-render = inputs.self.k8s.manifests;
+
+        # The k8s render with this system's nixpkgs: on x86_64-linux the same
+        # derivation as `.#k8s.manifests` (parts/k8s.nix).
+        k8s-render = (import ../k8s { inherit inputs pkgs lib; }).manifests;
       };
     };
 }
