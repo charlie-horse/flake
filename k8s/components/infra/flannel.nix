@@ -9,8 +9,6 @@
 #                tailscale0; udp/8472 open between LAN IPs
 #   "tailscale"  --iface=tailscale0, MTU 1280 - 50; slower, for nodes that
 #                stop sharing a LAN
-#
-# Details: docs/k8s/README.md#flannel
 {
   lib,
   pkgs,

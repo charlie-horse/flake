@@ -1,6 +1,6 @@
 # Memory limits: zram swap, a hard memory cap on nix-daemon (every build,
 # c4130's included), and builds first in line for the OOM killer. Build
-# concurrency is in ./builder.nix. docs/hosts/r440.md#memory
+# concurrency is in ./builder.nix.
 { ... }:
 {
   # --- zram swap -----------------------------------------------------------

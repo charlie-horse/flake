@@ -1,6 +1,6 @@
 # c4130 vLLM / LMCache
 
-Docs: [docs/hosts/c4130-vllm.md](../../../docs/hosts/c4130-vllm.md) (stack, LMCache, Flint, kill switches, custom models), [docs/hosts/c4130.md](../../../docs/hosts/c4130.md) (hardware, deploy, files on the host).
+Docs: [docs/hosts/c4130-vllm.md](../../../docs/hosts/c4130-vllm.md) (rules, custom models, kill switches), [docs/hosts/c4130.md](../../../docs/hosts/c4130.md) (deploy).
 
 This directory only sets host values; the modules come from flake input `vllm-fork` (vllm-sm70).
 

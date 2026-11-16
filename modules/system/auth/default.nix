@@ -2,8 +2,8 @@
 # and the desktop's YubiKey. Servers import this directory from
 # modules/server/default.nix; the desktops get it with modules/ wholesale
 # (modules/default.nix imports a directory's default.nix only, so the
-# helper file u2f-keys is not a module). Options, per-service table, PAM
-# stacks, enabling and recovery: docs/auth.md, "custom.auth".
+# helper file u2f-keys is not a module). Registering keys, enabling and
+# recovery: docs/auth.md, "custom.auth".
 #
 # hardwareFactor needs a SECOND FIDO2 key registered (u2f-keys: two
 # credentials, rsshKeys: two sk- keys; both asserted). In Linux-PAM

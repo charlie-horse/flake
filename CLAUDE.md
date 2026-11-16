@@ -44,19 +44,24 @@ workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
 
 ## Documentation policy
 
-1. **Docs say how things work now.** No history, dates of past events,
+1. **The flake is the source of truth; docs don't restate it.** Don't describe
+   what the Nix code declares (nodes, roles, addresses, ports, services,
+   components, option values, versions): read it from the source. Docs hold
+   only what the code can't say: procedures to operate it, and rules whose
+   breach the code can't prevent.
+2. **Docs say how things work now.** No history, dates of past events,
    rationale ("why"), plans, decisions, open questions or status notes.
    Present tense, terse. A constraint you must follow is written as a rule.
-2. **Tasks live in the project, not in git.** No TODO/FIXME/XXX, follow-ups
+3. **Tasks live in the project, not in git.** No TODO/FIXME/XXX, follow-ups
    or "later" notes in code or docs.
-3. **Where docs live.** Prose goes in `docs/`; [docs/README.md](docs/README.md)
+4. **Where docs live.** Prose goes in `docs/`; [docs/README.md](docs/README.md)
    lists every doc and the topic it owns. Per-host docs are
    `docs/hosts/<host>.md`. Access lives only in this file. A directory may
    keep a `README.md` or `CLAUDE.md` of at most 15 lines that points into
    `docs/`.
-4. **One home per topic.** Edit a topic in its doc and link to it elsewhere.
+5. **One home per topic.** Edit a topic in its doc and link to it elsewhere.
    A new topic gets a row in docs/README.md.
-5. **Code comments stay short and local.** At most 15 contiguous comment
+6. **Code comments stay short and local.** At most 15 contiguous comment
    lines; longer prose goes to the doc, with a one-line pointer in the code.
-6. **Docs change in the same PR as the code.** Moving or renaming a doc or
+7. **Docs change in the same PR as the code.** Moving or renaming a doc or
    heading fixes every link to it.

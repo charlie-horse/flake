@@ -9,7 +9,7 @@
 # `tailscale serve set-config --all`. Bound to kube-apiserver.service: on
 # stop it runs `tailscale serve drain`; on start (Upholds) it advertises
 # again. No firewall change: tailscaled dials 127.0.0.1:6443 over lo.
-# Lifecycle details and admin-console setup:
+# Admin-console setup:
 # docs/cluster.md#tailscale-service-for-the-api-svckube-api
 {
   config,

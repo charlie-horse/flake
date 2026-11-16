@@ -7,7 +7,7 @@
 # --kube-version); components (name -> module); deferred ({ dir, modules,
 # secrets }). Returns { manifests, checkImages, components }.
 #
-# File layout, deferred fence, secret checks: docs/k8s/README.md#the-render-rendernix
+# Rules for components and secrets: docs/k8s/README.md#render, docs/k8s/secrets.md
 {
   inputs,
   pkgs,

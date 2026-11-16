@@ -3,8 +3,6 @@
 # the highest-priority node whose LOCAL https://127.0.0.1:6443/readyz
 # answers holds the VIP (c4130 150 > r440 100 > m2mini 50). /readyz is
 # readable anonymously (system:public-info-viewer): no client cert needed.
-# HAProxy variant for a node without an apiserver:
-# docs/cluster.md#apiserver-vip-keepalived
 {
   config,
   lib,

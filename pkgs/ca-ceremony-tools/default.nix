@@ -3,7 +3,7 @@
 # age-plugin-yubikey, yq, softhsm for MODE=rehearsal, ca-openssl), as one
 # package entered ad hoc with `nix shell <flake>#ca-ceremony-tools`. No host
 # installs it or runs pcscd permanently, so using it needs no switch.
-# Contents, usage and gotchas: docs/pki.md, "Tools: ca-ceremony-tools".
+# Usage and gotchas: docs/pki.md, "Tools: ca-ceremony-tools".
 # Nothing here writes to the card by itself (slot 82 and FIDO2 untouched).
 {
   lib,

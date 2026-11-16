@@ -7,8 +7,6 @@
 #   crun    optional, off (`enableCrun`); only together with
 #           clusterNode.crun.enable on those nodes and a node label that
 #           crunNodeSelector names
-#
-# Details: docs/k8s/README.md#runtime-classes
 { lib, cluster, ... }:
 let
   enableCrun = false;

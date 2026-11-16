@@ -1,19 +1,6 @@
 # Famine
 
-charlie's desktop workstation, x86_64. Config: `hosts/Famine/default.nix`.
-Not a cluster node and not a server: it is built with
-`lib.system.x86_64-linux.mkHost` (`parts/hosts.nix`), which imports every
-`modules/**` file (desktop, home-manager), on **nixpkgs-unstable**, not the
-servers' 26.05. `parts/packages.nix` also builds an installer ISO for it.
-
-| | |
-| --- | --- |
-| Hardware | AMD CPU, NVIDIA GPU (`nvidia_drm.fbdev=1`), CUDA on; Bluetooth; 2560x1440@144 monitor |
-| User | `charlie` (`custom.user.name`); `admin` for sudo ([auth.md](../auth.md)) |
-| Desktop | Hyprland (home-manager: hypridle, hyprpaper, hyprlock, dunst), theme `shadotheme`, polkit-gnome agent, gnome-keyring |
-| Network | NetworkManager, Tailscale client, firewall **off**, no sshd |
-| Extras | gaming (Steam, Star Citizen), virtualisation, v4l2loopback, NTFS, QMK udev rules |
-| sops | not a recipient in `.sops.yaml` ([Enrolling Famine in sops](#enrolling-famine-in-sops)) |
+The desktop workstation (`hosts/Famine/`, built with `mkHost`).
 
 ## Deploy
 
@@ -21,48 +8,22 @@ On Famine, from its checkout: `sudo nixos-rebuild switch --flake .#Famine`.
 Do not switch to a sops generation before the
 [enrolment](#enrolling-famine-in-sops) is done.
 
-## Binary cache
-
-`custom.nixCache.enable` substitutes from r440's cache after
-cache.nixos.org. The netrc is the sops key `nix-cache-netrc` in
-`secrets/famine.yaml` (the htpasswd user `famine` on r440). Famine runs
-nixpkgs-unstable and r440 26.05, so they share few paths
-([build-cache.md](../build-cache.md)). The netrc works only once Famine can
-decrypt `famine.yaml` (step 2 below).
-
 ## YubiKey
 
-`custom.yubikey.enable = false`: there are no pam_u2f mappings, so login and
-sudo take the password only. To turn it on, make the mappings at Famine with
-the YubiKey 5 plugged in (`modules/system/yubikey.nix` has the format), add
-them to `secrets/famine.yaml` as `pam-yubikeys`, then set it to true (step 3
+To turn on `custom.yubikey.enable` (pam_u2f for login and sudo), make the
+mappings at Famine with the YubiKey 5 plugged in (`modules/system/yubikey.nix`
+has the format), add them to `secrets/famine.yaml` as `pam-yubikeys`, then set it to true (step 3
 below). PAM behaviour: [auth.md](../auth.md) (`custom.auth.desktopU2f`).
-
-## Qt theming
-
-Qt follows the GTK theme (Orchis, picked with lxappearance) through Qt's own
-GTK 3 platform theme (libqgtk3, built into qtbase for Qt 5 and 6): GTK
-palette, fonts, icons and file dialogs. `QT_QPA_PLATFORMTHEME=gtk3` is set
-directly; the NixOS `qt` module has no `gtk3` value. `qt.enable` only
-provides the plugin paths.
 
 ## Enrolling Famine in sops
 
-`secrets/famine.yaml` is encrypted only to the admin keys (YubiKey PIV slot
-82 and the offline backup key), and `secrets/common.yaml` (the admin
-password) has no Famine recipient, so Famine can't decrypt either.
+Famine can decrypt `secrets/common.yaml` and `secrets/famine.yaml` only once
+it is a recipient of both in `.sops.yaml`.
 
 **Do not switch Famine to a sops generation before step 4.**
 `users.mutableUsers = false` and root is locked. If Famine can't decrypt
 `common.yaml` and `famine.yaml`, it boots with no usable password for admin
 or charlie. Recovery means picking an older generation in the boot menu.
-
-### What `secrets/famine.yaml` holds
-
-| Key | Value |
-| --- | --- |
-| `nix-cache-netrc` | Famine's binary-cache login (the `famine` htpasswd user on r440) |
-| `charlie-password` | charlie's Famine login password (greeter, hyprlock; `modules/system/user.nix`), random. Deployed with `neededForUsers`; Famine derives its yescrypt hash at activation (`custom.sopsPasswords`, `modules/system/sops.nix`) |
 
 To read charlie's password, run this anywhere the YubiKey is plugged in. It
 needs the PIV PIN and a touch:

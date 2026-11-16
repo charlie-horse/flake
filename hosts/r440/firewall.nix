@@ -1,7 +1,7 @@
 # Firewall for r440, host part (iptables backend, ping allowed, as on
 # c4130). The cluster ports (etcd 2379/2380, apiserver 6443, kubelet,
 # flannel) are NOT opened here: the cluster module (modules/cluster) owns
-# them, restricted to the cluster peers. docs/hosts/r440.md#firewall
+# them, restricted to the cluster peers.
 { ... }:
 {
   networking.firewall = {

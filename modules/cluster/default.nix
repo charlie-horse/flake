@@ -7,7 +7,6 @@
 # What the node runs follows its roles (etcd.nix, control-plane.nix,
 # tailscale-service.nix, node.nix; keepalived.nix and firewall.nix on every
 # node), limited by clusterNode.stage (cluster.nodes.<n>.rollout.stage).
-# Role/module table: docs/cluster.md#nixos-side-modulescluster
 #
 # Every key and cert is a STRING path under /run/secrets/pki (sops-nix,
 # ./pki-sops.nix), so nothing secret is ever copied into /nix/store.

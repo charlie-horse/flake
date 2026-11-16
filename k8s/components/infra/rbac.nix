@@ -10,7 +10,7 @@
 #       (groups are prefixed `oidc:`); inert without `oidc` in cluster/definition.nix
 #
 # Bootstrap applies it by hand with the network and DNS; Flux keeps it
-# afterwards. Details: docs/k8s/README.md#rbac
+# afterwards.
 { ... }:
 {
   validation.strict = true;

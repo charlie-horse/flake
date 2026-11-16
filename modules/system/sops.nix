@@ -1,6 +1,6 @@
 # sops-nix on every host (desktops via modules/, servers via
-# modules/server/default.nix). Files, recipients, host keys, the checks and
-# the password derivation: docs/auth.md, "sops-nix on the hosts".
+# modules/server/default.nix). Operating it: docs/auth.md, "sops-nix on the
+# hosts".
 #
 # Every sops file goes through builtins.path (defaultSopsFile below too), so
 # a host's closure holds only its own sops files, not the flake source.

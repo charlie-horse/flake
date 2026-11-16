@@ -1,5 +1,5 @@
 # c4130: 2x V100 vLLM inference host (x86_64, NixOS 26.05).
-# Docs: docs/hosts/c4130.md (host), docs/hosts/c4130-vllm.md (vLLM/LMCache).
+# Docs: docs/hosts/c4130.md (deploy), docs/hosts/c4130-vllm.md (vLLM/LMCache).
 #
 # Built by lib.system.x86_64-linux.mkServer (parts/hosts.nix): only this
 # dir + modules/cluster + modules/server, not the mkHost module tree.

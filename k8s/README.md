@@ -6,9 +6,9 @@ a signed OCI artifact and applied by Flux.
 
 Docs (canonical, in `docs/k8s/`):
 
-- [README.md](../docs/k8s/README.md): layout, components, flake output,
-  render, deployment, deferred components, bootstrap, host assumptions
+- [README.md](../docs/k8s/README.md): render, deployment, deferred
+  components, bootstrap
 - [secrets.md](../docs/k8s/secrets.md): the sops-encrypted Secrets in
   `secrets/` (rotation, adding one, the bootstrap key)
-- [apps.md](../docs/k8s/apps.md): cert-manager, authentik, Headlamp, the
-  Cloudflare tunnel, Open WebUI
+- [apps.md](../docs/k8s/apps.md): operating the apps (certificates, OIDC
+  login, app Secrets, tunnel routes)

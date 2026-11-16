@@ -1,7 +1,6 @@
 # XDG base directories (and the dotfiles that follow them) for every login
 # shell, relative to $HOME, so each user gets their own. tmpfiles creates
 # the parents of HISTFILE/LESSHISTFILE, which bash and less don't.
-# docs/hosts/m2mini.md#xdg-directories
 { config, lib, ... }:
 let
   cache = "$HOME/.cache";

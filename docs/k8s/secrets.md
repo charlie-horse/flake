@@ -11,47 +11,28 @@ The inventory of every secret, in and out of the cluster, is
 [../secrets.md](../secrets.md); add a row there for any new one. Overview
 of the render and Flux: [README.md](README.md).
 
-| Secret | Keys | Read by: restart after a change |
-| --- | --- | --- |
-| `authentik/authentik-secrets` | `AUTHENTIK_BOOTSTRAP_PASSWORD`, `AUTHENTIK_POSTGRESQL__PASSWORD`, `AUTHENTIK_SECRET_KEY` ([apps.md](apps.md#the-secret-authentikauthentik-secrets)) | `deploy/authentik-server`, `deploy/authentik-worker` (env); `sts/authentik-postgresql` and CronJob `authentik-backup` read the password too |
-| `headlamp/headlamp-oidc` | `OIDC_CLIENT_SECRET` ([apps.md](apps.md#the-secret-headlampheadlamp-oidc)) | `deploy/headlamp` (env) |
-| `open-webui/open-webui-secrets` | `OAUTH_CLIENT_SECRET`, `WEBUI_SECRET_KEY` ([apps.md](apps.md#open-webui)) | `deploy/open-webui` (env) |
-| `cloudflared/tunnel-credentials` | `credentials.json` ([apps.md](apps.md#cloudflare-tunnel)) | `deploy/cloudflared` (file, read at start) |
-| `cert-manager/cluster-ca` (`kubernetes.io/tls`) | `ca.crt` (the root), `tls.crt` (intermediate + root), `tls.key` ([apps.md](apps.md#cert-manager)) | nothing: the ClusterIssuer reads it on each signature |
-| `cluster-pki/k8s-ca`, `cluster-pki/etcd-ca`, `cluster-pki/front-proxy-ca` (`kubernetes.io/tls`) | `ca.crt` (the root), `tls.crt` (the intermediate), `tls.key` ([../pki.md](../pki.md#in-cluster-issuance)) | nothing: the Issuer of the same name reads it on each signature |
-| `cluster-pki/pki-export-github` | `token` under **`stringData`** ([../pki.md, Export job: GitHub token](../pki.md#export-job-github-token)) | CronJob `pki-export` (each run) |
-| `flux-system/webhook-token` | `token`, no trailing newline (the Receiver's HMAC key; `components/flux/receiver.nix`) | nothing; then update the GitHub secrets `FLUX_WEBHOOK_TOKEN` and `FLUX_WEBHOOK_URL` (the path is derived from the token: [../ci.md](../ci.md#renderyml)) |
+Who reads a Secret: grep its name in `k8s/components/`.
 
 ## How they are rendered and applied
 
-- **Render.** `render.nix` copies each file byte for byte (never parsed
-  into Nix or re-serialised: the sops MAC covers the values as written) to
-  `deferred/secrets/<namespace>/<name>.sops.yaml`, after checking it
-  (`checkSecret`): one v1 Secret, `metadata.namespace`/`name` equal to its
-  path, at least one `data`/`stringData` value and every one `ENC[…]`, an
-  age recipient and a MAC, `encrypted_regex: ^(data|stringData)$`, **keys
-  sorted**. Anything else in `k8s/secrets/` fails the render. catenix never
-  sees these files.
+- **Render.** `render.nix` (`checkSecret`) checks each file and copies it
+  byte for byte. A file must be one v1 Secret whose
+  `metadata.namespace`/`name` match its path, with every
+  `data`/`stringData` value encrypted and **keys sorted**; anything else in
+  `k8s/secrets/` fails the render.
 - **Allowed top-level keys:** `apiVersion kind metadata type data
   stringData sops`, nothing else. The render (`checkSecret` in
   `render.nix`) and CI's secrets guard (`.github/workflows/checks.yml`,
-  [../ci.md, Secrets guard](../ci.md#secrets-guard)) check the same set;
+  [../ci.md](../ci.md)) check the same set;
   change both together. The first four stay in the clear (kustomize and
   Flux read them), `data`/`stringData` are encrypted. No `immutable` (Flux
   could not apply a rotation).
-- **Apply.** The Kustomization `secrets` (`components/flux/secrets.nix`;
-  rendered only while `k8s/secrets/` has a file) applies
-  `./deferred/secrets` from the same signed artifact, `dependsOn:
-  flux-system` (the namespaces), with `decryption: { provider: sops,
-  secretRef: { name: sops-age } }`. It is fenced off from `flux-system`
-  like the [deferred components](README.md#deferred-components): a missing
-  key, a file encrypted to the wrong key or a broken MAC fails only
-  `secrets`. A new artifact is applied within seconds of its push; `secrets`
-  also re-applies every 10 minutes (`interval: 10m`).
-- **Flux owns these Secrets.** Git is the only place to change them. A
-  value changed in the cluster by hand (`kubectl edit`, `kubectl apply`) is
-  put back to the git value at the next reconcile, at most 10 minutes
-  later.
+- **Apply.** The Kustomization `secrets` (`k8s/components/flux/secrets.nix`)
+  decrypts them with `flux-system/sops-age`. Like the
+  [deferred components](README.md#deferred-components), a missing key, a
+  file encrypted to the wrong key or a broken MAC fails only `secrets`.
+- **Flux owns these Secrets.** Git is the only place to change them; a
+  hand edit in the cluster is reverted at the next reconcile.
 - **Prune** (`prune: true`): deleting a `.sops.yaml` file deletes its
   Secret from the cluster once that commit is applied, and the pods that
   read it fail at their next start (`CreateContainerConfigError`). Removing
@@ -91,18 +72,18 @@ with `nix shell nixpkgs#sops nixpkgs#jq nixpkgs#yq-go nixpkgs#openssl`
    guard. Merge.
 3. `render.yml` publishes and Flux applies it within seconds; to force or
    check it (OIDC, or the break-glass kubeconfig on a node,
-   [../pki.md](../pki.md#break-glass)):
+   [../pki.md](../pki.md)):
    `flux reconcile kustomization secrets --with-source`, then
    `flux get kustomizations secrets` (Ready, the new revision).
-4. Restart what reads it (table above): environment variables and files
+4. Restart what reads it: environment variables and files
    are read at start, so running pods keep the old value until then:
    `kubectl -n <namespace> rollout restart deploy/<name>`.
 
 Some values can't simply be replaced: `AUTHENTIK_SECRET_KEY` never,
 `AUTHENTIK_POSTGRESQL__PASSWORD` only together with the database
 ([apps.md](apps.md#the-secret-authentikauthentik-secrets)), the webhook
-token only with its GitHub secrets (table above), the CA Secrets only by a
-new signature from the root ([../pki.md, CA rotation](../pki.md#ca-rotation)).
+token only with its GitHub secrets ([README.md](README.md#deployment)),
+the CA Secrets only by a new signature from the root ([../pki.md](../pki.md)).
 
 ## Adding one
 
@@ -122,7 +103,7 @@ new signature from the root ([../pki.md, CA rotation](../pki.md#ca-rotation)).
    For a new one, `sops "$f"` on a file that doesn't exist yet opens an
    editor and encrypts what you type.
 2. Point the workload at it (`secretKeyRef` / a `secret` volume) and add a
-   row to the table above and to [../secrets.md](../secrets.md).
+   row to [../secrets.md](../secrets.md).
 3. PR, merge. A Secret that already existed (made by hand) is adopted by
    the first apply (server-side apply, forced ownership), not recreated;
    from then on it is Flux's.
@@ -143,18 +124,15 @@ type: Opaque
 
 ### Sorted keys
 
-`/.sops.yaml` encrypts `k8s/**.sops.yaml` to the admins and Flux, values
-under `data`/`stringData` only. sops' MAC covers every value in document
-order, and kustomize sorts keys before kustomize-controller decrypts, so a
-file whose keys were not sorted when it was encrypted fails in the cluster
-with "MAC mismatch". The render refuses such files. To fix one:
+A file whose keys were not sorted when it was encrypted fails in the
+cluster with "MAC mismatch" (kustomize sorts keys before decrypting), so
+the render refuses it. To fix one:
 `sops decrypt "$f" | yq 'sort_keys(..)'` piped into the `sops encrypt` line
 above.
 
 ## The bootstrap key (flux-system/sops-age)
 
-Flux's age private key, recipient `&flux` in `/.sops.yaml`
-(`age1ynj83hcd8zmscx4us80q6hqzxmr0d69hv3vr8extl5kvjqd92agqypgdux`). It
+Flux's age private key, recipient `&flux` in `/.sops.yaml`. It
 exists only in the cluster (and so in etcd and its backups); never in git,
 never on disk, never copied out. Until it exists the Kustomization
 `secrets` is not Ready and the Secrets keep their last applied values (on a

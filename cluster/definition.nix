@@ -4,7 +4,6 @@
 # (via the `cluster` specialArg from lib/system/mkServer.nix),
 # k8s/components/infra/cluster-pki/leaves.nix and k8s/. Keep the shape
 # stable: add fields, don't rename them.
-# Every field, its type and its readers: docs/cluster.md#the-cluster-definition-clusterdefinitionnix
 {
   name = "neurosis";
   domain = "leaffish-monster.ts.net";

@@ -9,7 +9,7 @@
 #   - tailscaled-autoconnect: `tailscale up --auth-key ... <upFlags>`, only
 #     when logged out and only when the auth key file exists (reinstall).
 #
-# Pref/flag table, tags, the reinstall procedure:
+# Rules and the reinstall procedure:
 # docs/cluster.md#tailscale
 {
   config,

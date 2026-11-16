@@ -51,7 +51,7 @@ in
     star-citizen.enable = true;
 
     # r440's binary cache after cache.nixos.org; netrc: sops key
-    # nix-cache-netrc in secrets/famine.yaml. docs/hosts/famine.md#binary-cache
+    # nix-cache-netrc in secrets/famine.yaml.
     nixCache.enable = true;
 
     # Off: no pam-yubikeys in secrets/famine.yaml, so login/sudo take the
@@ -102,7 +102,7 @@ in
     "NPM_CONFIG_USERCONFIG" = "${xdg.config}/npm/npmrc";
     "GTK2_RC_FILES" = "${xdg.config}/gtk-2.0/gtkrc";
     # Qt follows the GTK theme via Qt's built-in GTK 3 platform theme; the
-    # qt module has no "gtk3" value. docs/hosts/famine.md#qt-theming
+    # qt module has no "gtk3" value.
     "QT_QPA_PLATFORMTHEME" = "gtk3";
   };
   environment.sessionVariables = {
