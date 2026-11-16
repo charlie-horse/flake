@@ -1,7 +1,7 @@
 # Open WebUI (k8s/components/apps/open-webui.nix): confidential client for
 # members of the group `local-ai`. authentik generates the client secret on
 # creation; it goes into the Secret open-webui/open-webui-secrets,
-# sops-encrypted in k8s/secrets/ (k8s/README.md, "Open WebUI"), never into
+# sops-encrypted in k8s/secrets/ (docs/k8s/apps.md#open-webui), never into
 # git in the clear. @OPEN_WEBUI_HOST@ is filled in by blueprints.nix.
 version: 1
 metadata:

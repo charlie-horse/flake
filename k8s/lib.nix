@@ -53,7 +53,7 @@
     };
 
   # Tolerations for every taint any node carries (cluster/definition.nix,
-  # nodes.<n>.taints; today c4130's nvidia.com/gpu=vllm), for workloads that
+  # nodes.<n>.taints; e.g. c4130's nvidia.com/gpu=vllm), for workloads that
   # must run on every node (one replica per node).
   nodeTolerations = lib.unique (
     lib.concatMap (

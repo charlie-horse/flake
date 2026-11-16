@@ -1,32 +1,16 @@
 # Tailscale Service for the Kubernetes API: every controlPlane node hosts
-# svc:<cluster.apiserverTailscaleService> (today svc:kube-api), TCP 6443 ->
-# its local apiserver at 127.0.0.1:6443. Tailnet clients reach the API as
-# https://kube-api.<cluster.domain>:6443 (own MagicDNS name and TailVIP,
-# load-balanced over the hosts that advertise it), next to the LAN-only
-# keepalived VIP (./keepalived.nix). The apiserver leaves carry the name
-# as a SAN (cluster.apiserverExtraSANs; asserted below).
+# svc:<cluster.apiserverTailscaleService> (svc:kube-api), TCP 6443 ->
+# its local apiserver at 127.0.0.1:6443, reachable tailnet-wide as
+# https://kube-api.<cluster.domain>:6443. The apiserver leaves carry that
+# name as a SAN (cluster.apiserverExtraSANs; asserted below).
 #
 # nixpkgs 26.05 has no serve/Services options in services.tailscale, so a
-# oneshot applies the declarative Services config file
-# (tailscale.com/kb/1589) with `tailscale serve set-config --service=...`.
-# That replaces only this service's handlers (idempotent: a second run
-# writes the same config) and adds it to the AdvertiseServices pref; other
-# serve config and the node's prefs are untouched.
-#
-# Lifecycle: the unit is bound to kube-apiserver.service. When the apiserver
-# stops, ExecStop runs `tailscale serve drain`, so the node stops taking
-# new connections; when it starts again (Upholds), set-config advertises
-# the node again. There is no /readyz check (keepalived has one for the
-# VIP): a running but unready apiserver still gets traffic.
-#
-# Needs, outside Nix (docs/cluster.md, "Tailscale Service for the API"):
-# tagged hosts (all three are tag:node), the service defined in the admin
-# console with endpoint tcp:6443, an autoApprovers.services entry and a
-# grant for the clients. Until then the node advertises, unapproved.
-#
-# Firewall: tailscaled terminates the TailVIP connection itself and dials
-# 127.0.0.1:6443 over lo, which nixos-fw always accepts; nothing has to be
-# opened on tailscale0 (also not on c4130, trustTailscale = false).
+# oneshot applies a Services config file (tailscale.com/kb/1589) with
+# `tailscale serve set-config --all`. Bound to kube-apiserver.service: on
+# stop it runs `tailscale serve drain`; on start (Upholds) it advertises
+# again. No firewall change: tailscaled dials 127.0.0.1:6443 over lo.
+# Admin-console setup:
+# docs/cluster.md#tailscale-service-for-the-api-svckube-api
 {
   config,
   lib,

@@ -1,37 +1,14 @@
-# The OpenSSH client on every host: desktops get it with modules/
-# wholesale (lib/system/mkHost.nix), the servers through
-# modules/server/default.nix. Client how-to: docs/cluster.md, "SSH between
-# the hosts".
+# The OpenSSH client on every host (desktops via modules/, servers via
+# modules/server/default.nix).
 #
-#   /etc/ssh/ssh_config  a Host block for the cluster nodes, by name only
-#                        (c4130, r440, m2mini and their MagicDNS FQDNs):
-#                        User admin, ForwardAgent yes, IdentitiesOnly yes and
-#                        one IdentityFile per sk- key admin is authorized
-#                        with (modules/system/admin.nix). Those files hold
-#                        the PUBLIC key only: with IdentitiesOnly, ssh offers
-#                        exactly that key from the agent (local or forwarded;
-#                        ssh_config(5), IdentityFile: "You can also specify a
-#                        public key file to use the corresponding private key
-#                        that is loaded in ssh-agent(1) when the private key
-#                        file is not present locally"). No key-handle stub
-#                        (an OPENSSH PRIVATE KEY file) is deployed: the
-#                        agent makes it unnecessary, and CI's secrets guard
-#                        rejects one. On a machine with the YubiKey plugged
-#                        in, `ssh-add -K` (or `ssh-keygen -K` + `ssh-add`)
-#                        loads the resident key into the agent.
-#                        IP addresses are left out on purpose: c4130's
+#   /etc/ssh/ssh_config  Host block for the cluster nodes, by NAME only:
+#                        User admin, ForwardAgent, IdentitiesOnly and one
+#                        public-key IdentityFile per admin sk- key (ssh then
+#                        offers that key from the agent). No IPs: c4130's
 #                        nix-daemon reaches r440 as nixremote@10.25.0.2 with
-#                        its own key (hosts/c4130/builder.nix), and this
-#                        block must not add identities or agent forwarding
-#                        there.
-#   ssh_known_hosts      every node's ed25519 host key
-#                        (cluster/definition.nix, nodes.<n>.sshHostKey) for
-#                        its name, FQDN, LAN and tailnet address; host
-#                        configs add more names (the bond0 link,
-#                        hosts/*/builder.nix).
-#   desktops             a per-user ssh-agent (programs.ssh.startAgent; the
-#                        servers turn it off in modules/server/default.nix,
-#                        they use the forwarded agent).
+#                        its own key (hosts/c4130/builder.nix).
+#   ssh_known_hosts      every node's ed25519 host key (cluster/definition.nix)
+#   desktops             a per-user ssh-agent; servers use the forwarded one
 {
   pkgs,
   lib,

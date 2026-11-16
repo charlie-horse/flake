@@ -1,39 +1,14 @@
-# In-cluster resources, rendered with catenix
-# (github:charlie-horse/catenix): every object Flux puts in the cluster is
-# declared under ./components as a catenix module
-# (`resources.<group|core>.<version>.<Kind>.<name>`), type-checked against
-# the Kubernetes API (catenix's pinned v1.37 spec) and the CRDs of the charts
-# it imports, with `validation.strict` on.
-#
-# A function of { inputs, pkgs, lib } returning
-#
-#   manifests     the rendered tree: <component>/<plural kind>.yaml
-#                 (deferred components: deferred/<component>/...;
-#                 sops-encrypted Secrets, copied verbatim from ./secrets:
-#                 deferred/secrets/<namespace>/<name>.sops.yaml)
-#   checkImages   a script: every image in the tree must be a manifest list
-#                 with linux/amd64 and linux/arm64 (network; not sandboxed)
-#   components    the evaluated catenix configurations (for `nix eval`)
-#
-# parts/k8s.nix exposes it as the system-independent flake output `k8s`
-# (built with x86_64-linux pkgs; YAML is the same for every system):
-#
-#   nix build .#k8s.manifests                      # -> ./result
-#   nix build .#k8s.checkImages && ./result/bin/k8s-check-images
+# In-cluster resources, rendered with catenix (github:charlie-horse/catenix):
+# every object Flux puts in the cluster is declared under ./components as a
+# catenix module, type-checked with `validation.strict`.
 #
 # This file is the registry: which components exist, the cluster values and
-# the Kubernetes version they are rendered with. How they are evaluated and
-# laid out (file names, the deferred fence, the image check) is
-# ./render.nix; the helpers components share (`k8sLib`) are ./lib.nix.
+# the Kubernetes version. { inputs, pkgs, lib } -> { manifests, checkImages,
+# components }; the mechanics are ./render.nix, the shared helpers ./lib.nix.
+# Exposed as the flake output `k8s` (parts/k8s.nix); deployed by
+# .github/workflows/render.yml (signed OCI artifact on GHCR, Flux webhook).
 #
-# It is deliberately not a per-system package: rendering is
-# import-from-derivation (catenix runs `helm template` in a derivation and
-# reads the result back), and `nix flake check` should never build it. The
-# NixOS configurations never touch this directory.
-#
-# Deployment: .github/workflows/render.yml builds the manifests on every push
-# to main, pushes them to GHCR as a cosign-signed OCI artifact and pings
-# Flux's webhook (k8s/README.md, docs/ci.md).
+# Overview, render layout, deployment: docs/k8s/README.md
 {
   inputs,
   pkgs,
@@ -41,7 +16,7 @@
 }:
 let
   definition = import ../cluster/definition.nix;
-  # cluster/definition.nix is pure data today; accept a { lib }: function too.
+  # cluster/definition.nix is pure data; accept a { lib }: function too.
   cluster = if lib.isFunction definition then definition { inherit lib; } else definition;
 
   # Kubernetes version the charts are rendered for (`helm template
@@ -52,7 +27,7 @@ let
   # name is also the component's directory in the render. Flux applies the
   # whole tree (but `deferred`, below) as one Kustomization and orders
   # namespaces and CRDs first by itself; for a manual bootstrap the order is
-  # infra/*, then flux, then apps/* (k8s/README.md). Adding a component is
+  # infra/*, then flux, then apps/* (docs/k8s/README.md#bootstrap-fresh-cluster). Adding a component is
   # one line here (or in `deferred.modules`); ./render.nix needs no change.
   components = {
     "infra/runtime-classes" = ./components/infra/runtime-classes.nix;
@@ -88,8 +63,8 @@ let
     # is copied verbatim (never parsed or re-serialised: that would break
     # the sops MAC) to <dir>/<name>/<namespace>/<name>.sops.yaml and applied
     # by the Kustomization `<name>`, which decrypts them with the age key
-    # in flux-system/sops-age (components/flux/secrets.nix, k8s/README.md
-    # "Secrets").
+    # in flux-system/sops-age (components/flux/secrets.nix,
+    # docs/k8s/secrets.md).
     secrets = {
       name = "secrets";
       src = ./secrets;

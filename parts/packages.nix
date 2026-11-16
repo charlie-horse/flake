@@ -1,4 +1,5 @@
-# Per-system packages. The k8s render is the system-independent output `k8s`
+# Per-system packages and the dev shell (`nix develop`, or direnv via
+# .envrc). The k8s render is the system-independent output `k8s`
 # (parts/k8s.nix); the desktop ISOs come from the flake lib (parts/hosts.nix).
 { inputs, config, ... }: {
   perSystem =
@@ -13,22 +14,44 @@
       };
     in
     {
-      # `nix fmt`: RFC-style nixfmt over the tracked .nix files (checks.yml
-      # runs it with --check, excluding only hosts/Pestilence/servarr.nix).
+      # `nix fmt`: RFC-style nixfmt (the `format` check, parts/checks.nix).
       formatter = pkgs.nixfmt;
 
-      # pytest runs in pki-tools' checkPhase.
-      checks.pki-tools = pkiTools;
+      # Tools the procedures in docs/ use. The YubiKey root-CA tools stay in
+      # `ca-ceremony-tools` (docs/pki.md).
+      devShells.default = pkgs.mkShellNoCC {
+        packages = with pkgs; [
+          # secrets and the YubiKey
+          sops
+          age
+          age-plugin-yubikey
+          ssh-to-age
+          yubikey-manager
+          pam_u2f
+          # cluster
+          kubectl
+          kubelogin-oidc
+          fluxcd
+          cloudflared
+          # checks and inspection
+          nixfmt
+          actionlint
+          shellcheck
+          nix-diff
+          jq
+          yq-go
+          openssl
+        ];
+      };
 
       packages = {
-        # YubiKey root-CA ceremony tools, entered ad hoc as root on c4130
-        # (`nix shell .#ca-ceremony-tools`; docs/pki-migration-plan.md).
+        # YubiKey root-CA ceremony tools, entered ad hoc wherever the card is
+        # plugged in (`nix shell .#ca-ceremony-tools`; docs/pki.md).
         ca-ceremony-tools = pkgs.callPackage ../pkgs/ca-ceremony-tools { };
         pki-export = pkiTools;
         pki-export-image = pkiTools.image;
       }
       # Installer ISO for the desktop host (lib/system/mkHost.nix).
-      # Pestilence is archived, so it has none (parts/hosts.nix).
       // (config.flake.lib.system.${system}.mkHostIso "Famine").${system};
     };
 }

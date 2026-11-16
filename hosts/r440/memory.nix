@@ -1,14 +1,6 @@
-# Memory hardening. r440 has ~46 GiB of RAM and no disk swap, and runs
-# etcd + the control plane + kubelet next to c4130's remote builds. On
-# 2026-11-04 two CUDA trees (2 jobs x 16 nvcc) exhausted RAM: kswapd
-# stalled, journald's watchdog fired and the box hung. Three layers:
-#   1. zram swap, so short spikes compress instead of stalling;
-#   2. a hard memory cap on nix-daemon.service (where every build runs,
-#      including c4130's: nixremote's `nix-daemon --stdio` forwards to the
-#      system daemon), so a runaway build is OOM-killed inside its cgroup
-#      while there are still >= 10 GiB for everything else;
-#   3. builds are the first choice of the global OOM killer.
-# The build concurrency itself is sized in ./builder.nix.
+# Memory limits: zram swap, a hard memory cap on nix-daemon (every build,
+# c4130's included), and builds first in line for the OOM killer. Build
+# concurrency is in ./builder.nix.
 { ... }:
 {
   # --- zram swap -----------------------------------------------------------

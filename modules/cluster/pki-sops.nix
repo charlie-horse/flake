@@ -1,4 +1,4 @@
-# docs/pki.md, "Phase 2 operations"
+# Keys and certs on the nodes: docs/pki.md#on-the-nodes-runsecretspki
 {
   config,
   lib,

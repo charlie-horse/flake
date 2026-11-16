@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# `nix flake check` gates every commit. Enable once per clone:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+exec nix flake check --keep-going

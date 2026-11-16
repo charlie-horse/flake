@@ -2,62 +2,15 @@
 # and the desktop's YubiKey. Servers import this directory from
 # modules/server/default.nix; the desktops get it with modules/ wholesale
 # (modules/default.nix imports a directory's default.nix only, so the
-# helper file u2f-keys is not a module). Design, path tables, rollout and
-# recovery: docs/auth.md.
+# helper file u2f-keys is not a module). Registering keys, enabling and
+# recovery: docs/auth.md, "custom.auth".
 #
-# Options (custom.auth.*):
-#
-#   sshd.keysOnly              true   sshd: no password or keyboard-
-#                                     interactive auth (keys only)
-#   hardwareFactor.enable      false  sudo/polkit/console as in the table
-#                                     below ("hardware factor on")
-#   hardwareFactor.sudoServices       [ "sudo" ] (+ "polkit-1" where polkit
-#                                     runs): one hardware factor, no password
-#   hardwareFactor.loginServices      [ "login" ]: password AND u2f touch
-#   hardwareFactor.rsshKeys           admin's sk- SSH login keys
-#   hardwareFactor.u2fKeysFile        ./u2f-keys (pamu2fcfg output)
-#   desktopU2f.enable          false  pam_u2f as an alternative to the
-#                                     password (set by custom.yubikey.enable,
-#                                     modules/system/yubikey.nix)
-#
-# Per service:
-#
-#   | Service          | Default (both off)        | hardwareFactor.enable          | desktopU2f.enable            |
-#   |------------------|---------------------------|--------------------------------|------------------------------|
-#   | sshd             | keys only (sshd.keysOnly) | same                           | same                         |
-#   | Tailscale SSH    | tailnet identity, no PAM  | same (`login -f` skips auth)   | same                         |
-#   | sudo             | admin's password          | rssh OR u2f, no password       | password OR u2f touch        |
-#   | polkit-1         | admin's password          | rssh OR u2f, no password       | password OR u2f touch        |
-#   | login (console)  | password                  | password AND u2f touch         | password OR u2f touch        |
-#   | su               | password (root locked)    | unchanged                      | password OR u2f touch        |
-#   | greeter/hyprlock | password (Famine)         | unchanged                      | password OR u2f touch        |
-#
-# "OR u2f" for desktopU2f is NixOS's security.pam.u2f.enable: a
-# `sufficient` pam_u2f in EVERY PAM service, per-user mappings in
-# ~/.config/Yubico/u2f_keys (origin pam://sortofasian). hardwareFactor and
-# desktopU2f are exclusive.
-#
-# hardwareFactor: prerequisite: a SECOND FIDO2 key registered (u2f-keys
-# must hold two credentials and rsshKeys two sk- keys; both asserted); with
-# one key, losing it means no sudo and no console login on every host that
-# has this on. login's pam_unix loses `nullok` while it is on.
-#
-#   sudo, polkit-1:
-#     auth sufficient /…/libpam_rssh.so …  # hw-rssh: forwarded ssh:admin key
-#     auth sufficient /…/pam_u2f.so …      # hw-u2f: YubiKey on this host
-#     auth required   /…/pam_deny.so       # deny (NixOS's own)
-#   login:
-#     auth required   /…/pam_u2f.so …      # hw-u2f
-#     auth sufficient /…/pam_unix.so …     # unix (NixOS's own): password
-#     auth required   /…/pam_deny.so       # deny (NixOS's own)
-#
-# In Linux-PAM `sufficient` ends the stack with success only if no earlier
-# `required` module failed, so on login a failed touch denies even with the
-# right password; on sudo pam_unix is out of the stack, so the password
-# never helps. The assertions refuse any configuration where another
-# module could change these stacks (another `sufficient` or jumping rule,
-# pam_unix in the sudo stack, an overridden text, NOPASSWD sudo rules,
-# sudo-rs).
+# hardwareFactor needs a SECOND FIDO2 key registered (u2f-keys: two
+# credentials, rsshKeys: two sk- keys; both asserted). In Linux-PAM
+# `sufficient` ends the stack only if no earlier `required` failed, so on
+# login a failed touch denies even with the right password; on sudo
+# pam_unix is out of the stack. The assertions refuse any configuration
+# where another module could change these stacks.
 {
   config,
   lib,
@@ -370,7 +323,7 @@ in
       ];
     }
 
-    # ---- Desktop YubiKey (was modules/system/pam.nix) --------------------
+    # ---- Desktop YubiKey ---------------------------------------------------
     (mkIf cfg.desktopU2f.enable {
       security.pam = {
         u2f = {
@@ -452,7 +405,7 @@ in
         }
         {
           # The u2f mapping and the agent keys are admin's; another wheel
-          # account (charlie in stage 1 of his removal) could not sudo.
+          # account could not sudo.
           assertion = wheelUsers == [ "admin" ];
           message = "custom.auth.hardwareFactor: admin must be the only wheel account (got: ${concatStringsSep ", " wheelUsers}).";
         }

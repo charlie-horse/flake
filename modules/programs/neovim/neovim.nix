@@ -63,9 +63,7 @@ in
               cmp-nvim-lsp
               lspkind-nvim
               nvim-lspconfig
-              # rust-tools-nvim was removed from nixpkgs (abandoned). The
-              # config never loaded it: rust_analyzer is set up through
-              # lspconfig (config/dev/lsp.lua).
+              # rust_analyzer is set up through lspconfig (config/dev/lsp.lua).
             ]
           else
             [ ]
@@ -89,8 +87,7 @@ in
           lua-language-server
           #java-language-server
         ])
-        # Formerly pkgs.nodePackages.*, which nixos-unstable removed; these
-        # are top-level packages in both the old and the new nixpkgs.
+        # Top-level packages (not pkgs.nodePackages.*).
         ++ (with pkgs; [
           vim-language-server
           bash-language-server

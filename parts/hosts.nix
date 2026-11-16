@@ -29,12 +29,7 @@ in
 
   flake.nixosConfigurations = lib.merge [
     (lib.system.x86_64-linux.mkHost ../hosts/Famine)
-    # Pestilence is archived (hosts/Pestilence/README.md): its files stay,
-    # but it is not an output, so it is neither built nor checked. To
-    # restore it, re-add
-    #   (lib.system.x86_64-linux.mkHost ../hosts/Pestilence)
-    # here (and its ISO in parts/packages.nix) and fix it for the current
-    # nixpkgs-unstable.
+    # hosts/Pestilence is not an output (neither built nor checked).
 
     # Servers: only the host dir + modules/cluster + modules/server (no
     # desktop or home-manager; sops-nix and the admin account come through

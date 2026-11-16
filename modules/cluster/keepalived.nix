@@ -1,20 +1,8 @@
-# Apiserver VIP (cluster.vip, today 10.0.0.200) with keepalived on EVERY
+# Apiserver VIP (cluster.vip, 10.0.0.200) with keepalived on EVERY
 # node. VRRP over the LAN interface, unicast between the nodes' LAN IPs;
 # the highest-priority node whose LOCAL https://127.0.0.1:6443/readyz
-# answers holds the VIP (c4130 150 > r440 100 > m2mini 50).
-#
-# Replaces c4130's old LVS virtual_server (VIP:6443 -> 10.0.0.95:6443 with
-# an SSL_GET /readyz check): the apiserver binds 0.0.0.0:6443, so the VIP
-# holder serves the VIP itself, and the /readyz check now decides who holds
-# it (a not-ready apiserver drops its node to FAULT and the VIP moves).
-#
-# A node without a local apiserver (none today: every node is a
-# controlPlane) would run HAProxy on :6443 instead, forwarding to the
-# controlPlane nodes' LAN IPs with a /readyz health check; the same local
-# /readyz check then tests "some apiserver is ready via me".
-#
-# /readyz is readable anonymously (system:public-info-viewer), so the check
-# needs no client cert or key.
+# answers holds the VIP (c4130 150 > r440 100 > m2mini 50). /readyz is
+# readable anonymously (system:public-info-viewer): no client cert needed.
 {
   config,
   lib,
@@ -34,9 +22,7 @@ in
 {
   options.clusterNode.keepalived.enable = mkOption {
     type = types.bool;
-    # Not in the "etcd" stage: no apiserver runs anywhere yet, and the old
-    # multicast keepalived (instance api-frontend) is still up on c4130
-    # until c4130 itself is switched.
+    # Not in the "etcd" stage: no apiserver runs there.
     default = cfg.stage != "etcd";
     defaultText = "clusterNode.stage != \"etcd\"";
     description = "Run keepalived for the apiserver VIP on this node.";

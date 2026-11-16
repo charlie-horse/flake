@@ -1,4 +1,4 @@
-# Token, image digest and activation: docs/pki.md, "Phase 2 operations".
+# Token, image digest and activation: docs/pki.md, "In-cluster issuance".
 { lib, cluster, ... }:
 let
   inherit (import ./settings.nix) namespace;

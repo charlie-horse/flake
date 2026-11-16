@@ -1,19 +1,9 @@
 # c4130: 2x V100 vLLM inference host (x86_64, NixOS 26.05).
+# Docs: docs/hosts/c4130.md (deploy), docs/hosts/c4130-vllm.md (vLLM/LMCache).
 #
-# Ported verbatim from c4130's standalone flake (/etc/nixos, via
-# ~/flint-nix/builder/etc-nixos-c4130). The old k8s.nix (etcd, apiserver,
-# keepalived, certs as Nix paths) is intentionally NOT here: the shared
-# cluster module (modules/cluster + cluster/definition.nix) replaces it.
-#
-# Must NOT go through lib mkHost (that imports every modules/** file:
-# desktop, home-manager, agenix). Build it with nixpkgs.lib.nixosSystem.
-#
-# Required specialArgs:
-#   inputs   - flake inputs; needs inputs.vllm-fork
-#              (github:charlie-horse/vllm-sm70, inputs.nixpkgs.follows =
-#              the 26.05 nixpkgs)
-# nixpkgs itself: the flake's `nixpkgs` input (github:NixOS/nixpkgs/
-# nixos-26.05, rev pinned in flake.lock).
+# Built by lib.system.x86_64-linux.mkServer (parts/hosts.nix): only this
+# dir + modules/cluster + modules/server, not the mkHost module tree.
+# Needs specialArgs `inputs` with inputs.vllm-fork (vllm-sm70; see flake.nix).
 #
 # Module order matters for byte-identical output (list-merged options such
 # as firewall ports); keep it as in the host flake.
@@ -24,6 +14,5 @@
     ./hardware-configuration.nix
     ./vllm
     ./builder.nix
-    ./gpu-window.nix
   ];
 }

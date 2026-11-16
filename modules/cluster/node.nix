@@ -99,7 +99,7 @@ in
         cni.configDir = cniConfigDir;
         extraOpts = nodeLabelsFlag;
         # Per-node KubeletConfiguration fields (e.g. c4130's absolute
-        # evictionHard / image GC thresholds; its / is 96% full).
+        # evictionHard / image GC thresholds).
         extraConfig = node.kubeletConfig;
       };
 

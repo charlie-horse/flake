@@ -1,33 +1,16 @@
-# r440's Nix binary cache (harmonia) as a substituter, on every machine
-# that enables it: https://cache.neuros.is with HTTP basic auth, the same
-# URL everywhere (servers, desktops, CI). Shared by the desktops (modules/
-# is imported wholesale by mkHost) and the servers (modules/server/
-# default.nix imports this file). Server side: hosts/r440/cache.nix.
+# r440's Nix binary cache (harmonia) as a substituter: https://cache.neuros.is
+# with HTTP basic auth, the same URL on every host and in CI. Imported by
+# modules/server/default.nix and, for desktops, with modules/ wholesale.
+# Server side: hosts/r440/cache.nix.
 #
-#   https://cache.neuros.is -> Cloudflare -> cloudflared (any node)
-#     -> nginx on r440 (basic auth) -> harmonia
+# Credential: a netrc line (`machine cache.neuros.is login <user> password
+# <pw>`), sops key `nix-cache-netrc` in secrets/<hostname>.yaml ->
+# /run/secrets/nix-cache-netrc; never in git, the store or a command line.
 #
-# The credential is a netrc file (`netrc-file`, read by the nix-daemon as
-# root), never in plaintext in git, the store or a command line:
-#   machine cache.neuros.is login <user> password <password>
-# It is the sops secret `nix-cache-netrc` in each host's
-# secrets/<hostname>.yaml (sops-nix, decrypted to /run/secrets/
-# nix-cache-netrc, root 0600), on servers and desktops alike. Formerly a
-# hand-made /var/lib/nix-cache/netrc on the servers and agenix on Famine;
-# shred the old servers' file once the sops one is live (docs/cluster.md,
-# "Binary cache").
-#
-# Read-only: harmonia serves r440's /nix/store; nothing can be pushed.
-#
-# A down cache or a missing netrc must not break anything:
-#   - cache.nixos.org stays in `substituters` (the NixOS default, mkAfter)
-#     and comes first (40 < 50), so r440 is asked only for what
-#     cache.nixos.org lacks (unfree CUDA builds, our own packages);
-#   - connect-timeout: an unreachable cache costs seconds, not minutes;
-#   - fallback: after a failed query (unreachable, 5xx, or 401 from a
-#     missing/wrong netrc) Nix disables the cache for 60 s and goes on with
-#     cache.nixos.org (HttpBinaryCacheStore::maybeDisable only does so with
-#     fallback on), and a NAR whose download fails is built instead.
+# A down cache or missing netrc must not break anything: cache.nixos.org
+# (40) stays first, connect-timeout keeps an unreachable cache cheap, and
+# fallback makes Nix skip a failing cache for 60 s and build what it can't
+# fetch. Design, clients and setup: docs/build-cache.md#binary-cache.
 {
   config,
   lib,

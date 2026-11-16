@@ -17,8 +17,7 @@ in
   boot.kernelParams = [ "nvidia_drm.fbdev=1" ];
 
   # Qt plugin paths for the installed profiles. The theme is set with
-  # QT_QPA_PLATFORMTHEME below: NixOS dropped the "gtk2" platform theme and
-  # style (qtstyleplugins; GTK 2 is end-of-life).
+  # QT_QPA_PLATFORMTHEME below.
   qt.enable = true;
 
   services = {
@@ -51,18 +50,12 @@ in
     steam = true;
     star-citizen.enable = true;
 
-    # r440's binary cache, https://cache.neuros.is (modules/system/
-    # nix-cache.nix), after cache.nixos.org. The netrc is the sops key
-    # nix-cache-netrc in secrets/famine.yaml (the old agenix one is lost):
-    # a new htpasswd user `famine` on r440 (nix-cache-htpasswd in
-    # secrets/r440.yaml) and its netrc line here.
+    # r440's binary cache after cache.nixos.org; netrc: sops key
+    # nix-cache-netrc in secrets/famine.yaml.
     nixCache.enable = true;
 
-    # TODO(famine-yubikey): the pam_u2f mappings (the agenix
-    # pam-yubikeys) are lost. Remake them
-    # at Famine with the YubiKey 5 plugged in (how:
-    # modules/system/yubikey.nix), add them to secrets/famine.yaml, then
-    # set this to true. Until then login/sudo take the password only.
+    # Off: no pam-yubikeys in secrets/famine.yaml, so login/sudo take the
+    # password only. docs/hosts/famine.md#yubikey
     yubikey.enable = false;
   };
 
@@ -88,9 +81,6 @@ in
     mpv
     gimp
     #kicad
-    # cider: removed from nixos-unstable (unmaintained, archived upstream).
-    # Its successor is packaged as cider-2 (unfree, a paid app upstream);
-    # add it here if wanted.
     lutris
     sioyek
     spotify
@@ -111,11 +101,8 @@ in
     "CARGO_HOME" = "${xdg.data}/cargo";
     "NPM_CONFIG_USERCONFIG" = "${xdg.config}/npm/npmrc";
     "GTK2_RC_FILES" = "${xdg.config}/gtk-2.0/gtkrc";
-    # Qt follows the GTK theme (Orchis, picked with lxappearance) through
-    # Qt's own GTK 3 platform theme (libqgtk3, built into qtbase for Qt 5
-    # and 6): GTK palette, fonts, icons and file dialogs. Replaces
-    # qt.platformTheme/qt.style "gtk2", which NixOS removed; its qt module
-    # has no "gtk3" value, so set it directly.
+    # Qt follows the GTK theme via Qt's built-in GTK 3 platform theme; the
+    # qt module has no "gtk3" value.
     "QT_QPA_PLATFORMTHEME" = "gtk3";
   };
   environment.sessionVariables = {

@@ -1,46 +1,77 @@
-# c4130 vLLM inference host
+# flake: NixOS config for the neurosis cluster
 
-c4130 is one of the three NixOS 26.05 servers (c4130, r440, m2mini) that run the neurosis cluster. Its config is `hosts/c4130/` in this repo. On every server, `/etc/nixos` is a git checkout of `main` (mode 0755, owned charlie:root before stage 2 of charlie's removal and admin:root after; a tmpfiles `Z` rule in `modules/server/default.nix` keeps it so) and the only checkout; `~/src/flake` is gone. The vLLM setup is `hosts/c4130/vllm/`, which consumes the vLLM fork's flake (input `vllm-fork`). **`hosts/c4130/vllm/CLAUDE.md` is the canonical vLLM/LMCache doc**; the cluster runbook is `docs/cluster.md` (history: `docs/history/`), the PKI is in `docs/pki.md`, authentication policy (sshd keys only, sudo, console, the optional hardware factor) is `modules/system/auth` and `docs/auth.md`.
+NixOS 26.05 servers c4130, r440 and m2mini (one Kubernetes cluster), the
+workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
+`AGENTS.md` is a symlink to this file. How everything works:
+[docs/README.md](docs/README.md). Changing a host:
+[docs/cluster.md#changing-a-host](docs/cluster.md#changing-a-host).
 
-## Access from a cloud session
-- Only SSH to the hosts when the user has allowed it for the task.
-- Tailscale isn't preinstalled. Download the static `tailscale_<ver>_amd64.tgz` from pkgs.tailscale.com (piping the install script into `sh` gets blocked), then run `tailscaled --tun=userspace-networking --statedir=/var/lib/tailscale --socket=/var/run/tailscale/tailscaled.sock` in the background and `tailscale up --authkey="$TAIL_AUTH_KEY" --hostname=flake-cloud --accept-routes`. `TAIL_AUTH_KEY` is in the environment. The node can get logged out after container restarts; if `status` shows no peers, run `up` again.
-- Accounts (runbook: `docs/cluster.md`, "Removing charlie from the servers"; check a host with `getent passwd admin charlie`). charlie moves to `admin` in two stages, set by `custom.server.legacyCharlie.enable` (`modules/server/legacy-charlie.nix`):
-  - Stage 1 (PR #37, option on): `admin` and `charlie` both exist and are both in wheel; users are mutable, so charlie keeps his password and root is unchanged. `/etc/nixos` belongs to charlie. A host that has not switched to PR #37 yet has only charlie.
-  - Stage 2 (one PR per host sets `custom.server.legacyCharlie.enable = false;` in `hosts/<host>/configuration.nix`; m2mini, r440, c4130): `admin` is the only login and the only wheel account; users are immutable, root is locked, charlie is gone from the servers (Famine keeps him). `/etc/nixos` belongs to admin.
-- SSH goes through Tailscale SSH (the tailnet SSH policy permits admin and charlie): `ssh -o ProxyCommand="tailscale --socket=… nc %h %p" admin@c4130` (`charlie@…` on a host without admin; install `openssh-client` with apt). On m2mini the login shell is fish: run sh syntax as `ssh … admin@m2mini bash -s <<'EOF' … EOF` or `ssh -t … bash`.
-- `sudo` is run by the user, not by the cloud session: write privileged steps as copy-paste blocks for the user to run on the host, and say as which account (charlie in stage 1, admin after). The cloud session runs only read-only checks that need no sudo. admin's password is in sops (`secrets/common.yaml` key `admin-password`; `sops -d --extract '["admin-password"]' secrets/common.yaml` with the YubiKey); charlie's is the one he set with `passwd`, held by the user. The cloud environment holds only `TAIL_AUTH_KEY`: no sudo password and no YubiKey PIN. Plaintext secrets never go in git or on a command line (sops-encrypted files in `secrets/` and `k8s/secrets/` are the exception). Every secret and where it lives: `docs/cluster.md`, "Secrets (all of them)"; add a row there for any new one.
-- `/etc/nixos` is writable by its owner (charlie in stage 1, admin in stage 2), so `git pull` and building need no sudo as that account; `nixos-rebuild switch` and `journalctl -u vllm` do. Never `sudo git` in it (root-owned files break the next pull until a switch or boot re-owns the tree).
-- etcd and the k8s apiserver also run on this box (3-member etcd with r440 and m2mini). Switch one host at a time and run the etcd health check from `docs/cluster.md` after each. `switch` exiting with status 4 means a unit failed; read `systemctl --failed`. Leave etcd alone unless the user asks.
-- Cluster PKI (`docs/pki.md`): the intermediate CA keys are sops-encrypted in `k8s/secrets/cluster-pki/`; the root CA key is in PIV slot 9c of the admin YubiKey (serial 19830800), which also holds the sops key in slot 82; host certs are in `secrets/pki/<node>.yaml` → `/run/secrets/pki/`. Break-glass is `sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig …` on any node, so the cloud session (no sudo) has no cluster credentials. Never run `ykman piv reset` or touch slot 82.
+## Access
 
-## Deploying
-- Change or re-lock in this repo on a branch → CI → merge. Then on the host: `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#<host>` (m2mini adds `--override-input m2mini-vendorfw path:/boot/vendorfw`).
-- Never run `nix flake update` or edit files inside `/etc/nixos` on a host.
-- **GC old generations before any c4130 switch** (Charlie's rule): `sudo nix-env -p /nix/var/nix/profiles/system --delete-generations +2 && sudo nix-collect-garbage`. After a switch that replaces the Flint checkpoint, GC the old 23 GB path. What each host runs: `nix-store -qd /run/current-system` and `git -C /etc/nixos log -1` (don't record it here; it goes stale). Status 2026-11-12: c4130 root disk at 60%.
-- Switch c4130 outside the GPU window (vLLM is stopped 22:00–05:55 EST by `gpu-window-*` timers; a switch inside it starts vLLM again).
-- Builds happen on r440 only: c4130 has `max-jobs = 0`; r440 builds 2 jobs × 8 cores, with nix-daemon capped at 36G and zram swap.
+- SSH to the hosts only when the user has allowed it for the task.
+- **Tailscale in a cloud session.** Download the static
+  `tailscale_<ver>_amd64.tgz` from pkgs.tailscale.com (piping the install
+  script into `sh` is blocked). Run in the background
+  `tailscaled --tun=userspace-networking --statedir=/var/lib/tailscale --socket=/var/run/tailscale/tailscaled.sock`,
+  then `tailscale up --authkey="$TAIL_AUTH_KEY" --hostname=flake-cloud --accept-routes`.
+  If `tailscale status` shows no peers, run `up` again.
+- **SSH** (Tailscale SSH; the tailnet policy permits `admin`): install
+  `openssh-client`, then
+  `ssh -o ProxyCommand="tailscale --socket=/var/run/tailscale/tailscaled.sock nc %h %p" admin@<host>`.
+  MagicDNS resolves the bare names (tailnet `leaffish-monster.ts.net`).
+  `admin` is the only login on the servers; root is locked.
+- **m2mini's login shell is fish.** Run sh syntax as
+  `ssh … admin@m2mini bash -s <<'EOF' … EOF` (give `</dev/null` to commands
+  that read stdin) or interactively with `ssh -t … bash`.
+- **Between hosts:** `ssh <host>` as admin with the `ssh:admin` FIDO2 key
+  (YubiKey 19830800) from a forwarded agent; by LAN IP when Tailscale is
+  down (`ssh -A admin@10.0.0.95`). Client setup: [docs/auth.md](docs/auth.md).
+- **sudo:** the cloud session may use sudo on the hosts. Double-check every
+  sudo command before running it. The sudo password is in `$SUDO_PASSWORD`
+  and the YubiKey PIN in `$YK_PIN`; pass them on stdin (`sudo -S`), never in
+  argv or output. Only if those variables are unavailable or auto mode denies
+  the run, give the user a copy-paste block to run as `admin`.
+- Every file and folder in `/etc/nixos` stays owned by `admin:users`: run git
+  and builds there as admin, never as root. Never edit files or run
+  `nix flake update` there.
+- Over SSH, `pgrep -f` matches its own command line; use
+  `ps -ef | grep '[x]yz'`.
+- Secrets never go in git or on a command line, except sops-encrypted files
+  in `secrets/` and `k8s/secrets/`. Every secret is listed in
+  [docs/secrets.md](docs/secrets.md).
+- Never run `ykman piv reset` or touch PIV slot 82 of the admin YubiKey
+  ([docs/pki.md](docs/pki.md)).
 
-## Hardware
-- 2× Tesla V100-PCIe-32GB, both sm_70, on the same PCIe switch with no NVLink. Driver 580, the last driver branch for Volta.
-- 48 threads, 125 GB RAM, and SATA SSD RAID1.
-- **CUDA 13 can't target sm_70.** Anything that compiles or ships GPU kernels must use CUDA 12.x (the fork stack uses 12.8; after cutover vllm-sm70 uses 12.6, torch 2.14.0+cu126). No bf16 support, so run everything as `--dtype half`.
+## Checks
 
-## Stack summary (details in `hosts/c4130/vllm/CLAUDE.md`)
-- The Nix code (Python env, wrappers, `vllm`/LMCache modules, Flint build) is in the fork repo (github.com/charlie-horse/vLLM, `nix/`). `hosts/c4130/vllm/default.nix` only sets host values under `services.vllm-sm70` and `services.lmcache-sm70`.
-- Cut over on 2026-11-12 (c4130 runs `vllm-sm70-service-0.33.0`): input `vllm-fork` points at github.com/charlie-horse/vllm-sm70, branch `latest` (gated release branch; same name and options, Flint checkpoint path unchanged). `FLASH_ATTN_V100` and `--kernel-config.sm70_skinny_moe` are dropped there for now (TODO(sm70-attn)/TODO(sm70-moe)), so vLLM uses TRITON_ATTN. Kill switches: `hosts/c4130/vllm/CLAUDE.md`, "After cutover".
-- One model runs at a time, chosen by `services.vllm-sm70.activeModel`. vLLM listens on port 8000 (`eno1` and `tailscale0`, no API key; the user relies on network policy).
-- LMCache: L1 64 GB of pinned RAM, allocated in full at startup. L2 in `/var/lib/lmcache/l2`, capped at 32 GB (`services.lmcache-sm70.l2SizeGb`, set in `hosts/c4130/vllm/default.nix`); the pruner trims it to 80% once it passes 90%.
-- Flint's weights are a Nix store path: the fixed-output checkpoint `/nix/store/0qxvf6z208m6bff62acgwfg6ajhbinpp-flint-nvfp4-modelopt`. HF-downloaded weights (the Qwen entries) live in `/var/lib/vllm/models`, owned by `vllm`. That directory has been empty since 2026-11-04 (the Qwen weights and DFlash2 drafts were deleted), so switching to a Qwen model re-downloads ~70 GB first.
-- Check scripts are in `~admin/archive/scripts` on c4130 (`~charlie/archive` until stage 2, likewise every `~admin/archive` path below) (`verify_vllm.py`, `bench_vllm.py`, `kvtier_test.py`, …). `bench_vllm.py` is broken for Flint: it counts only `content` tokens, and Flint always reasons first.
-- Old `/etc/nixos` backups are in `~admin/archive/nixos-backups/` on each host.
+- `nix flake check` is the single source of truth for whether the flake is
+  good to commit. Run it before every commit; `.githooks/pre-commit` does
+  (enable once per clone: `git config core.hooksPath .githooks`).
+- Add any new check as a flake check in `parts/checks.nix`, never as a CI
+  step. CI only runs `nix flake check`.
+- Server configs must not use import-from-derivation (IFD); nothing
+  enforces this. The k8s render is the only IFD the flake check builds.
 
-## Gotchas learned the hard way
-- **GPU memory budget.** The LMCache server takes ~2.2 GiB per GPU (CUDA context plus transfer staging during stores), outside vLLM's budget. Keep `gpuMemoryUtilization` at or below ~0.91, or long prefills OOM inside 1Cat's FP8 workspace.
-- **KV must fit one full request.** Startup fails with "estimated maximum model length is N" if it doesn't. Lower `maxModelLen` or raise utilization (within the limit above).
-- **Speculative decoding.** DFlash2 drafts (`incoai/*-DFlash2`) gave +70% decode on the 3.6-35B (111 vs 66 tok/s at 4K). They cost KV space.
-- **Stopping the service.** `Restart=on-failure` brings `vllm` back after a crash or kill. Use `systemctl kill --signal=SIGKILL vllm` followed by `systemctl stop vllm`.
-- **pgrep.** Over SSH, `pgrep -f <pattern>` matches its own `bash -c` command line; use `ps -ef | grep '[x]yz'` instead.
-- **Thinking.** Flint always reasons: its chat template ends at `<|assistant|>` and has no `enable_thinking` switch, so `chat_template_kwargs.enable_thinking` does nothing. Since the vllm-sm70 cutover (2026-11-12, vLLM 0.33, parser plugin `vllm_sm70.reasoning`, parser `glm47_sm70`) the reasoning comes back in **`message.reasoning`** (streaming: `delta.reasoning`); `reasoning_content` is empty. Clients must read `reasoning` (or fall back to it): `~admin/archive/scripts/verify_vllm.py` already accepts both; Open WebUI (v0.12.2) is expected to handle `reasoning` but was not re-checked. The Qwen entries follow 1Cat's default (`enable_thinking` false); send `chat_template_kwargs.enable_thinking=true` there to get reasoning.
-- **LMCache stops after 1 h if a vllm start sees no long prompt.** In LMCache 0.5.6 each vLLM worker starts pinging the cache server only on its first store (a prompt of at least one 256-token chunk). If none arrives within 1 h of a vllm start, the server reaps both GPU instances (`Reaped GPU instance …: silent for 3600.1s (pinged=False)` in `journalctl -u vllm-lmcache`). After that every store is rejected (`Rejecting STORE for unregistered GPU instance`) and nothing is reused until vllm restarts. A busy server is unaffected. Check with `curl -s 127.0.0.1:8080/status`: `registered_gpu_ids` should list 2 ids. Workaround: restart only `vllm` and send one ≥256-token prompt within the hour. The fix (start the heartbeat at registration) is in the new flake, charlie-horse/vllm-sm70 PR #10; it is not in the fork.
-- **CacheBlend** doesn't apply to hybrid GDN models; LMCache only does prefix reuse there.
+## Documentation policy
+
+1. **The flake is the source of truth; docs don't restate it.** Don't describe
+   what the Nix code declares (nodes, roles, addresses, ports, services,
+   components, option values, versions): read it from the source. Docs hold
+   only what the code can't say: procedures to operate it, and rules whose
+   breach the code can't prevent.
+2. **Docs say how things work now.** No history, dates of past events,
+   rationale ("why"), plans, decisions, open questions or status notes.
+   Present tense, terse. A constraint you must follow is written as a rule.
+3. **Tasks live in the project, not in git.** No TODO/FIXME/XXX, follow-ups
+   or "later" notes in code or docs.
+4. **Where docs live.** Prose goes in `docs/`; [docs/README.md](docs/README.md)
+   lists every doc and the topic it owns. Per-host docs are
+   `docs/hosts/<host>.md`. Access lives only in this file. A directory may
+   keep a `README.md` or `CLAUDE.md` of at most 15 lines that points into
+   `docs/`.
+5. **One home per topic.** Edit a topic in its doc and link to it elsewhere.
+   A new topic gets a row in docs/README.md.
+6. **Code comments stay short and local.** At most 15 contiguous comment
+   lines; longer prose goes to the doc, with a one-line pointer in the code.
+7. **Docs change in the same PR as the code.** Moving or renaming a doc or
+   heading fixes every link to it.

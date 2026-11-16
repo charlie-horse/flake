@@ -1,22 +1,12 @@
 # Host side of the "neurosis" Kubernetes cluster (manual services.kubernetes,
-# no easyCerts, no roles, no addons: CoreDNS, flannel, the NVIDIA device
-# plugin, RuntimeClasses and Flux are rendered with catenix under k8s/).
+# no easyCerts, no roles, no addons: those are rendered with catenix under k8s/).
 #
-# Import it on a server and pass two specialArgs (lib/system/mkServer.nix
-# does both):
-#   cluster  = import ./cluster/definition.nix;   # pure data, see that file
+# Needs two specialArgs (lib/system/mkServer.nix passes both):
+#   cluster  = import ./cluster/definition.nix;   # pure data
 #   hostName = "<node name>";                     # key in cluster.nodes
-# What the node runs follows its roles in the definition:
-#   etcd         -> ./etcd.nix          (member <name>, https://<name>:2380)
-#   controlPlane -> ./control-plane.nix (apiserver, controller-manager,
-#                                         scheduler; leader election)
-#   worker       -> ./node.nix          (kubelet, kube-proxy, containerd or
-#                                         cri-o, NVIDIA runtime on gpu nodes)
-#   every node   -> ./keepalived.nix    (apiserver VIP, local /readyz check)
-#                   ./firewall.nix      (cluster ports open to the nodes only)
-#   controlPlane -> ./tailscale-service.nix (Tailscale Service svc:kube-api
-#                                         -> local apiserver)
-# limited by clusterNode.stage (cluster.nodes.<n>.rollout.stage).
+# What the node runs follows its roles (etcd.nix, control-plane.nix,
+# tailscale-service.nix, node.nix; keepalived.nix and firewall.nix on every
+# node), limited by clusterNode.stage (cluster.nodes.<n>.rollout.stage).
 #
 # Every key and cert is a STRING path under /run/secrets/pki (sops-nix,
 # ./pki-sops.nix), so nothing secret is ever copied into /nix/store.
@@ -67,7 +57,7 @@ in
       default = cfg.node.rollout.stage or "full";
       defaultText = "cluster.nodes.<name>.rollout.stage or \"full\"";
       description = ''
-        Cut-over stage (docs/history/cluster-handoff-2026-10.md): which of the node's roles
+        Rollout stage: which of the node's roles
         actually run. "etcd": etcd only; "controlPlane": + apiserver,
         controller-manager, scheduler and keepalived; "full": every role.
       '';
@@ -164,11 +154,9 @@ in
         }
       ];
 
-      # dhcpcd runs on every interface unless told otherwise. On 2026-11-11
-      # eno1 lost carrier on r440 and c4130 for 8 h; dhcpcd then dropped the
-      # LAN routes and address and added an IPv4LL default route via
-      # flannel.1, so nothing could reach any apiserver address and Flux,
-      # flannel and cloudflared crash-looped until the link returned.
+      # dhcpcd runs on every interface unless told otherwise; on a LAN
+      # carrier loss it drops the LAN address and routes and adds an IPv4LL
+      # default route via flannel.1, cutting the node off every apiserver.
       #   - deny the CNI, overlay and tailscale interfaces (pod veths, cni0,
       #     flannel.1, tailscale0 are never DHCP clients). A list: merges
       #     with the hosts' own entries (bond0 etc. in hosts/*/builder.nix).

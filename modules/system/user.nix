@@ -1,7 +1,6 @@
 # The desktop user (custom.user.name; Famine: charlie). Desktops only
-# (mkHost imports modules/ wholesale; mkServer does not; the servers'
-# charlie is modules/server/legacy-charlie.nix until stage 2 of the 2026-11
-# charlie removal). admin, root and users.mutableUsers: modules/system/admin.nix.
+# (mkHost imports modules/ wholesale; mkServer does not). admin, root and
+# users.mutableUsers: modules/system/admin.nix.
 { lib, config, ... }:
 let
   inherit (lib)
@@ -14,7 +13,6 @@ let
 in
 {
   options.custom.user = {
-    # TODO: need to add assertions
     name = mkOption {
       type = types.str;
       default = "";

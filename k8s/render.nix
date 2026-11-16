@@ -1,21 +1,13 @@
 # The render mechanics behind k8s/default.nix: evaluates every registered
 # component with catenix, lays the result out as a tree of YAML files and
-# builds the image check. k8s/default.nix holds the registry (what is
-# rendered) and passes it here; nothing in this file names a component.
+# builds the image check. Nothing in this file names a component.
 #
-# Arguments:
-#   inputs, pkgs, lib   as given to k8s/default.nix
-#   cluster             cluster/definition.nix, evaluated
-#   kubeVersion         `helm template --kube-version` for the charts
-#   components          component name -> module
-#   deferred            { dir, modules, secrets }: deferred components,
-#                       rendered under <dir>/, and the sops-encrypted
-#                       Secrets ({ name, src }), copied verbatim to
-#                       <dir>/<secrets.name>/ (k8s/default.nix,
-#                       k8s/README.md)
+# Arguments: inputs, pkgs, lib (as given to k8s/default.nix); cluster
+# (cluster/definition.nix, evaluated); kubeVersion (helm template
+# --kube-version); components (name -> module); deferred ({ dir, modules,
+# secrets }). Returns { manifests, checkImages, components }.
 #
-# Returns { manifests, checkImages, components } (k8s/default.nix
-# describes them).
+# Rules for components and secrets: docs/k8s/README.md#render, docs/k8s/secrets.md
 {
   inputs,
   pkgs,
@@ -191,8 +183,8 @@ let
   # Checks one sops-encrypted Secret (read only; the file is copied as is):
   # a single v1 Secret whose namespace and name match its path, top-level
   # keys only apiVersion kind metadata type data stringData sops (the same
-  # set as checks.yml's secrets-guard; no `immutable`: Flux could not
-  # rotate such a Secret, k8s/README.md, "Secrets"), every data/stringData
+  # set as scripts/check-sops.py; no `immutable`: Flux could not
+  # rotate such a Secret, docs/k8s/secrets.md), every data/stringData
   # value encrypted, sops
   # metadata with an age recipient and a MAC, encrypted_regex
   # ^(data|stringData)$ (so metadata stays readable for kustomize and Flux),
@@ -223,7 +215,7 @@ let
     # kustomize re-serialises with keys sorted (kustomize-controller
     # decrypts after its build): a file whose keys were not sorted when it
     # was encrypted fails with "MAC mismatch". Encrypt only key-sorted files
-    # (yq -i 'sort_keys(..)'; k8s/README.md, "Secrets").
+    # (yq -i 'sort_keys(..)'; docs/k8s/secrets.md#sorted-keys).
     [ "$($yq 'del(.sops)' "$file")" = "$($yq 'del(.sops) | sort_keys(..)' "$file")" ] \
       || fail "keys not sorted (sort with yq 'sort_keys(..)' BEFORE encrypting, then re-encrypt)"
   '';

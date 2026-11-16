@@ -1,8 +1,7 @@
 # Firewall for r440, host part (iptables backend, ping allowed, as on
 # c4130). The cluster ports (etcd 2379/2380, apiserver 6443, kubelet,
 # flannel) are NOT opened here: the cluster module (modules/cluster) owns
-# them, restricted to the cluster peers. Until 2026-10 they lived in this
-# file (git history: legacy-k8s-firewall.nix).
+# them, restricted to the cluster peers.
 { ... }:
 {
   networking.firewall = {
@@ -11,9 +10,8 @@
     # ssh (22) is opened in ./configuration.nix on every interface.
     # tailscaled's WireGuard port, for direct (non-relayed) connections.
     allowedUDPPorts = [ 41641 ];
-    # The 25G link to c4130: ssh (remote builds). The cache is not served
-    # on the link any more; its nginx port (5080) is opened per source in
-    # ./cache.nix.
+    # The 25G link to c4130: ssh (remote builds). The cache's nginx port
+    # (5080) is opened per source in ./cache.nix.
     interfaces.bond0.allowedTCPPorts = [ 22 ];
   };
 }

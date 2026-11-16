@@ -15,15 +15,9 @@ let
     ;
 in
 {
-  # Server host builder (c4130, r440, m2mini, ...).
-  #
-  # Unlike mkHost it does NOT import ../../modules wholesale (desktop,
-  # home-manager, ...): a server gets only its host dir, the shared
-  # cluster module (modules/cluster), the server baseline (modules/server:
-  # git, cloudflared, tailscale, sops-nix, the admin account, and charlie
-  # while custom.server.legacyCharlie.enable is on) and whatever `modules`
-  # adds.
-  #
+  # Server host builder (c4130, r440, m2mini). Unlike mkHost it does NOT
+  # import ../../modules wholesale: a server gets its host dir,
+  # modules/cluster, the server baseline (modules/server) and `modules`.
   #   mkServer {
   #       path = ./hosts/c4130;         # host dir (or file)
   #       nixpkgs = inputs.nixpkgs;     # per-host nixpkgs input (26.05)

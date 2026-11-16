@@ -1,5 +1,4 @@
-# Cluster ports, open to the cluster nodes only (iptables nixos-fw chain,
-# as r440's firewall.nix did for 2379/2380/6443):
+# Cluster ports, open to the cluster nodes only (iptables nixos-fw chain):
 #   tcp 2379, 2380   etcd client/peer     (etcd nodes)
 #   tcp 6443         kube-apiserver / VIP (controlPlane nodes, and the
 #                                          HAProxy on other VIP nodes)

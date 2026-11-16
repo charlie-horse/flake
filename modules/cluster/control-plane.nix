@@ -37,10 +37,10 @@ let
   schedulerKubeconfig = kubeconfig "kube-scheduler" "scheduler";
 
   # OIDC (on when cluster/definition.nix has `oidc`): authentik's provider
-  # `kubernetes` (blueprint in k8s/components/authentik.nix). Usernames and
-  # groups are prefixed `oidc:`, so a token can never claim a built-in
+  # `kubernetes` (blueprint: k8s/components/apps/authentik/blueprints/
+  # kubernetes-oidc.yaml). Usernames and groups are prefixed `oidc:`, so a token can never claim a built-in
   # identity (system:masters, system:nodes, ...); RBAC binds
-  # oidc:cluster-admins (k8s/components/rbac.nix). x509 client certs and
+  # oidc:cluster-admins (k8s/components/infra/rbac.nix). x509 client certs and
   # service-account tokens never depend on the issuer: if authentik is down
   # only OIDC logins fail, and the admin cert is the break-glass.
   #

@@ -1,20 +1,18 @@
 # r440 as a Nix remote builder for c4130, over the direct 2x25G link
 # (bond0, 10.25.0.0/30); sshd listens everywhere. The binary cache is
 # ./cache.nix (https://cache.neuros.is for every host, c4130 included).
+# docs/build-cache.md#remote-builder.
 { lib, ... }:
 let
   # Public half of c4130's builder key (private half: sops key
-  # nixremote-ssh-key in secrets/c4130.yaml; was /root/.ssh/nixremote on
-  # c4130). Only `nix-daemon --stdio` may run with it.
+  # nixremote-ssh-key in secrets/c4130.yaml). Only `nix-daemon --stdio` may run with it.
   c4130BuilderKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDXr3aoLaBGm+3dzLd3GmtM3URqjiJLX6Wy7Ox6YC3k+ root@c4130";
 
-  # Concurrent builds x cores. Each CUDA tree runs min(NIX_BUILD_CORES, 16)
-  # nvcc jobs (flint and, since vLLM fork 23ea1b6, LMCache too), each ~1-2+
-  # GiB on CUTLASS kernels. Two trees at 16 nvcc exhausted r440's 46 GiB on
-  # 2026-11-04 and hung the box; 2 x 8 caps it at 16 nvcc in total, like
-  # 1 x 16, while two builds can still overlap. ./memory.nix caps
-  # nix-daemon at 36G as the backstop. Keep maxJobs in c4130's builder.nix
-  # equal to this, and builderMaxJobs x cores at 16.
+  # Concurrent builds x cores. Each CUDA tree (flint, LMCache) runs
+  # min(NIX_BUILD_CORES, 16) nvcc jobs at ~1-2+ GiB each; more than 16 nvcc
+  # in total exhausts r440's 46 GiB. Keep maxJobs in c4130's builder.nix
+  # equal to this, and builderMaxJobs x cores at 16. ./memory.nix caps
+  # nix-daemon at 36G as the backstop.
   builderMaxJobs = 2;
 in
 {

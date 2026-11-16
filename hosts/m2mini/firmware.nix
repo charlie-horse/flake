@@ -1,24 +1,9 @@
-# Apple peripheral firmware (Wi-Fi, Bluetooth, webcam, ...).
-#
-# It is proprietary and non-redistributable, so it is NOT committed for this
-# host. The Asahi installer put it on the ESP: /boot/vendorfw/firmware.cpio.
-# (The current apple-silicon module needs `firmware.cpio`; an older, raw
-# `all_firmware.tar.gz` cannot stand in for /boot/vendorfw.)
-#
-# How the flake feeds it (see the wiring in ./default.nix):
-#   flake.nix:
-#     m2mini-vendorfw.url = "path:./hosts/m2mini/vendorfw";  # placeholder, no firmware
-#     m2mini-vendorfw.flake = false;
-#   parts/hosts.nix (m2mini's mkServer call):
-#     modules = [ { m2mini.vendorFirmware = inputs.m2mini-vendorfw; } ];
-# and deploy on m2mini with
-#   nixos-rebuild switch --flake .#m2mini \
-#       --override-input m2mini-vendorfw path:/boot/vendorfw
-# (--override-input implies --no-write-lock-file). The override yields the
-# same store path (`<nar-hash>-source`) as the old `vendorfw` input, so the
-# toplevel is unchanged. Without the override (CI, other machines) the
-# placeholder has no firmware.cpio and the extraction is switched off, so
-# the configuration still evaluates and builds, just without the blobs.
+# Apple peripheral firmware (Wi-Fi, Bluetooth, webcam, ...): proprietary,
+# never committed. The flake input m2mini-vendorfw is a firmware-free
+# placeholder; on m2mini deploy with
+#   --override-input m2mini-vendorfw path:/boot/vendorfw
+# Without it (CI) extraction is off and the config still builds.
+# docs/hosts/m2mini.md#vendor-firmware
 { lib, config, ... }:
 let
   inherit (lib) mkOption types;

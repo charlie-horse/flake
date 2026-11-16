@@ -3,8 +3,7 @@ rec {
   namespace = "authentik";
 
   # sops-encrypted in k8s/secrets/authentik/authentik-secrets.sops.yaml,
-  # applied by the Flux Kustomization `secrets` (k8s/README.md, "Secrets",
-  # "authentik"): keys AUTHENTIK_SECRET_KEY, AUTHENTIK_POSTGRESQL__PASSWORD,
+  # applied by the Flux Kustomization `secrets` (docs/k8s/apps.md#the-secret-authentikauthentik-secrets): keys AUTHENTIK_SECRET_KEY, AUTHENTIK_POSTGRESQL__PASSWORD,
   # AUTHENTIK_BOOTSTRAP_PASSWORD.
   secretName = "authentik-secrets";
 

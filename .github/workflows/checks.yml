@@ -1,14 +1,11 @@
 # Checks: the repository's gate. Runs on every pull request and push to
 # main, whatever changed. It only checks; it never builds a NixOS toplevel
 # (the c4130 closure alone is CUDA + torch + vLLM, far beyond a hosted
-# runner), never renders k8s (render.yml does) and never writes.
+# runner) and never writes.
 #
-#   secrets-guard  keys, kubeconfigs or plaintext passwords in the diff;
-#                  sops files (secrets/, k8s/**/*.sops.yaml) fully encrypted,
-#                  and each encrypted to exactly its .sops.yaml recipients
-#   flake-check    every flake output evaluates (nothing heavy is built)
-#   eval-hosts     each server's toplevel drvPath evaluates, for its system
-#   format         every tracked .nix file is nixfmt-formatted (`nix fmt`)
+#   flake-check    `nix flake check`, the single gate (parts/checks.nix).
+#                  On main it also uploads the render it built (artifact
+#                  `manifests`), which render.yml publishes.
 #
 # See docs/ci.md.
 name: checks
@@ -28,274 +25,7 @@ concurrency:
   # PRs: newest push wins. main: every push is checked.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  # The server evals must never build: an IFD would be a build (CUDA/vLLM
-  # included).
-  NO_IFD: --option allow-import-from-derivation false
-
 jobs:
-  # ------------------------------------------------------------------------
-  secrets-guard:
-    name: Secrets guard
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Fail on keys, kubeconfigs, plaintext passwords or unencrypted sops files
-        env:
-          EVENT: ${{ github.event_name }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD: ${{ github.event.pull_request.head.sha }}
-          PUSH_BEFORE: ${{ github.event.before }}
-        run: |
-          set -euo pipefail
-          zero=0000000000000000000000000000000000000000
-          head=$(git rev-parse HEAD)
-          if [ "$EVENT" = pull_request ]; then
-            base=$(git merge-base "$PR_BASE" "$PR_HEAD")
-            head=$PR_HEAD
-          elif [ -n "${PUSH_BEFORE:-}" ] && [ "$PUSH_BEFORE" != "$zero" ] \
-            && git cat-file -e "$PUSH_BEFORE^{commit}" 2>/dev/null; then
-            base=$PUSH_BEFORE
-          elif git rev-parse -q --verify HEAD~1 >/dev/null; then
-            base=$(git rev-parse HEAD~1)
-          else
-            base=$(git hash-object -t tree /dev/null) # first commit
-          fi
-          echo "scanning $base..$head"
-          status=0
-          hits=$(mktemp)
-
-          # 1. File names (added/copied/modified/renamed, not deleted).
-          while IFS= read -r -d '' f; do
-            b=${f##*/}
-            case "$b" in
-              *.nix | *.md) continue ;; # e.g. modules that build kubeconfigs
-            esac
-            case "$b" in
-              *-key.pem | *.key | kubeconfig | kubeconfig.* | *.kubeconfig \
-                | *-kubeconfig | *_kubeconfig)
-                echo "::error file=$f::secret-looking file name: $f"
-                status=1
-                ;;
-            esac
-          done < <(git diff --name-only -z --diff-filter=ACMRT "$base" "$head")
-
-          # 2. Added lines. Only file:line is printed, never the content.
-          #    Comment lines (#, //) are skipped, so docs may name the
-          #    pattern; a hashedPassword/hashedPasswordFile never matches
-          #    (the match is case-sensitive).
-          pattern='password[[:space:]]*=|-----BEGIN ([A-Z]+ )?PRIVATE KEY-----'
-          pattern+='|client-key-data[:]'
-          git diff -U0 --no-color --diff-filter=ACMRT "$base" "$head" \
-            | awk -v pat="$pattern" '
-                /^\+\+\+ / { f = substr($0, 7); next }
-                /^@@/ {
-                  split($3, a, ","); n = substr(a[1], 2) + 0; next
-                }
-                /^\+/ {
-                  line = substr($0, 2)
-                  if (line !~ /^[[:space:]]*(#|\/\/)/ && line ~ pat)
-                    printf "%s:%d\n", f, n
-                  n++
-                }' > "$hits"
-          while IFS= read -r hit; do
-            echo "::error file=${hit%%:*},line=${hit##*:}::password or private key"
-            status=1
-          done < "$hits"
-
-          # 3. sops files: secrets/*.yaml and k8s/**/*.sops.yaml (.sops.yaml
-          #    at the root holds the recipients). Each added/modified one
-          #    must be fully sops-encrypted, checked on the whole file at
-          #    $head (not just the diff): a top-level `sops:` block with
-          #    `mac: ENC[...]` and at least one recipient, every value
-          #    outside it `ENC[...]`, every comment `#ENC[...]`. k8s files
-          #    may have only the top-level keys apiVersion kind metadata
-          #    type data stringData sops (the same set as checkSecret in
-          #    k8s/render.nix; k8s/README.md, "Secrets"), the first four in
-          #    the clear (Flux needs them), data/stringData encrypted.
-          #    Anything else under secrets/ or k8s/secrets/ (no .sops.yaml
-          #    suffix) is refused; k8s/render.nix rejects the same files at
-          #    render time. Only the file and the key path are printed,
-          #    never a value.
-          #    secrets/pki/<node>.yaml: only a <stem>.pem of CERTIFICATE
-          #    blocks may be plaintext.
-          while IFS= read -r -d '' f; do
-            case "$f" in
-              secrets/pki/*/*) mode=bad ;;
-              secrets/pki/*.yaml) mode=pki ;;
-              secrets/*/*) mode=bad ;;
-              secrets/*.yaml) mode=strict ;;
-              secrets/*) mode=bad ;;
-              k8s/*.sops.yaml) mode=k8s ;;
-              k8s/secrets/*) mode=badk8s ;;
-              *) continue ;;
-            esac
-            if [ "$mode" = bad ]; then
-              echo "::error file=$f::only sops-encrypted secrets/<name>.yaml and secrets/pki/<node>.yaml files belong in secrets/"
-              status=1
-              continue
-            fi
-            if [ "$mode" = badk8s ]; then
-              echo "::error file=$f::only sops-encrypted k8s/secrets/<namespace>/<name>.sops.yaml files belong in k8s/secrets/"
-              status=1
-              continue
-            fi
-            if ! git show "$head:$f" | python3 -I -c '
-          import re, sys, yaml
-          mode, name = sys.argv[1], sys.argv[2]
-          raw = sys.stdin.read()
-          enc = re.compile(r"^ENC\[[A-Z0-9_]+,data:.*\]$", re.S)
-          cert = re.compile(r"-----BEGIN CERTIFICATE-----\r?\n"
-                            r"[A-Za-z0-9+/=\r\n]+?-----END CERTIFICATE-----")
-          def certs_only(v):
-              return (isinstance(v, str) and cert.search(v) is not None
-                      and cert.sub("", v).strip() == "")
-          bad = []
-          for i, line in enumerate(raw.splitlines(), 1):
-              t = line.strip()
-              if t.startswith("#") and not t.startswith("#ENC["):
-                  bad.append(f"line {i}: plaintext comment")
-          try:
-              docs = list(yaml.safe_load_all(raw))
-          except yaml.YAMLError:
-              docs = None
-          if not docs or len(docs) != 1 or not isinstance(docs[0], dict):
-              print(f"{name}: not a single YAML mapping (sops-encrypted?)")
-              sys.exit(1)
-          doc = docs[0]
-          meta = doc.get("sops")
-          if not isinstance(meta, dict) or not enc.match(str(meta.get("mac", ""))):
-              bad.append("no sops block with mac: ENC[...]")
-          elif not any(meta.get(k) for k in ("age", "pgp", "kms", "gcp_kms", "azure_kv", "hc_vault")):
-              bad.append("sops block has no recipients")
-          clear = ("apiVersion", "kind", "metadata", "type") if mode == "k8s" else ()
-          # k8s: the same top-level key set as checkSecret in k8s/render.nix.
-          allowed = clear + ("data", "stringData", "sops")
-          if mode == "k8s":
-              names = " ".join(allowed)
-              for k in doc:
-                  if k not in allowed:
-                      bad.append(f"top-level key {k} not allowed (allowed: {names})")
-          def walk(v, path):
-              if isinstance(v, dict):
-                  for k, x in v.items():
-                      walk(x, path + [str(k)])
-              elif isinstance(v, list):
-                  for j, x in enumerate(v):
-                      walk(x, path + [str(j)])
-              elif v is not None and not (isinstance(v, str) and enc.match(v)):
-                  bad.append("unencrypted value at " + ".".join(path))
-          for k, v in doc.items():
-              if k == "sops" or k in clear or (mode == "k8s" and k not in allowed):
-                  continue
-              if (mode == "pki" and str(k).endswith(".pem")
-                      and not str(k).endswith("-key.pem") and certs_only(v)):
-                  continue
-              walk(v, [str(k)])
-          for b in bad:
-              print(f"{name}: {b}")
-          sys.exit(1 if bad else 0)
-          ' "$mode" "$f"; then
-              echo "::error file=$f::not fully sops-encrypted (see above; encrypt with sops, rules in .sops.yaml)"
-              status=1
-            fi
-          done < <(git diff --name-only -z --diff-filter=ACMRT "$base" "$head")
-
-          if [ "$status" -ne 0 ]; then
-            echo "Secrets go in git only sops-encrypted (secrets/*.yaml," \
-              "secrets/pki/<node>.yaml, k8s/**/*.sops.yaml; docs/cluster.md," \
-              "docs/pki.md); never plaintext in git or the Nix store." >&2
-          else
-            echo "no secrets found"
-          fi
-          exit "$status"
-
-      # Every sops file in the tree (not just the diff: a .sops.yaml change
-      # alone can break files nobody touched) must be encrypted to exactly
-      # the age recipients of the first .sops.yaml creation rule whose
-      # path_regex matches it, as sops itself picks the rule. A mismatch
-      # means the file was not re-wrapped (`sops updatekeys <file>`) after
-      # a recipient change, so a host would fail to decrypt it (and come up
-      # without admin's password); the host-side pre-switch check
-      # (modules/system/sops.nix) would then refuse to switch. Uses only
-      # public keys. PyYAML resolves the .sops.yaml anchors (*c4130, ...).
-      - name: sops files are encrypted to their .sops.yaml recipients
-        run: |
-          set -euo pipefail
-          # shellcheck disable=SC2016 # Python program, backticks in messages
-          git ls-files -z -- 'secrets/*.yaml' 'secrets/pki/*.yaml' \
-            'k8s/secrets/**/*.sops.yaml' \
-            | python3 -I -c '
-          import re, sys, yaml
-          raw = open(".sops.yaml").read()
-          cfg = yaml.safe_load(raw)
-          # age1... -> anchor name, for readable messages.
-          names = {k: n for n, k in re.findall(r"&(\S+)\s+(age1[0-9a-z]+)", raw)}
-          def label(r):
-              return f"{names[r]} ({r})" if r in names else r
-          def ages(v):
-              if not v:
-                  return set()
-              if isinstance(v, str):
-                  v = v.split(",")
-              return {a.strip() for a in v if a.strip()}
-          def rule_recipients(rule):
-              rs = ages(rule.get("age"))
-              for g in rule.get("key_groups") or []:
-                  rs |= ages(g.get("age"))
-              return rs
-          def file_recipients(meta):
-              entries = list(meta.get("age") or [])
-              for g in meta.get("key_groups") or []:
-                  entries += g.get("age") or []
-              return {e["recipient"].strip() for e in entries}
-          files = [f for f in sys.stdin.read().split("\0") if f]
-          if not files:
-              print("no sops files found")
-              sys.exit(1)
-          status = 0
-          for f in sorted(files):
-              rule = next((r for r in cfg.get("creation_rules") or []
-                           if re.search(r.get("path_regex", ""), f)), None)
-              if rule is None:
-                  print(f"::error file={f}::no creation rule in .sops.yaml matches {f}")
-                  status = 1
-                  continue
-              meta = (yaml.safe_load(open(f)) or {}).get("sops")
-              if not isinstance(meta, dict):
-                  print(f"::error file={f}::no sops metadata (not encrypted?)")
-                  status = 1
-                  continue
-              want, have = rule_recipients(rule), file_recipients(meta)
-              other = [k for k in ("pgp", "kms", "gcp_kms", "azure_kv", "hc_vault") if meta.get(k)]
-              # A mismatch means another rule, or a hand edit, encrypted the file.
-              rx_want = rule.get("encrypted_regex")
-              rx_have = meta.get("encrypted_regex")
-              rx = rule.get("path_regex")
-              if rx_want != rx_have:
-                  status = 1
-                  print(f"::error file={f}::encrypted_regex {rx_have!r} differs"
-                        f" from .sops.yaml rule {rx} ({rx_want!r})."
-                        " Re-create it with sops under that rule.")
-                  continue
-              if want == have and not other:
-                  print(f"ok  {f}: {len(have)} recipients")
-                  continue
-              status = 1
-              msg = [f"recipients differ from .sops.yaml rule {rx}"]
-              msg += [f"missing {label(r)}" for r in sorted(want - have)]
-              msg += [f"extra {label(r)}" for r in sorted(have - want)]
-              msg += [f"unexpected {k} keys" for k in other]
-              print(f"::error file={f}::" + "; ".join(msg)
-                    + f". Run `sops updatekeys {f}` (dev shell) and commit it.")
-          sys.exit(status)
-          '
-
   # ------------------------------------------------------------------------
   flake-check:
     name: nix flake check
@@ -315,106 +45,22 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
-      # Evaluates every output (all NixOS hosts, ISOs, packages). The k8s
-      # render, which needs import-from-derivation (helm template), is the
-      # system-independent output `k8s` and is not evaluated here
-      # (parts/k8s.nix), so nothing heavy is built. Not $NO_IFD: the desktop
-      # hosts import from the store copy of ./modules (lib mkHost), which a
-      # fresh runner's store can only produce with IFD allowed. The servers
-      # are held to no-IFD by eval-hosts below.
+      # Evaluates every output and builds the `checks` (parts/checks.nix),
+      # the k8s render included.
       - run: nix flake check --keep-going -L
 
-  # ------------------------------------------------------------------------
-  eval-hosts:
-    name: eval ${{ matrix.host }} (${{ matrix.system }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - host: c4130
-            system: x86_64-linux
-            runner: ubuntu-24.04
-          - host: r440
-            system: x86_64-linux
-            runner: ubuntu-24.04
-          # Native arm64 runner (free for public repos). The config also
-          # evaluates on x86_64 (no IFD), so ubuntu-24.04 works as a fallback.
-          - host: m2mini
-            system: aarch64-linux
-            runner: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - id: nix-cache
-        uses: ./.github/actions/nix-cache
-        with:
-          netrc: ${{ secrets.NIX_CACHE_NETRC }}
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-          extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
-
-      - name: Eval toplevel drvPath (no build)
-        env:
-          HOST: ${{ matrix.host }}
-          SYSTEM: ${{ matrix.system }}
-          # ==================================================================
-          # HOOK(Max): extra flags for the m2mini eval. The flake's default
-          # `m2mini-vendorfw` input is the firmware-free placeholder
-          # (hosts/m2mini/vendorfw), which is what CI must use: Apple's
-          # firmware.cpio is proprietary and never on a runner. If the
-          # firmware wiring changes, put the override here, e.g.
-          #   --override-input m2mini-vendorfw path:./hosts/m2mini/vendorfw
-          # (--override-input implies --no-write-lock-file).
-          # ==================================================================
-          M2MINI_EVAL_FLAGS: ""
+      # The same derivation as the `k8s-render` check: no rebuild.
+      - name: Collect the render
+        if: github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
-          flags=()
-          if [ "$HOST" = m2mini ] && [ -n "$M2MINI_EVAL_FLAGS" ]; then
-            read -r -a flags <<< "$M2MINI_EVAL_FLAGS"
-          fi
-          attr=".#nixosConfigurations.$HOST.config.system.build.toplevel"
-          # shellcheck disable=SC2086 # NO_IFD is a list of flags
-          drv=$(nix eval --raw $NO_IFD "${flags[@]}" "$attr.drvPath")
-          # shellcheck disable=SC2086
-          sys=$(nix eval --raw $NO_IFD "${flags[@]}" "$attr.system")
-          if [ "$sys" != "$SYSTEM" ]; then
-            echo "::error::$HOST evaluates for $sys, expected $SYSTEM"
-            exit 1
-          fi
-          echo "$HOST: $drv"
-          {
-            echo "### $HOST ($SYSTEM)"
-            echo
-            echo "\`$drv\`"
-            echo
-            echo "Eval only: compare on the host with"
-            echo "\`nix-diff /run/current-system $drv\` before switching."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # ------------------------------------------------------------------------
-  format:
-    name: nixfmt
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+          nix build --out-link result .#k8s.manifests
+          mkdir -p manifests
+          cp -r --no-preserve=mode result/. manifests/
+      - if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          persist-credentials: false
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
-        with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-      # The flake's formatter (parts/packages.nix). Excluded:
-      # hosts/Pestilence/servarr.nix, whose plaintext rpc-password line the
-      # secrets guard flags on any edit, reformatting included; format it
-      # when that secret moves out of git.
-      - name: nix fmt -- --check
-        run: |
-          set -euo pipefail
-          git ls-files -z '*.nix' \
-            | grep -zvE '^hosts/Pestilence/servarr\.nix$' \
-            | xargs -0 nix fmt -- --check
+          name: manifests
+          path: manifests
+          if-no-files-found: error
+          retention-days: 7

@@ -37,7 +37,7 @@ in
   };
 
   # authentik 2026.8.5 (server + worker; the bundled postgresql subchart is
-  # disabled, components/authentik.nix runs its own). No Redis since 2025.10.
+  # disabled, components/apps/authentik/postgres.nix runs its own). No Redis.
   authentik = fetch {
     repo = "https://charts.goauthentik.io";
     name = "authentik";

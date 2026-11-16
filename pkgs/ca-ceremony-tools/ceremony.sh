@@ -1,25 +1,16 @@
 #!/usr/bin/env bash
-# neurosis root CA ceremony (docs/pki-migration-plan.md, node F). DRAFT.
+# neurosis root CA ceremony: the first-time ceremony only (refuses while
+# slot 9c holds a key). docs/pki.md, "YubiKey root CA".
 #
-# Host-agnostic: runs on whatever machine the user plugs the admin YubiKey
-# 19830800 into (PIN, PUK and PIN-protected management key already set; sops
-# age key in slot 82 -- never touched here), from a checkout of this repo
-# (only .sops.yaml is read). User physically present. Tools:
-#   nix shell <flake>#ca-ceremony-tools
-#   (ykman, step, step-kms-plugin, ca-openssl, ca-pcscd, sops,
-#   age-plugin-yubikey, yq, softhsm2-util; this script is `ca-ceremony`)
-#   CSR_DIR=~/csrs ca-ceremony        # k8s.csr etcd.csr front-proxy.csr (openssl req, keys in tmpfs)
-# Root is needed only if no pcscd is reachable and ca-pcscd must be started.
-#
-# Rehearsal (node E, software key in SoftHSM through step-kms-plugin, no card):
-#   MODE=rehearsal CSR_DIR=... ca-ceremony
-#
-# PIN+touch count: 1 (root self-sign) + 4 (intermediates). ykman also asks
-# the PIN to unlock the protected management key for `generate` and `import`.
-# The PIN is never on a command line or in history: it is read with `read -s`
-# into a 0600 file on tmpfs (step's KMS URI `pin-source=`), removed on exit.
-# Without pin-source the step yubikey KMS silently uses the DEFAULT PIN
-# 123456, which burns one of the 3 PIN tries.
+# Runs on whatever machine the user plugs the admin YubiKey 19830800 into
+# (slot 82, the sops key, is never touched), from a checkout of this repo
+# (only .sops.yaml is read), user present. Root only if no pcscd is
+# reachable and ca-pcscd must be started.
+#   CSR_DIR=~/csrs ca-ceremony        # k8s.csr etcd.csr front-proxy.csr
+#   MODE=rehearsal CSR_DIR=... ca-ceremony   # SoftHSM key, no card
+# PIN+touch: 1 (root) + 4 (intermediates). The PIN is read with `read -s`
+# into a 0600 tmpfs file (step's `pin-source=`), removed on exit: without
+# pin-source step silently tries 123456 and burns one of 3 PIN tries.
 set -euo pipefail
 umask 077
 
@@ -65,9 +56,7 @@ if [[ $MODE == yubikey ]]; then
   # and ours is restarted as needed. ca-pcscd refuses to start while any
   # pcscd runs, so first wait for our previous one to finish exiting.
   # Check PC/SC specifically: `ykman list --serials` also finds the key over
-  # FIDO/HID with no pcscd at all, so ensure_pcscd never started ca-pcscd and
-  # the PIV commands then failed with "PC/SC not available" (c4130,
-  # 2026-11-13). `piv info` goes through PC/SC only.
+  # FIDO/HID with no pcscd at all. `piv info` goes through PC/SC only.
   card_visible() { ykman --device "$SERIAL" piv info >/dev/null 2>&1; }
   OWN_PCSCD=0
   PCSCD_PID=
@@ -198,7 +187,7 @@ done
 cmp <(openssl x509 -in "$OUT/workload.pem" -noout -pubkey) <(openssl pkey -in "$WORK/workload.key" -pubout) || die "workload key mismatch"
 
 # --- 5. Workload Secret, sops-encrypted straight from tmpfs ----------------
-# k8s/README.md "Adding one": keys sorted, data = base64 of exact bytes.
+# docs/k8s/secrets.md "Adding one": keys sorted, data = base64 of exact bytes.
 # type kubernetes.io/tls to match the Secret cert-manager made (type is immutable).
 say "Encrypting cert-manager/cluster-ca -> $OUT/cluster-ca.sops.yaml (for $SECRET_PATH)"
 b64() { base64 -w0 "$@"; }

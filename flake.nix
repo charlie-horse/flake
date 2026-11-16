@@ -5,8 +5,7 @@
     #   nixpkgs           nixos-26.05: the servers (c4130, r440, m2mini),
     #                     the per-system packages/apps and the flake-parts
     #                     skeleton.
-    #   nixpkgs-unstable  nixos-unstable: ONLY the desktop (Famine; the
-    #                     archived Pestilence is not an output), its ISO and
+    #   nixpkgs-unstable  nixos-unstable: ONLY the desktop (Famine), its ISO and
     #                     the flake-level `lib` that mkHost passes it. Every
     #                     desktop-side input follows it.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
@@ -16,7 +15,7 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
 
-    # ---- Desktops (mkHost: Famine; Pestilence is archived) -------------
+    # ---- Desktops (mkHost: Famine) --------------------------------------
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs-unstable";
 
@@ -43,27 +42,24 @@
     # ---- Servers (mkServer: c4130, r440, m2mini) -------------------------
     # All on `nixpkgs` (nixos-26.05).
 
-    # c4130 vLLM (packages + nixosModules.vllm/lmcache). After cutover:
-    # charlie-horse/vllm-sm70 (upstream vLLM + sm_70 patch series), a
-    # drop-in for the old fork (github:charlie-horse/vLLM), same options.
+    # c4130 vLLM (packages + nixosModules.vllm/lmcache):
+    # charlie-horse/vllm-sm70 (upstream vLLM + sm_70 patch series).
     # No nixpkgs.follows: vllm-sm70 builds with its own pinned nixpkgs, so a
     # host nixpkgs bump (update.yml) cannot change the gated build.
-    # The input keeps the name `vllm-fork` so hosts/c4130 is unchanged.
-    # Pinned to cef0f9e (C1 passed, build aczb9zwk) until `latest` is
-    # fast-forwarded to a gated commit; then point this at .../latest again.
-    # (`latest` moves only after main
-    # CI, the c4130 check, the GPU gate and release sign-off, same commit.)
-    # `nix flake update vllm-fork` to move it.
+    # Tracks the gated branch `latest`, which moves only after main CI, the
+    # c4130 check, the GPU gate and release sign-off (same commit). The rev
+    # is locked in flake.lock; `nix flake update vllm-fork` to move it.
+    # docs/hosts/c4130-vllm.md.
     vllm-fork.url = "github:charlie-horse/vllm-sm70/latest";
 
     # m2mini's Asahi support (pinned rev; bump deliberately).
     apple-silicon-m2mini.url = "github:nix-community/nixos-apple-silicon/57a14ae9be0eaf7bf66e95490ed2d7c6f4bd4c9e";
     apple-silicon-m2mini.inputs.nixpkgs.follows = "nixpkgs";
 
-    # TODO(Gus/m2mini): placeholder dir without firmware.cpio (proprietary,
-    # never committed). Deploy on m2mini with
+    # Placeholder dir without firmware.cpio (proprietary, never committed).
+    # Deploy on m2mini with
     #   --override-input m2mini-vendorfw path:/boot/vendorfw
-    # See hosts/m2mini/firmware.nix. Drop this input if Gus stops using it.
+    # docs/hosts/m2mini.md#vendor-firmware.
     m2mini-vendorfw.url = "path:./hosts/m2mini/vendorfw";
     m2mini-vendorfw.flake = false;
 
@@ -87,6 +83,7 @@
         ./parts/hosts.nix
         ./parts/packages.nix
         ./parts/k8s.nix
+        ./parts/checks.nix
       ];
     };
 }
