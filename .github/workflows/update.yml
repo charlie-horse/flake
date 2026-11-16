@@ -1,17 +1,20 @@
-# Flake input updates, as a pull request.
+# Flake input updates, pushed straight to main (hands-free).
 #
-# `nix flake update` (every input, vllm-fork included), then the same gates
-# a human change gets before it can be merged: `nix flake check` and the k8s
-# render. On success the new flake.lock is force-pushed to the branch
-# auto/flake-update and a PR to main is opened (or its body refreshed). It
-# lists the changed inputs and flags a vllm-fork bump, which changes c4130's
-# production vLLM.
+# `nix flake update` (every input, vllm-fork included), then the gates a
+# human change gets: `nix flake check`, each server's toplevel eval (no IFD,
+# as checks.yml eval-hosts) and the k8s render. Only if all pass is the new
+# flake.lock committed and pushed to main. Nothing is pushed on failure, so a
+# broken update never lands; the failed run is the signal (GitHub emails the
+# repo owner).
 #
-# Uses GITHUB_TOKEN, so the PR does not trigger checks.yml/render.yml by
-# itself: run them from the Actions tab on branch auto/flake-update ("Run
-# workflow"), or close and reopen the PR, before merging. Needs the repo
-# setting Settings -> Actions -> General -> Workflow permissions -> "Allow
-# GitHub Actions to create and approve pull requests". See docs/ci.md.
+# A push made with GITHUB_TOKEN does not trigger other workflows, so after
+# the push this job dispatches checks.yml and render.yml on main. render's
+# publish job ships the new render to Flux, as for any push to main. Hosts
+# pick the new inputs up on their next `git pull && nixos-rebuild switch`;
+# a vllm-fork bump is flagged in the commit message and the run summary.
+#
+# Needs: main not protected against pushes by github-actions[bot] (or the
+# bot allowed to bypass). See docs/ci.md.
 name: update
 
 on:
@@ -20,15 +23,15 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: write # push to main
+  actions: write # dispatch checks.yml and render.yml after the push
 
 concurrency:
   group: update
   cancel-in-progress: false
 
 env:
-  BRANCH: auto/flake-update
+  NO_IFD: --option allow-import-from-derivation false
 
 jobs:
   update:
@@ -66,6 +69,18 @@ jobs:
         if: steps.update.outputs.changed == 'true'
         run: nix flake check --keep-going -L
 
+      # Servers only: x86_64 evals of all three (m2mini also evaluates on
+      # x86_64 without IFD; checks.yml evaluates it natively after the push).
+      - name: Eval server toplevels (no build, no IFD)
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          for host in c4130 r440 m2mini; do
+            # shellcheck disable=SC2086 # NO_IFD is a list of flags
+            drv=$(nix eval --raw $NO_IFD ".#nixosConfigurations.$host.config.system.build.toplevel.drvPath")
+            echo "$host: $drv"
+          done
+
       # The k8s render is not a per-system output, so flake check does not
       # build it (parts/k8s.nix).
       - name: Render k8s
@@ -74,6 +89,7 @@ jobs:
 
       - name: Describe the changes
         if: steps.update.outputs.changed == 'true'
+        id: describe
         run: |
           set -euo pipefail
           rows=$(jq -r --slurpfile old "$RUNNER_TEMP/flake.lock.old" '
@@ -85,45 +101,64 @@ jobs:
                old: (if $o[.key] == null then "(new)"
                      else ($o[.key].locked.rev // $o[.key].locked.narHash // "") end)}
             | select(.new != .old)
-            | "| `\(.k)` | `\(.old[0:12])` | `\(.new[0:12])` |"' flake.lock)
+            | "\(.k) \(.old[0:12]) -> \(.new[0:12])"' flake.lock)
+          vllm=false
+          if echo "$rows" | grep -q '^vllm-fork '; then vllm=true; fi
           {
-            echo "Automated \`nix flake update\` (every input) from \`${GITHUB_WORKFLOW}\` run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}."
+            echo "flake.lock: update inputs ($(date -u +%Y-%m-%d))"
             echo
-            echo "Passed before this PR was opened: \`nix flake check\`, \`nix build .#k8s.manifests\`."
-            echo
-            if echo "$rows" | grep -qF "| \`vllm-fork\` |"; then
-              echo "> [!WARNING]"
-              echo "> **vllm-fork moved.** This changes c4130's production vLLM. Build it on r440 and"
-              echo "> switch c4130 deliberately (GC first, outside the GPU window; CLAUDE.md)."
+            if [ "$vllm" = true ]; then
+              echo "WARNING: vllm-fork moved. This changes c4130's production vLLM on its"
+              echo "next switch: build it on r440, GC first, switch outside the GPU window."
               echo
             fi
-            echo "| Input | Before | After |"
-            echo "| --- | --- | --- |"
             echo "$rows"
             echo
-            echo "**Before merging:** this PR was opened with \`GITHUB_TOKEN\`, so CI did not start by itself."
-            echo "Run **checks** and **render** on branch \`$BRANCH\` from the Actions tab (Run workflow),"
-            echo "or close and reopen this PR. Merging deploys the render (render.yml) and makes the hosts'"
-            echo "next \`git pull && nixos-rebuild switch\` pick the new inputs up."
-          } > "$RUNNER_TEMP/body.md"
-          cat "$RUNNER_TEMP/body.md" >> "$GITHUB_STEP_SUMMARY"
+            echo "Passed before push: nix flake check, server evals (no IFD), k8s render."
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > "$RUNNER_TEMP/msg.txt"
+          {
+            echo '```'
+            cat "$RUNNER_TEMP/msg.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$vllm" = true ]; then
+            echo "::warning::vllm-fork moved; c4130's next switch changes production vLLM"
+          fi
 
-      - name: Push the branch and open or update the PR
+      # Fast-forward only. If main moved during the run and the new commits
+      # touch flake.nix or flake.lock, give up (the next run retries);
+      # otherwise rebase the lock commit onto the new main.
+      - name: Commit and push to main
+        if: steps.update.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898733+github-actions[bot]@users.noreply.github.com"
+          base=$(git rev-parse HEAD)
+          git commit -q -a -F "$RUNNER_TEMP/msg.txt"
+          for _ in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "Pushed $(git rev-parse --short HEAD) to main" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            git fetch -q origin main
+            if ! git diff --quiet "$base" FETCH_HEAD -- flake.nix flake.lock; then
+              echo "::error::main changed flake.nix/flake.lock during this run; not pushing (next run retries)"
+              exit 1
+            fi
+            git rebase -q FETCH_HEAD
+            base=$(git rev-parse FETCH_HEAD)
+          done
+          echo "::error::push to main failed 3 times"
+          exit 1
+
+      # GITHUB_TOKEN pushes trigger no workflows; dispatch is the exception.
+      - name: Run checks and render on main
         if: steps.update.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898733+github-actions[bot]@users.noreply.github.com"
-          git switch -C "$BRANCH"
-          git commit -q -am "flake.lock: update inputs"
-          git push --force origin "$BRANCH"
-          title="flake.lock: update inputs ($(date -u +%Y-%m-%d))"
-          pr=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
-          if [ -n "$pr" ]; then
-            gh pr edit "$pr" --title "$title" --body-file "$RUNNER_TEMP/body.md"
-            echo "Updated PR #$pr" >> "$GITHUB_STEP_SUMMARY"
-          else
-            gh pr create --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"
-          fi
+          gh workflow run checks.yml --ref main
+          gh workflow run render.yml --ref main
