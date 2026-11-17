@@ -52,7 +52,8 @@ in
         };
         spec = {
           hostNetwork = true;
-          dnsPolicy = "ClusterFirstWithHostNet";
+          # The node's resolver: the tunnel reconnects without CoreDNS.
+          dnsPolicy = "Default";
           tolerations = k8sLib.nodeTolerations;
           affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution = [
             {

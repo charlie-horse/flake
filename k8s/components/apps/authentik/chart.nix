@@ -2,6 +2,7 @@
 # (charts.authentik, image ghcr.io/goauthentik/server). The chart's bundled
 # postgresql subchart is off (postgres.nix runs our own).
 {
+  config,
   lib,
   pkgs,
   catenix,
@@ -84,7 +85,8 @@ in
       };
       values = {
         global.env = lib.mapAttrsToList (name: value: { inherit name value; }) {
-          AUTHENTIK_POSTGRESQL__HOST = db.name;
+          # The fixed ClusterIP, not db.name: no CoreDNS needed to log in.
+          AUTHENTIK_POSTGRESQL__HOST = cluster.authentik.dbServiceIP;
           AUTHENTIK_POSTGRESQL__NAME = db.database;
           AUTHENTIK_POSTGRESQL__USER = db.user;
           AUTHENTIK_LOG_LEVEL = "info";
@@ -102,4 +104,23 @@ in
       };
     })
   ];
+
+  # The server pod on the caller's own node only. The tunnel tries this
+  # first, so a node keeps serving logins on its own while the API is down
+  # and kube-proxy still balances authentik-server over dead nodes' pods.
+  resources.core.v1.Service.authentik-server-local = {
+    metadata = { inherit namespace; };
+    spec = {
+      clusterIP = cluster.authentik.localServiceIP;
+      internalTrafficPolicy = "Local";
+      inherit (config.resources.core.v1.Service.authentik-server.spec) selector;
+      ports = [
+        {
+          name = "http";
+          port = 80;
+          targetPort = "http";
+        }
+      ];
+    };
+  };
 }

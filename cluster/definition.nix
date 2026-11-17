@@ -39,9 +39,14 @@
 
   # Public services: cloudflared -> its nginx sidecar -> http://<serviceIP>:80.
   # authentik (k8s/components/apps/authentik/).
+  # localServiceIP: authentik-server-local, internalTrafficPolicy Local; the
+  # tunnel tries it before serviceIP (apps/cloudflared/files.nix).
+  # dbServiceIP: its PostgreSQL, so logins need no cluster DNS.
   authentik = {
     host = "auth.neuros.is";
     serviceIP = "10.96.0.20";
+    localServiceIP = "10.96.0.24";
+    dbServiceIP = "10.96.0.25";
   };
 
   # Headlamp (k8s/components/apps/headlamp.nix).

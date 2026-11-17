@@ -6,7 +6,7 @@
 # postgres user (gosu), so this pod is `baseline`, not `restricted`. PGDATA
 # is a subdirectory: the mount point itself is created root-owned by the
 # kubelet.
-{ k8sLib, ... }:
+{ cluster, k8sLib, ... }:
 let
   inherit (import ./settings.nix) namespace db;
   pgIsReady = [
@@ -122,8 +122,11 @@ in
     metadata = {
       inherit namespace;
       labels = db.labels;
+      # clusterIP is immutable: Flux recreates the Service if it changes.
+      annotations."kustomize.toolkit.fluxcd.io/force" = "enabled";
     };
     spec = {
+      clusterIP = cluster.authentik.dbServiceIP;
       selector = db.labels;
       ports = [
         {

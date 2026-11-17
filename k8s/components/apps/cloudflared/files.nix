@@ -12,16 +12,17 @@ rec {
   routes =
     lib.listToAttrs (
       map (s: lib.nameValuePair cluster.${s}.host "${cluster.${s}.serviceIP}:80") [
-        "authentik"
         "headlamp"
         "openWebui"
         "fluxWebhook"
       ]
     )
-    # r440's Nix binary cache: not in the cluster, but nginx (basic auth)
-    # on r440's LAN address (hosts/r440/cache.nix), which the firewall
-    # opens to the nodes' LAN IPs, i.e. to this hostNetwork pod on any node.
     // {
+      # The upstream group in nginx.conf: the node-local Service first.
+      ${cluster.authentik.host} = "authentik";
+      # r440's Nix binary cache: not in the cluster, but nginx (basic auth)
+      # on r440's LAN address (hosts/r440/cache.nix), which the firewall
+      # opens to the nodes' LAN IPs, i.e. to this hostNetwork pod on any node.
       ${cluster.binaryCache.host} = "${
         cluster.nodes.${cluster.binaryCache.node}.lanIP
       }:${toString cluster.binaryCache.port}";
@@ -45,11 +46,15 @@ rec {
     lib.replaceStrings
       [
         "@ROUTES@"
+        "@AUTHENTIK_LOCAL@"
+        "@AUTHENTIK@"
         "@HOOK_HOST_REGEX@"
         "@PROXY_PORT@"
       ]
       [
         (lib.concatStringsSep "\n" (lib.mapAttrsToList (h: u: "    ${h} ${u};") routes))
+        "${cluster.authentik.localServiceIP}:80"
+        "${cluster.authentik.serviceIP}:80"
         (lib.escapeRegex cluster.fluxWebhook.host)
         (toString proxyPort)
       ]
