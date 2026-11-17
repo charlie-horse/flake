@@ -10,7 +10,7 @@
   services.vllm-sm70 = {
     enable = true;
     # Only one model fits on the GPUs at a time.
-    activeModel = "flint";
+    activeModel = "qwen3.8-27b";
     # API (8000); no authentication.
     firewallInterfaces = [
       "eno1"
@@ -21,6 +21,9 @@
     # fast paths (VLLM_SM70_MODELOPT_NVFP4_GEMV, ..._MOE_QPN_DECODE) give way
     # to the batched kernels: more total throughput, less tok/s per request.
     models.flint.maxNumSeqs = 20;
+    # Qwen 3.8 27B FP8 + DFlash2 has ~155K tokens of KV; at 4+ concurrent
+    # requests it runs out and total throughput drops. Keep this at 3.
+    models."qwen3.8-27b".maxNumSeqs = 3;
     # Serve Flint with vllm-sm70's sm_70 model class. Without the override
     # vLLM loads upstream's FlintForCausalLM, which needs FlashInfer and bf16
     # (not available on V100). `args` replaces the built-in list, so this is
