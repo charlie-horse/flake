@@ -31,6 +31,10 @@
   # whenever none is forwarded.
   programs.ssh.startAgent = false;
 
+  # nixpkgs' newest Nix, the release line the desktops get from
+  # nixpkgs-unstable.
+  nix.package = pkgs.nixVersions.latest;
+
   environment.systemPackages = [
     # /etc/nixos is a checkout of this flake on the servers.
     pkgs.git
