@@ -69,4 +69,12 @@ in
     version = "0.46.0";
     hash = "sha256-Jw7KWHrHKnRnMXub2CGeEIYty9yZdwf+WbjDOZurtUM=";
   };
+
+  # CloudNativePG operator 1.30.1 (CRDs rendered by the chart, crds.create).
+  cloudnative-pg = fetch {
+    repo = "https://cloudnative-pg.github.io/charts";
+    name = "cloudnative-pg";
+    version = "0.29.1";
+    hash = "sha256-VWDikb5gw9s35yZYk3BqcojQtEE/b3gdDN6TCcJXzZ4=";
+  };
 }

@@ -38,6 +38,7 @@ let
     "infra/nvidia-device-plugin" = ./components/infra/nvidia-device-plugin.nix;
     "infra/cert-manager" = ./components/infra/cert-manager;
     "infra/cluster-pki" = ./components/infra/cluster-pki;
+    "infra/cloudnative-pg" = ./components/infra/cloudnative-pg.nix;
     "flux" = ./components/flux;
     "apps/cloudflared" = ./components/apps/cloudflared;
     "apps/authentik" = ./components/apps/authentik;

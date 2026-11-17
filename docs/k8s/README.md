@@ -45,8 +45,8 @@ updating the GitHub secrets `FLUX_WEBHOOK_TOKEN` and `FLUX_WEBHOOK_URL`
 
 Flux dry-runs every object of a Kustomization before applying any, so one
 rejected object fails the whole apply. **Put objects guarded by an
-admission webhook with `failurePolicy: Fail` (everything `cert-manager.io`)
-in a deferred component** (`deferred.modules` in `k8s/default.nix`). It
+admission webhook with `failurePolicy: Fail` (everything `cert-manager.io`
+and `postgresql.cnpg.io`) in a deferred component** (`deferred.modules` in `k8s/default.nix`). It
 renders under `deferred/`, which the Kustomization `flux-system` skips, and
 gets its own Kustomization (`k8s/components/flux/stages.nix`) that runs
 after `flux-system` and retries until the webhook answers. A failure there

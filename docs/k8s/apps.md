@@ -120,6 +120,14 @@ port first: `ssh -L 8000:localhost:8000 <host>`. Older kubectl without
 `--exec-interactive-mode`: add `interactiveMode: IfAvailable` under the
 user's `exec:` in the kubeconfig by hand.
 
+## CloudNativePG
+
+The operator reconciles `postgresql.cnpg.io` objects (`Cluster`, `Database`,
+`Pooler`, ...) in every namespace. Its webhook rejects them while the
+operator is down, so declare them in a deferred component
+([README.md](README.md#deferred-components)), never next to the app that
+uses them.
+
 ## Headlamp
 
 Log in with authentik (group `cluster-admins`); a user sees what their
