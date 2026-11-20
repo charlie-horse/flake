@@ -9,6 +9,9 @@ are the flake's `checks` (`parts/checks.nix`); CI (`checks.yml`) only runs
 - A new check goes in `parts/checks.nix` as a flake check, never as a CI
   step. It must fetch only through fixed-output derivations and build
   nothing heavier than the k8s render.
+- Checks are unit tests: they evaluate Nix or run small, isolated
+  functions. No end-to-end tests: a check never starts services (servers,
+  daemons, sshd, a mock IdP) or a VM.
 - CI never builds a NixOS toplevel; builds happen on r440
   ([build-cache.md](build-cache.md)).
 - `nix fmt` fixes what the `format` check reports.

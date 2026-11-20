@@ -1,5 +1,5 @@
-# Shared values of apps/step-ca, also read by its flake check (./test) and
-# the authentik blueprint ssh-ca.yaml (keep the client ID and groups equal).
+# Shared values of apps/step-ca and its flake check (test.nix). The
+# authentik blueprint ssh-ca.yaml must use the same client ID and groups.
 rec {
   namespace = "step-ca";
   name = "step-ca";

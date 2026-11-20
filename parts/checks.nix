@@ -56,8 +56,8 @@
         # derivation as `.#k8s.manifests` (parts/k8s.nix).
         k8s-render = (import ../k8s { inherit inputs pkgs lib; }).manifests;
 
-        # The SSH certificate flow of apps/step-ca, end to end.
-        step-ca = import ../k8s/components/apps/step-ca/test { inherit pkgs lib; };
+        # Unit tests of apps/step-ca's config and custom.auth.sshCA.
+        step-ca = import ../k8s/components/apps/step-ca/test.nix { inherit pkgs lib; };
       };
     };
 }

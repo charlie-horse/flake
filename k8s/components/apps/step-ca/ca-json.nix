@@ -2,16 +2,11 @@
 # A token's `groups` claim is checked against settings.sshGroups and those
 # groups become the certificate's principals; the token's own principal
 # requests are ignored. KeyID is the account name (sshd logs it).
-# `paths` lets the flake check run the same config outside the cluster.
+# Paths are the pod's mounts (deployment.nix).
 {
   lib,
   settings,
   issuer,
-  paths ? {
-    internalCA = "/internal-ca";
-    userKey = "/ssh-user-ca/key";
-  },
-  address ? "127.0.0.1:${toString settings.caPort}",
 }:
 let
   quoted = lib.concatMapStringsSep " " builtins.toJSON settings.sshGroups;
@@ -27,10 +22,10 @@ let
 in
 {
   # X.509 is internal only: a self-signed cert-manager CA, root = intermediate.
-  root = "${paths.internalCA}/ca.crt";
-  crt = "${paths.internalCA}/tls.crt";
-  key = "${paths.internalCA}/tls.key";
-  inherit address;
+  root = "/internal-ca/ca.crt";
+  crt = "/internal-ca/tls.crt";
+  key = "/internal-ca/tls.key";
+  address = "127.0.0.1:${toString settings.caPort}";
   dnsNames = [
     "localhost"
     "127.0.0.1"
@@ -38,7 +33,7 @@ in
   # No database: one-time-token replay protection is in memory (one replica).
   db = null;
   logger.format = "json";
-  ssh.userKey = paths.userKey;
+  ssh.userKey = "/ssh-user-ca/key";
   authority = {
     claims.enableSSHCA = false;
     provisioners = [

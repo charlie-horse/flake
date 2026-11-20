@@ -8,7 +8,7 @@
 #
 #   ca-json.nix     step-ca's config; deployment.nix the pod and Service;
 #   certificates.nix (deferred) the X.509 certs from cert-manager;
-#   ./test          the flake check `step-ca` (the flow end to end)
+#   test.nix        the flake check `step-ca` (unit tests)
 #
 # The SSH user CA key is the sops Secret step-ca/ssh-user-ca (key `key`);
 # hosts trust its public half with custom.auth.sshCA. Docs:
