@@ -1,0 +1,75 @@
+# Push the ATProto service images (pkgs/atproto-images) to GHCR from main.
+# Pin each printed digest in its component under
+# k8s/components/apps/atproto/. docs/k8s/apps.md#atproto-services
+name: atproto-images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pkgs/atproto-images/**"
+      - "parts/packages.nix"
+      - "flake.lock"
+      - ".github/workflows/atproto-images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: atproto-images
+  cancel-in-progress: false
+
+jobs:
+  image:
+    name: Push ${{ matrix.image }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [tranquil-pds, tangled-knot, atcr-appview, atcr-hold]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: nix-cache
+        uses: ./.github/actions/nix-cache
+        with:
+          netrc: ${{ secrets.NIX_CACHE_NETRC }}
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.35.6/install
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: ${{ steps.nix-cache.outputs.nix-conf }}
+
+      - name: nix build .#${{ matrix.image }}-image
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          nix build -L --out-link stream ".#packages.x86_64-linux.$IMAGE-image"
+          ./stream > image.tar
+
+      - name: Push to GHCR
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}/$IMAGE"
+          echo "$TOKEN" | skopeo login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          skopeo copy --digestfile digest docker-archive:image.tar "docker://$repo:${GITHUB_SHA::12}"
+          skopeo copy docker-archive:image.tar "docker://$repo:main"
+          digest=$(cat digest)
+          echo "pushed $repo@$digest"
+          {
+            echo "### $IMAGE image"
+            echo
+            echo "\`$repo@$digest\`"
+          } >> "$GITHUB_STEP_SUMMARY"

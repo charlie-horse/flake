@@ -55,5 +55,12 @@ On `main` it pushes the image and writes its digest to the job summary; pin
 that digest in `k8s/components/infra/cluster-pki/export.nix`
 ([pki.md](pki.md#export-job-image)).
 
+## atproto-images.yml
+
+On `main` it pushes the ATProto service images (one job per image) and
+writes each digest to the job summary; pin them as in
+[k8s/apps.md](k8s/apps.md#atproto-services). The GHCR packages must stay
+public (the kubelets pull without credentials).
+
 Jobs use r440's binary cache through `.github/actions/nix-cache`
 ([build-cache.md](build-cache.md#github-actions)).
