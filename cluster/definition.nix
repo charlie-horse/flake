@@ -69,7 +69,10 @@
     host = "pds.neuros.is";
     serviceIP = "10.96.0.24";
     # Handles are <name>.<handleDomain>; *.<handleDomain> routes to the PDS.
-    handleDomain = "neuros.is";
+    handleDomain = "at.neuros.is";
+    # did:web identities hosted by the PDS (did:web:<name>.<handleDomain>).
+    # Owner of the Tangled knot and captain of the ATCR hold.
+    adminDid = "did:web:charlie.at.neuros.is";
   };
 
   # Tangled knot (git hosting).

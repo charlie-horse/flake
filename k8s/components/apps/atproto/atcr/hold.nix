@@ -22,9 +22,10 @@ let
   name = "atcr-hold";
   labels."app.kubernetes.io/name" = name;
   publicUrl = "https://${cluster.atcrHold.host}";
+  image = s.images.hold;
 
-  # Captain (admin) of the hold: an ATProto DID. Empty: no captain record.
-  ownerDid = "";
+  # Captain (admin) of the hold.
+  ownerDid = cluster.tranquilPds.adminDid;
 
   env = {
     HOLD_SERVER_PUBLIC_URL = publicUrl;
@@ -100,19 +101,17 @@ in
   resources.apps.v1.Deployment.${name} = {
     metadata = { inherit namespace labels; };
     spec = {
-      replicas = 1;
+      replicas = s.replicas image;
       selector.matchLabels = labels;
       strategy.type = "Recreate";
       template = {
         metadata.labels = labels;
-        spec = {
-          securityContext.seccompProfile.type = "RuntimeDefault";
-          imagePullSecrets = [ { name = s.pullSecretName; } ];
+        spec = s.podSpec // {
+          initContainers = [ s.chownData ];
           containers = [
             {
               name = "hold";
-              image = "atcr.io/atcr.io/hold:${s.version}";
-              args = [ "serve" ];
+              image = s.imageRef image;
               env =
                 lib.mapAttrsToList (n: v: {
                   name = n;
@@ -162,6 +161,10 @@ in
                 {
                   name = "data";
                   mountPath = "/var/lib/atcr-hold";
+                }
+                {
+                  name = "tmp";
+                  mountPath = "/tmp";
                 }
               ];
             }

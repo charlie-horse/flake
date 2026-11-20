@@ -5,9 +5,9 @@
 #   hold.nix     hold: blob service, https://hold.neuros.is
 #   garage.nix   Garage: the hold's S3 store
 #
-# Everything on r440 (hostPath PVs under /var/lib/atcr). Images from
-# atcr.io (pull Secret atproto/atcr-io-pull); Secret
-# atproto/atcr-secrets (sops). Operating it: docs/k8s/apps.md#atcr
+# Everything on r440 (hostPath PVs under /var/lib/atcr). AppView and hold
+# images: ghcr.io/charlie-horse/flake/atcr-{appview,hold} (settings.nix);
+# Secret atproto/atcr-secrets (sops). Operating it: docs/k8s/apps.md#atcr
 { ... }:
 {
   imports = [

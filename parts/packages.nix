@@ -51,6 +51,13 @@
         pki-export = pkiTools;
         pki-export-image = pkiTools.image;
       }
+      # <name>-image: the ATProto service images (pkgs/atproto-images).
+      // pkgs.lib.mapAttrs' (n: v: pkgs.lib.nameValuePair "${n}-image" v) (
+        import ../pkgs/atproto-images {
+          inherit pkgs;
+          pkgsUnstable = inputs.nixpkgs-unstable.legacyPackages.${system};
+        }
+      )
       # Installer ISO for the desktop host (lib/system/mkHost.nix).
       // (config.flake.lib.system.${system}.mkHostIso "Famine").${system};
     };

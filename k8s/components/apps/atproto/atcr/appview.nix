@@ -20,6 +20,7 @@ let
   name = "atcr-appview";
   labels."app.kubernetes.io/name" = name;
   port = 5000;
+  image = s.images.appview;
 
   env = {
     ATCR_SERVER_BASE_URL = "https://${cluster.atcr.host}";
@@ -42,19 +43,17 @@ in
   resources.apps.v1.Deployment.${name} = {
     metadata = { inherit namespace labels; };
     spec = {
-      replicas = 1;
+      replicas = s.replicas image;
       selector.matchLabels = labels;
       strategy.type = "Recreate";
       template = {
         metadata.labels = labels;
-        spec = {
-          securityContext.seccompProfile.type = "RuntimeDefault";
-          imagePullSecrets = [ { name = s.pullSecretName; } ];
+        spec = s.podSpec // {
+          initContainers = [ s.chownData ];
           containers = [
             {
               name = "appview";
-              image = "atcr.io/atcr.io/appview:${s.version}";
-              args = [ "serve" ];
+              image = s.imageRef image;
               env = lib.mapAttrsToList (n: v: {
                 name = n;
                 value = v;
@@ -94,6 +93,10 @@ in
                   name = "data";
                   mountPath = "/var/lib/atcr";
                 }
+                {
+                  name = "tmp";
+                  mountPath = "/tmp";
+                }
               ];
             }
           ];
@@ -101,6 +104,10 @@ in
             {
               name = "data";
               persistentVolumeClaim.claimName = name;
+            }
+            {
+              name = "tmp";
+              emptyDir = { };
             }
           ];
         };

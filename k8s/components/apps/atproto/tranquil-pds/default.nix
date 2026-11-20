@@ -6,10 +6,11 @@
 #     cluster.tranquilPds.serviceIP -> pod :3000
 #
 # One replica; repos in PostgreSQL (./postgres.nix), blobs on r440 (hostPath
-# PV). DIDs are did:plc. Login: password/passkey, or SSO through authentik's
+# PV). Accounts are did:web:<handle>, hosted here, or did:plc. Login: password/passkey, or SSO through authentik's
 # provider `tranquil-pds` (group `pds-users`); new accounts need an invite
-# code either way. Secret atproto/tranquil-pds-secrets (sops), image pull
-# Secret atproto/atcr-io-pull (atcr.io).
+# code either way. Secret atproto/tranquil-pds-secrets (sops). Image:
+# pkgs/atproto-images/tranquil-pds.nix, pushed to GHCR by
+# .github/workflows/atproto-images.yml; replicas 0 while digest is null.
 # Operating it: docs/k8s/apps.md#tranquil-pds
 {
   lib,
@@ -23,6 +24,11 @@ let
   labels."app.kubernetes.io/name" = name;
 
   port = 3000;
+
+  # From .github/workflows/atproto-images.yml on main.
+  digest = null;
+  imageRepo = "ghcr.io/charlie-horse/flake/tranquil-pds";
+  image = if digest == null then "${imageRepo}:main" else "${imageRepo}@${digest}";
   # Handles are <name>.<handleDomain>, resolved over HTTPS
   # (/.well-known/atproto-did), so *.<handleDomain> must reach this Service.
   inherit (cluster.tranquilPds) handleDomain;
@@ -35,6 +41,7 @@ let
     PDS_USER_HANDLE_DOMAINS = handleDomain;
     ENABLE_CADDY_ON_DEMAND_TLS = "false";
     INVITE_CODE_REQUIRED = "true";
+    ENABLE_PDS_HOSTED_DID_WEB = "true";
     # No mail/Discord/Telegram/Signal is configured, so no channel can be
     # verified; without this, unverified accounts can neither log in nor write.
     DISABLE_ACCOUNT_VERIFICATION_GATE = "true";
@@ -82,15 +89,14 @@ in
   resources.apps.v1.Deployment.${name} = {
     metadata = { inherit namespace labels; };
     spec = {
-      replicas = 1;
+      replicas = if digest == null then 0 else 1;
       selector.matchLabels = labels;
       strategy.type = "Recreate";
       template = {
         metadata.labels = labels;
         spec = {
-          # The image is linux/amd64 only.
+          # CI builds the image for x86_64 only.
           nodeSelector."kubernetes.io/arch" = "amd64";
-          imagePullSecrets = [ { name = "atcr-io-pull"; } ];
           securityContext = {
             seccompProfile.type = "RuntimeDefault";
             runAsNonRoot = true;
@@ -126,9 +132,7 @@ in
           ];
           containers = [
             {
-              inherit name;
-              # v0.8.0 (upstream publishes images by commit only).
-              image = "atcr.io/tranquil.farm/tranquil-pds:ce17e8a4948aa216c6c1056122966a11b8a693c8";
+              inherit name image;
               env = [
                 {
                   name = "POSTGRES_PASSWORD";

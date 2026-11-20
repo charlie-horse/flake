@@ -8,8 +8,9 @@
 #
 # One replica, state on r440 (hostPath PV, /data): repos/, lfs/,
 # sealed-keys, ssh_host_key. Secret atproto/tangled-knot-secrets (sops:
-# KNOT_MASTER_KEY, unseals sealed-keys). Image pull needs
-# atproto/atcr-io-pull (atcr.io credentials, kubernetes.io/dockerconfigjson).
+# KNOT_MASTER_KEY, unseals sealed-keys). Image: pkgs/atproto-images/
+# tangled-knot.nix, pushed to GHCR by .github/workflows/atproto-images.yml;
+# replicas 0 while digest is null.
 # No spindle (CI runner): it needs KVM or Docker.
 # Operation: docs/k8s/apps.md#atproto-services
 {
@@ -23,13 +24,15 @@ let
   name = "tangled-knot";
   labels."app.kubernetes.io/name" = name;
   secretName = "tangled-knot-secrets";
-  pullSecretName = "atcr-io-pull";
 
-  image = "atcr.io/tangled.org/knot:v1.20.1";
-  uid = 1000; # the image's `knot` user
+  # From .github/workflows/atproto-images.yml on main.
+  digest = null;
+  imageRepo = "ghcr.io/charlie-horse/flake/tangled-knot";
+  image = if digest == null then "${imageRepo}:main" else "${imageRepo}@${digest}";
+  uid = 1000; # the image's User
 
   # Knot admins; the first is the knot's owner.
-  ownerDid = "did:plc:CHARLIE-DID-UNSET";
+  ownerDid = cluster.tranquilPds.adminDid;
   # Served publicly by describeKnot.
   contactEmail = "charliesyvertsen06@icloud.com";
 
@@ -44,10 +47,14 @@ let
     KNOT_XRPC_TRUSTED_PROXIES = lib.concatStringsSep "," (
       [ cluster.podCidr ] ++ map (n: n.lanIP) (lib.attrValues cluster.nodes)
     );
+    KNOT_PLC_DIRECTORY = "https://plc.directory";
+    KNOT_SCAN_PATH = "/data/repos";
+    KNOT_LFS_STORE_PATH = "/data/lfs";
+    KNOT_SEALED_KEY_FILE = "/data/sealed-keys";
+    KNOT_SSH_HOST_KEY_FILE = "/data/ssh_host_key";
+    # Names the variable that holds the master key.
+    KNOT_MASTER_KEY_ENV = "KNOT_MASTER_KEY";
   };
-  # The image sets KNOT_SCAN_PATH, KNOT_LFS_STORE_PATH, KNOT_SEALED_KEY_FILE,
-  # KNOT_SSH_HOST_KEY_FILE (under /data), KNOT_MASTER_KEY_ENV and
-  # KNOT_PLC_DIRECTORY.
 
   healthProbe = {
     path = "/xrpc/_health";
@@ -69,21 +76,22 @@ in
   resources.apps.v1.Deployment.${name} = {
     metadata = { inherit namespace labels; };
     spec = {
-      replicas = 1;
+      replicas = if digest == null then 0 else 1;
       selector.matchLabels = labels;
       strategy.type = "Recreate";
       template = {
         metadata.labels = labels;
         spec = {
           securityContext.seccompProfile.type = "RuntimeDefault";
-          imagePullSecrets = [ { name = pullSecretName; } ];
+          # CI builds the image for x86_64 only.
+          nodeSelector."kubernetes.io/arch" = "amd64";
           # The knot drains for up to 40 s on SIGTERM.
           terminationGracePeriodSeconds = 60;
           # The knot does not create its scan path or LFS store.
           initContainers = [
             {
               name = "init-data";
-              inherit image;
+              image = "docker.io/library/busybox:1.37.0";
               command = [
                 "sh"
                 "-c"

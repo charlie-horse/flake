@@ -181,16 +181,15 @@ The Secret `open-webui/open-webui-secrets`:
 
 Tranquil PDS, the Tangled knot and ATCR, in the namespace `atproto`
 (`components/apps/atproto/`). Each host in `cluster/definition.nix` needs
-its DNS route ([Cloudflare tunnel](#cloudflare-tunnel)), plus `*.neuros.is`
-for PDS handles.
+its DNS route ([Cloudflare tunnel](#cloudflare-tunnel)); PDS handles go
+through the [TLS edge](#atproto-tls-edge) instead.
 
-The pull Secret `atproto/atcr-io-pull` (type
-`kubernetes.io/dockerconfigjson`, key `.dockerconfigjson`) holds the
-credentials for the images on atcr.io: an ATProto handle and an app
-password. Create or change it with `sops`
-([secrets.md](secrets.md#changing-a-value-rotation)) from
-`kubectl create secret docker-registry atcr-io-pull -n atproto --docker-server=atcr.io --docker-username=<handle> --docker-password=<app password> --dry-run=client -o yaml`
-run on the machine that encrypts it, then restart the Deployments.
+Images: Tranquil PDS, the knot and ATCR's AppView and hold are built from
+`pkgs/atproto-images/` and pushed to `ghcr.io/charlie-horse/flake/<image>`
+by `.github/workflows/atproto-images.yml` on `main`. A component whose
+`digest` is `null` runs no pods. To deploy or update one: merge the image
+change, run or wait for the workflow, copy the digest from its summary
+into `digest` in the component, PR, merge.
 
 ### Tranquil PDS
 
@@ -199,8 +198,12 @@ Log in at `https://pds.neuros.is/app/` with a password or passkey, or with
 first comes from
 `kubectl -n atproto logs deploy/tranquil-pds | grep 'Bootstrap invite'`,
 and the first account is admin (it mints further invites in the UI).
-Handles are `<name>.neuros.is`: the DNS route `*.neuros.is` points at the
-tunnel, which sends every name without a route of its own to the PDS.
+Choose did:web at signup for a DID of `did:web:<handle>`, which the PDS
+serves; the owner of the knot and the hold is `adminDid` in
+`cluster/definition.nix`.
+Handles are `<name>.at.neuros.is`, served by the
+[TLS edge](#atproto-tls-edge), not the tunnel: Cloudflare's Universal SSL
+covers one level (`*.neuros.is`) only.
 
 - **authentik client secret.** authentik's provider `tranquil-pds` must
   carry the client secret from the Secret: Applications → Providers →
@@ -217,6 +220,25 @@ tunnel, which sends every name without a route of its own to the PDS.
 - Back up the database (`pg_dump -Fc` in `tranquil-pds-postgresql-0`) and
   `/var/lib/tranquil-pds` on r440.
 
+### ATProto TLS edge
+
+Public HTTPS for PDS handles (`https://<name>.at.neuros.is`): handle
+resolution and did:web documents only, served by the DaemonSet in
+`components/apps/atproto-edge/` on `cluster.vip`:443 with the Let's Encrypt
+certificate `atproto-edge/at-wildcard-tls`.
+
+- Router: forward TCP 443 to `cluster.vip`.
+- Cloudflare DNS: `*.at.neuros.is` A record, DNS only (not proxied), to the
+  public address.
+- Certificate and renewal:
+  `kubectl -n atproto-edge get certificate at-wildcard-tls` (Ready True;
+  `kubectl describe` shows Not After and Renewal Time). nginx reloads a
+  renewed certificate within 5 minutes; check with
+  `openssl s_client -connect <cluster.vip>:443 -servername charlie.at.neuros.is </dev/null 2>/dev/null | openssl x509 -noout -dates`.
+- Smoke test from outside:
+  `curl https://charlie.at.neuros.is/.well-known/atproto-did` returns the
+  DID; any other path returns 404.
+
 ### Tangled knot
 
 - Health: `curl https://knot.neuros.is/xrpc/_health`; relay check:
@@ -230,9 +252,6 @@ tunnel, which sends every name without a route of its own to the PDS.
 - `atproto/tangled-knot-secrets`, key `KNOT_MASTER_KEY`: unseals
   `/var/lib/tangled-knot/sealed-keys` on r440. Never change it: a new key
   cannot open the existing sealed keys.
-- `atproto/atcr-io-pull`: pull credentials for atcr.io (an ATProto
-  handle and app password, type `kubernetes.io/dockerconfigjson`). After a
-  change: `kubectl -n atproto rollout restart deploy/tangled-knot`.
 - Back up `/var/lib/tangled-knot` on r440 (repos, LFS, sealed keys, SSH
   host key).
 
