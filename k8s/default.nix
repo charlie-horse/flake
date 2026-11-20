@@ -40,6 +40,7 @@ let
     "infra/cluster-pki" = ./components/infra/cluster-pki;
     "flux" = ./components/flux;
     "apps/cloudflared" = ./components/apps/cloudflared;
+    "apps/ddns" = ./components/apps/ddns;
     "apps/authentik" = ./components/apps/authentik;
     "apps/headlamp" = ./components/apps/headlamp.nix;
     "apps/open-webui" = ./components/apps/open-webui.nix;
@@ -57,6 +58,7 @@ let
     dir = "deferred";
     modules = {
       "infra/cert-manager-issuers" = ./components/infra/cert-manager/issuers.nix;
+      "infra/cert-manager-acme" = ./components/infra/cert-manager/acme.nix;
       "infra/cluster-pki-issuers" = ./components/infra/cluster-pki/issuers.nix;
     };
     # sops-encrypted Secrets: every ./secrets/<namespace>/<name>.sops.yaml

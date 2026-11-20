@@ -7,10 +7,13 @@
 #   approver-policy.nix  the only approver
 #   issuers.nix          ClusterIssuer `cluster-ca` (the deferred component
 #                        `infra/cert-manager-issuers`, k8s/default.nix)
+#   acme.nix             ClusterIssuers `letsencrypt-{staging,production}`
+#                        (the deferred component `infra/cert-manager-acme`)
 #   crds.nix             the two charts' CRDs, for the deferred components
 #   settings.nix         names shared by all of them
 #
-# Workloads use issuerRef: { kind: ClusterIssuer, name: cluster-ca }.
+# Workloads use issuerRef: { kind: ClusterIssuer, name: cluster-ca };
+# public names in neuros.is use letsencrypt-production.
 # Docs: docs/k8s/apps.md#cert-manager
 { ... }:
 let
