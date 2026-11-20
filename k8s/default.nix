@@ -43,6 +43,7 @@ let
     "apps/authentik" = ./components/apps/authentik;
     "apps/headlamp" = ./components/apps/headlamp.nix;
     "apps/open-webui" = ./components/apps/open-webui.nix;
+    "apps/step-ca" = ./components/apps/step-ca;
   };
 
   # Deferred components: rendered under <dir>/<component>/ and applied by a
@@ -58,6 +59,7 @@ let
     modules = {
       "infra/cert-manager-issuers" = ./components/infra/cert-manager/issuers.nix;
       "infra/cluster-pki-issuers" = ./components/infra/cluster-pki/issuers.nix;
+      "apps/step-ca-certificates" = ./components/apps/step-ca/certificates.nix;
     };
     # sops-encrypted Secrets: every ./secrets/<namespace>/<name>.sops.yaml
     # is copied verbatim (never parsed or re-serialised: that would break

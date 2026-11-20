@@ -224,6 +224,9 @@ let
   );
 in
 {
+  # custom.auth.sshCA (step-ca user certificates).
+  imports = [ ./ssh-ca.nix ];
+
   options.custom.auth = {
     sshd.keysOnly = mkOption {
       type = types.bool;

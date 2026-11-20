@@ -1,0 +1,59 @@
+# step-ca (k8s/components/apps/step-ca): public client `ssh-ca`, used only
+# with client_credentials by service accounts (username + app password).
+# Its ID token's `groups` become SSH certificate principals; client ID and
+# groups must equal apps/step-ca/settings.nix. Only members of ssh-admins
+# may get a token.
+version: 1
+metadata:
+  name: neurosis - ssh-ca
+  labels:
+    blueprints.goauthentik.io/description: step-ca SSH certificates for automations (k8s/components/apps/step-ca)
+entries:
+  - model: authentik_core.group
+    id: ssh-admins
+    identifiers:
+      name: ssh-admins
+    attrs:
+      name: ssh-admins
+
+  - model: authentik_providers_oauth2.oauth2provider
+    id: provider
+    identifiers:
+      name: ssh-ca
+    attrs:
+      name: ssh-ca
+      # Public: authentik checks no client secret on client_credentials, and
+      # step-ca would publish one on /provisioners.
+      client_type: public
+      client_id: ssh-ca
+      grant_types:
+        - client_credentials
+      authorization_flow: !Find [authentik_flows.flow, [slug, authz-implicit]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, app-logout]]
+      # RS256: without a signing key authentik signs HS256, which step-ca can't verify.
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      issuer_mode: per_provider
+      sub_mode: hashed_user_id
+      include_claims_in_id_token: true
+      access_token_validity: minutes=5
+      redirect_uris: []
+      # `profile` carries preferred_username (the certificate's key ID) and groups.
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+
+  - model: authentik_core.application
+    id: application
+    identifiers:
+      slug: ssh-ca
+    attrs:
+      name: SSH certificates (step-ca)
+      provider: !KeyOf provider
+      policy_engine_mode: any
+
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf application
+      group: !KeyOf ssh-admins
+    attrs:
+      order: 0

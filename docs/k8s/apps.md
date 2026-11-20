@@ -176,3 +176,80 @@ The Secret `open-webui/open-webui-secrets`:
 `OAUTH_CLIENT_SECRET` (authentik's generated secret for the provider
 `open-webui`). After a change:
 `kubectl -n open-webui rollout restart deploy/open-webui`.
+
+## step-ca
+
+Short-lived OpenSSH user certificates for automations. An automation is an
+authentik service account in a group from `sshGroups`
+(`components/apps/step-ca/settings.nix`, also created by the blueprint
+`ssh-ca.yaml`); the certificate's principals are those groups. People log
+in with their own keys or with idp-pam; this is for non-interactive
+callers.
+
+Rules:
+
+- Mint tokens through `https://auth.neuros.is`: authentik sets the
+  token's issuer from the request's host, and step-ca accepts only that
+  issuer.
+- One token per certificate. Tokens carry no `jti`; two minted in the same
+  second for one account are identical and step-ca refuses the second.
+- Keep `sshGroups`, the blueprint's groups and the hosts' `principals` in
+  step: a group is a principal only if all three name it.
+- The CA key never leaves tmpfs unencrypted; generate it only as below.
+
+### Creating the SSH user CA key
+
+Once, before the first deploy, on a machine with a checkout:
+
+```sh
+nix shell .#ca-ceremony-tools          # step, sops, yq
+d=$(mktemp -d -p /dev/shm); f=k8s/secrets/step-ca/ssh-user-ca.sops.yaml; mkdir -p k8s/secrets/step-ca
+step crypto keypair --kty OKP --crv Ed25519 --no-password --insecure "$d/pub" "$d/key"
+k=$(base64 -w0 < "$d/key") yq -n '.apiVersion = "v1" | .data.key = strenv(k) | .kind = "Secret" | .metadata.name = "ssh-user-ca" | .metadata.namespace = "step-ca" | .type = "Opaque" | sort_keys(..)' \
+  | sops encrypt --filename-override "$f" --input-type yaml --output-type yaml /dev/stdin > "$f"
+step crypto key format --ssh "$d/pub"  # the public half, for custom.auth.sshCA.userCAKeys
+shred -u "$d"/*; rmdir "$d"
+```
+
+PR, merge. Until the Secret exists the step-ca pod cannot start.
+
+### Trusting it on a host
+
+In the host's configuration:
+
+```nix
+custom.auth.sshCA = {
+  enable = true;
+  userCAKeys = [ "ssh-ed25519 AAAA…" ];   # the public half from above
+  principals.<account> = [ "ssh-admins" ];
+};
+```
+
+Switch the host ([../cluster.md](../cluster.md#changing-a-host)). Its sshd
+needs no access to step-ca. To rotate the CA key: add the new public half
+to `userCAKeys`, switch every host, replace the Secret, then remove the old
+half and switch again.
+
+### Adding an automation
+
+In authentik: Directory → Users → Create Service account, add it to the group, then create an app password for it
+(Directory → Tokens and App passwords). Give the automation the username
+and app password through its own secret store.
+
+### Getting a certificate
+
+From a node or a pod (the Service is `cluster.stepCa.serviceIP`):
+
+```sh
+tok=$(curl -sf https://auth.neuros.is/application/o/token/ \
+  -d grant_type=client_credentials -d client_id=ssh-ca -d "username=$USER_NAME" \
+  --data-urlencode "password@$APP_PASSWORD_FILE" -d scope="openid profile" | jq -r .id_token)
+step ssh certificate "$USER_NAME" ./id_ed25519 --token "$tok" \
+  --ca-url "https://$STEP_CA_IP" --root cluster/pki/root-ca.pem \
+  --kty OKP --crv Ed25519 --no-password --insecure --no-agent --not-after 15m
+ssh -i ./id_ed25519 <account>@<host>
+```
+
+`STEP_CA_IP` is `cluster.stepCa.serviceIP`. Inspect a
+certificate with `ssh-keygen -Lf ./id_ed25519-cert.pub`; sshd logs its key
+ID (the service account's name).
