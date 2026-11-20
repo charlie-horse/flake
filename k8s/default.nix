@@ -43,6 +43,8 @@ let
     "apps/authentik" = ./components/apps/authentik;
     "apps/headlamp" = ./components/apps/headlamp.nix;
     "apps/open-webui" = ./components/apps/open-webui.nix;
+    "apps/atproto" = ./components/apps/atproto;
+    "apps/lldap" = ./components/apps/lldap;
   };
 
   # Deferred components: rendered under <dir>/<component>/ and applied by a

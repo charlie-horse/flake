@@ -63,6 +63,33 @@
     serviceIP = "10.96.0.23";
   };
 
+  # ATProto services, namespace `atproto` (k8s/components/apps/atproto/).
+  # Tranquil PDS; logins through authentik.
+  tranquilPds = {
+    host = "pds.neuros.is";
+    serviceIP = "10.96.0.24";
+    # Handles are <name>.<handleDomain>; *.<handleDomain> routes to the PDS.
+    handleDomain = "neuros.is";
+  };
+
+  # Tangled knot (git hosting).
+  tangledKnot = {
+    host = "knot.neuros.is";
+    serviceIP = "10.96.0.25";
+  };
+
+  # ATCR AppView (OCI registry API and web UI).
+  atcr = {
+    host = "cr.neuros.is";
+    serviceIP = "10.96.0.27";
+  };
+
+  # ATCR hold (blob storage service).
+  atcrHold = {
+    host = "hold.neuros.is";
+    serviceIP = "10.96.0.28";
+  };
+
   # r440's Nix binary cache (harmonia). Not a Service: the tunnel's nginx
   # sidecar forwards to http://<nodes.r440.lanIP>:<port>, where nginx on
   # r440 asks for HTTP basic auth (hosts/r440/cache.nix). The signing key

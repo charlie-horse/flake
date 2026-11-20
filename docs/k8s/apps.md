@@ -176,3 +176,108 @@ The Secret `open-webui/open-webui-secrets`:
 `OAUTH_CLIENT_SECRET` (authentik's generated secret for the provider
 `open-webui`). After a change:
 `kubectl -n open-webui rollout restart deploy/open-webui`.
+
+## ATProto services
+
+Tranquil PDS, the Tangled knot and ATCR, in the namespace `atproto`
+(`components/apps/atproto/`). Each host in `cluster/definition.nix` needs
+its DNS route ([Cloudflare tunnel](#cloudflare-tunnel)), plus `*.neuros.is`
+for PDS handles.
+
+The pull Secret `atproto/atcr-io-pull` (type
+`kubernetes.io/dockerconfigjson`, key `.dockerconfigjson`) holds the
+credentials for the images on atcr.io: an ATProto handle and an app
+password. Create or change it with `sops`
+([secrets.md](secrets.md#changing-a-value-rotation)) from
+`kubectl create secret docker-registry atcr-io-pull -n atproto --docker-server=atcr.io --docker-username=<handle> --docker-password=<app password> --dry-run=client -o yaml`
+run on the machine that encrypts it, then restart the Deployments.
+
+### Tranquil PDS
+
+Log in at `https://pds.neuros.is/app/` with a password or passkey, or with
+**authentik** (group `pds-users`). New accounts need an invite code; the
+first comes from
+`kubectl -n atproto logs deploy/tranquil-pds | grep 'Bootstrap invite'`,
+and the first account is admin (it mints further invites in the UI).
+Handles are `<name>.neuros.is`: the DNS route `*.neuros.is` points at the
+tunnel, which sends every name without a route of its own to the PDS.
+
+- **authentik client secret.** authentik's provider `tranquil-pds` must
+  carry the client secret from the Secret: Applications → Providers →
+  `tranquil-pds` → Client Secret, paste the output of
+  `sops decrypt --extract '["data"]["SSO_OIDC_CLIENT_SECRET"]' k8s/secrets/atproto/tranquil-pds-secrets.sops.yaml | base64 -d`.
+  The blueprint never sets it.
+- **The Secret `atproto/tranquil-pds-secrets`:** `JWT_SECRET`, `DPOP_SECRET`
+  (changing either logs everyone out), `MASTER_KEY` (encrypts the account
+  signing keys: never change it), `POSTGRES_PASSWORD` (change it in the
+  database first, as for authentik), `SSO_OIDC_CLIENT_SECRET` (set the new
+  value in authentik too). After a change:
+  `kubectl -n atproto rollout restart deploy/tranquil-pds`.
+- Without the tunnel: `kubectl -n atproto port-forward svc/tranquil-pds 3000:80`.
+- Back up the database (`pg_dump -Fc` in `tranquil-pds-postgresql-0`) and
+  `/var/lib/tranquil-pds` on r440.
+
+### Tangled knot
+
+- Health: `curl https://knot.neuros.is/xrpc/_health`; relay check:
+  `kubectl -n atproto exec deploy/tangled-knot -- knot-server doctor`.
+- Register: tangled.org → Settings → Knots → add `knot.neuros.is`, signed
+  in as the owner DID set in `components/apps/atproto/tangled/`. If no relay
+  has picked the knot up:
+  `curl -X POST https://index.tangled.network/xrpc/com.atproto.sync.requestCrawl -H 'Content-Type: application/json' -d '{"hostname":"knot.neuros.is"}'`.
+- Git over HTTPS (clone, fetch) works through the tunnel; SSH does not
+  reach the knot through `knot.neuros.is`.
+- `atproto/tangled-knot-secrets`, key `KNOT_MASTER_KEY`: unseals
+  `/var/lib/tangled-knot/sealed-keys` on r440. Never change it: a new key
+  cannot open the existing sealed keys.
+- `atproto/atcr-io-pull`: pull credentials for atcr.io (an ATProto
+  handle and app password, type `kubernetes.io/dockerconfigjson`). After a
+  change: `kubectl -n atproto rollout restart deploy/tangled-knot`.
+- Back up `/var/lib/tangled-knot` on r440 (repos, LFS, sealed keys, SSH
+  host key).
+
+### ATCR
+
+Push and pull as `cr.neuros.is/<handle>/<repo>`; log in with
+`docker login cr.neuros.is` (an ATProto handle and an app password from
+that account's PDS). Pulls are anonymous. Only the hold's captain
+(`ownerDid` in `components/apps/atproto/atcr/hold.nix`) and its crew may
+push; manage crew and storage at `https://hold.neuros.is/admin`.
+
+- **Layers over 100 MB** fail through Cloudflare. Push them through a
+  port-forward instead:
+  `kubectl -n atproto port-forward svc/atcr-appview 5000:80`, then push to
+  `localhost:5000/<handle>/<repo>`.
+- **The Secret `atproto/atcr-secrets`:** `GARAGE_RPC_SECRET`,
+  `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`. Garage imports the S3 key on
+  its first start only: to change it, create a new key with
+  `kubectl -n atproto exec deploy/atcr-garage -- /garage key …`, allow it on
+  the bucket `atcr-blobs`, then put it in the file. After a change:
+  `kubectl -n atproto rollout restart deploy/atcr-garage deploy/atcr-hold`.
+- Health: `curl https://hold.neuros.is/xrpc/_health`,
+  `curl https://cr.neuros.is/v2/`.
+- Back up `/var/lib/atcr` on r440 (blobs, signing and OAuth keys). Tags and
+  manifests live in each owner's PDS.
+
+## LLDAP
+
+No public hostname. Web UI: `kubectl -n lldap port-forward svc/lldap 17170:17170`,
+then http://localhost:17170, user `admin`. In-cluster LDAP:
+`ldap://lldap.lldap.svc.cluster.local:3890`, base DN `dc=neuros,dc=is`,
+bind DN `uid=admin,ou=people,dc=neuros,dc=is`. Give LDAP clients their own
+user in the group `lldap_strict_readonly`, not the admin.
+
+The Secret `lldap/lldap-secrets`:
+
+- `LLDAP_LDAP_USER_PASS`: the admin password, used on the first start only.
+  Read it with
+  `sops decrypt --extract '["data"]["LLDAP_LDAP_USER_PASS"]' k8s/secrets/lldap/lldap-secrets.sops.yaml | base64 -d`,
+  then change it in the UI. To force it back to the file's value, set
+  `LLDAP_FORCE_LDAP_USER_PASS_RESET=true` for one start.
+- `LLDAP_KEY_SEED`: never change it once LLDAP has started (stored
+  passwords depend on it).
+- `LLDAP_JWT_SECRET`: changing it logs everyone out.
+
+New values: `openssl rand -base64 48 | tr -d "\n"`. After a change:
+`kubectl -n lldap rollout restart deploy/lldap`. Removing the component
+leaves `/var/lib/lldap/data` on r440 (PV reclaim Retain); delete it by hand.

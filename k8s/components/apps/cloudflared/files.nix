@@ -16,16 +16,32 @@ rec {
         "headlamp"
         "openWebui"
         "fluxWebhook"
+        "tranquilPds"
+        "tangledKnot"
+        "atcr"
+        "atcrHold"
       ]
     )
     # r440's Nix binary cache: not in the cluster, but nginx (basic auth)
     # on r440's LAN address (hosts/r440/cache.nix), which the firewall
     # opens to the nodes' LAN IPs, i.e. to this hostNetwork pod on any node.
+    # Tranquil PDS handles (<name>.neuros.is, apps/atproto/tranquil-pds).
+    // {
+      "*.${cluster.tranquilPds.handleDomain}" = "${cluster.tranquilPds.serviceIP}:80";
+    }
     // {
       ${cluster.binaryCache.host} = "${
         cluster.nodes.${cluster.binaryCache.node}.lanIP
       }:${toString cluster.binaryCache.port}";
     };
+
+  # cloudflared matches ingress rules in order: exact names before "*." ones.
+  wildcardsLast =
+    hosts:
+    let
+      p = lib.partition (h: !lib.hasPrefix "*." h) hosts;
+    in
+    p.right ++ p.wrong;
 
   # cloudflared sends every hostname to the nginx sidecar. JSON is YAML.
   cloudflared = builtins.toJSON {
@@ -37,7 +53,7 @@ rec {
       map (host: {
         hostname = host;
         service = "http://127.0.0.1:${toString proxyPort}";
-      }) (lib.attrNames routes)
+      }) (wildcardsLast (lib.attrNames routes))
       ++ [ { service = "http_status:404"; } ];
   };
 
