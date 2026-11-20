@@ -22,4 +22,4 @@ procedures use, except the root-CA tools in `ca-ceremony-tools`
 | [hosts/famine.md](hosts/famine.md) | Deploying Famine, YubiKey, enrolling it in sops |
 | [k8s/README.md](k8s/README.md) | Render, deployment, bootstrapping a fresh cluster |
 | [k8s/secrets.md](k8s/secrets.md) | In-cluster sops Secrets: rotating, adding, the Flux bootstrap key |
-| [k8s/apps.md](k8s/apps.md) | cert-manager, authentik, Headlamp, Cloudflare tunnel, Open WebUI |
+| [k8s/apps.md](k8s/apps.md) | cert-manager, authentik, Headlamp, Cloudflare tunnel, Open WebUI, step-ca (SSH certificates for automations) |

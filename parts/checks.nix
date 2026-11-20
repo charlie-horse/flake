@@ -55,6 +55,9 @@
         # The k8s render with this system's nixpkgs: on x86_64-linux the same
         # derivation as `.#k8s.manifests` (parts/k8s.nix).
         k8s-render = (import ../k8s { inherit inputs pkgs lib; }).manifests;
+
+        # Unit tests of apps/step-ca's config and custom.auth.sshCA.
+        step-ca = import ../k8s/components/apps/step-ca/test.nix { inherit pkgs lib; };
       };
     };
 }

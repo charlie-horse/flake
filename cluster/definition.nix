@@ -63,6 +63,10 @@
     serviceIP = "10.96.0.23";
   };
 
+  # step-ca's HTTPS endpoint (k8s/components/apps/step-ca/), in-cluster and
+  # from the nodes only.
+  stepCa.serviceIP = "10.96.0.29";
+
   # r440's Nix binary cache (harmonia). Not a Service: the tunnel's nginx
   # sidecar forwards to http://<nodes.r440.lanIP>:<port>, where nginx on
   # r440 asks for HTTP basic auth (hosts/r440/cache.nix). The signing key
