@@ -8,11 +8,11 @@ rec {
   images = {
     appview = {
       repo = "ghcr.io/charlie-horse/flake/atcr-appview";
-      digest = null;
+      digest = "sha256:41ddff611ee664b489028478f861f743637fc47bea342873f72c72a4393f4387";
     };
     hold = {
       repo = "ghcr.io/charlie-horse/flake/atcr-hold";
-      digest = null;
+      digest = "sha256:2fc47df660d30318b4fa5008f7e036db2058aa85e1a4f037c9cac8dab86f40c7";
     };
   };
   imageRef = { repo, digest }: if digest == null then "${repo}:main" else "${repo}@${digest}";

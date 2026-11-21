@@ -26,7 +26,7 @@ let
   secretName = "tangled-knot-secrets";
 
   # From .github/workflows/atproto-images.yml on main.
-  digest = null;
+  digest = "sha256:f5c37644269f7dad776b1d1b63eddab144e7e2efbea2b436a8ea30e86a90e386";
   imageRepo = "ghcr.io/charlie-horse/flake/tangled-knot";
   image = if digest == null then "${imageRepo}:main" else "${imageRepo}@${digest}";
   uid = 1000; # the image's User
