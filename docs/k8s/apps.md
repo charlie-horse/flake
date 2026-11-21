@@ -224,17 +224,18 @@ covers one level (`*.neuros.is`) only.
 
 Public HTTPS for PDS handles (`https://<name>.at.neuros.is`): handle
 resolution and did:web documents only, served by the DaemonSet in
-`components/apps/atproto-edge/` on `cluster.vip`:443 with the Let's Encrypt
+`components/apps/atproto-edge/` on r440's LAN address, port 443, with the Let's Encrypt
 certificate `atproto-edge/at-wildcard-tls`.
 
-- Router: forward TCP 443 to `cluster.vip`.
+- Router: forward TCP 443 to r440's `lanIP`. While r440 is down, handles
+  don't resolve.
 - Cloudflare DNS: `*.at.neuros.is` A record, DNS only (not proxied), to the
   public address.
 - Certificate and renewal:
   `kubectl -n atproto-edge get certificate at-wildcard-tls` (Ready True;
   `kubectl describe` shows Not After and Renewal Time). nginx reloads a
   renewed certificate within 5 minutes; check with
-  `openssl s_client -connect <cluster.vip>:443 -servername charlie.at.neuros.is </dev/null 2>/dev/null | openssl x509 -noout -dates`.
+  `openssl s_client -connect <r440 lanIP>:443 -servername charlie.at.neuros.is </dev/null 2>/dev/null | openssl x509 -noout -dates`.
 - Smoke test from outside:
   `curl https://charlie.at.neuros.is/.well-known/atproto-did` returns the
   DID; any other path returns 404.

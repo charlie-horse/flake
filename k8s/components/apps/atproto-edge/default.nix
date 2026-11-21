@@ -1,7 +1,7 @@
 # Public TLS edge for Tranquil PDS handles, namespace `atproto-edge`:
 #
-#   https://<name>.<handleDomain> -> router TCP 443 -> cluster.vip:443
-#     -> nginx (this DaemonSet, hostPort 443 on the VIP only, every node)
+#   https://<name>.<handleDomain> -> router TCP 443 -> r440 lanIP:443
+#     -> nginx (this DaemonSet, on r440 only, hostPort 443 on its LAN IP)
 #     -> http://<tranquilPds.serviceIP>:80
 #
 # Serves /.well-known/atproto-did and /.well-known/did.json of
@@ -18,6 +18,8 @@
 let
   namespace = "atproto-edge";
   name = "atproto-edge";
+  # The router forwards public TCP 443 to this node.
+  node = "r440";
   labels."app.kubernetes.io/name" = name;
   port = 8443;
   tlsSecret = "at-wildcard-tls";
@@ -79,6 +81,7 @@ in
           annotations."cluster/config-hash" = builtins.hashString "sha256" nginxConf;
         };
         spec = {
+          nodeSelector."kubernetes.io/hostname" = node;
           tolerations = k8sLib.nodeTolerations;
           automountServiceAccountToken = false;
           securityContext.seccompProfile.type = "RuntimeDefault";
@@ -92,13 +95,13 @@ in
                 "-c"
                 run
               ];
-              # portmap DNAT: only traffic to the VIP, on whichever node holds it.
+              # portmap DNAT: only traffic to the node's LAN IP.
               ports = [
                 {
                   name = "https";
                   containerPort = port;
                   hostPort = 443;
-                  hostIP = cluster.vip;
+                  hostIP = cluster.nodes.${node}.lanIP;
                   protocol = "TCP";
                 }
               ];
