@@ -42,9 +42,16 @@ let
     ENABLE_CADDY_ON_DEMAND_TLS = "false";
     INVITE_CODE_REQUIRED = "true";
     ENABLE_PDS_HOSTED_DID_WEB = "true";
-    # No mail/Discord/Telegram/Signal is configured, so no channel can be
-    # verified; without this, unverified accounts can neither log in nor write.
+    # Unverified accounts may still log in and write.
     DISABLE_ACCOUNT_VERIFICATION_GATE = "true";
+
+    # Mail through iCloud's SMTP (the neuros.is custom domain); account and
+    # app-specific password in the Secret tranquil-pds-mail.
+    MAIL_FROM_ADDRESS = "pds@neuros.is";
+    MAIL_FROM_NAME = "neuros.is PDS";
+    MAIL_SMARTHOST_HOST = "smtp.mail.me.com";
+    MAIL_SMARTHOST_PORT = "587";
+    MAIL_SMARTHOST_TLS = "starttls";
 
     REPO_BACKEND = "postgres";
     DATABASE_URL = "postgres://${db.user}:$(POSTGRES_PASSWORD)@${db.name}:5432/${db.database}";
@@ -68,6 +75,9 @@ let
   # The OIDC client secret; authentik reads the same value from its own copy
   # (authentik/tranquil-pds-oidc, blueprints/tranquil-pds.yaml).
   oidcSecretName = "tranquil-pds-oidc";
+
+  # SMTP login (sops; optional: without it mail fails, the PDS still runs).
+  mailSecretName = "tranquil-pds-mail";
 
   probe = path: {
     httpGet = {
@@ -164,7 +174,21 @@ in
                     key = "CLIENT_SECRET";
                   };
                 }
-              ];
+              ]
+              ++
+                map
+                  (key: {
+                    name = key;
+                    valueFrom.secretKeyRef = {
+                      name = mailSecretName;
+                      inherit key;
+                      optional = true;
+                    };
+                  })
+                  [
+                    "MAIL_SMARTHOST_USERNAME"
+                    "MAIL_SMARTHOST_PASSWORD"
+                  ];
               ports = [
                 {
                   name = "http";

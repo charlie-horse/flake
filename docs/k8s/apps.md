@@ -287,6 +287,15 @@ covers one level (`*.neuros.is`) only.
   ([secrets.md](secrets.md#changing-a-value-rotation)), merge, then
   `kubectl -n authentik rollout restart deploy/authentik-worker` and
   `kubectl -n atproto rollout restart deploy/tranquil-pds`.
+- **Mail.** The PDS sends from `pds@neuros.is` through iCloud's SMTP, so
+  that address must exist under the neuros.is custom domain in iCloud+.
+  The Secret `atproto/tranquil-pds-mail` holds `MAIL_SMARTHOST_USERNAME`
+  (the Apple Account's primary email) and `MAIL_SMARTHOST_PASSWORD` (an
+  app-specific password from account.apple.com → Sign-In and Security).
+  Create the file with `sops k8s/secrets/atproto/tranquil-pds-mail.sops.yaml`
+  (a v1 Secret, values base64 under `data`, keys sorted;
+  [secrets.md](secrets.md#changing-a-value-rotation)), merge, then
+  `kubectl -n atproto rollout restart deploy/tranquil-pds`.
 - **The Secret `atproto/tranquil-pds-secrets`:** `JWT_SECRET`, `DPOP_SECRET`
   (changing either logs everyone out), `MASTER_KEY` (encrypts the account
   signing keys: never change it), `POSTGRES_PASSWORD` (change it in the
