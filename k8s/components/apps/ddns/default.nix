@@ -1,27 +1,28 @@
-# Dynamic DNS, namespace `ddns`: a CronJob that keeps the DNS-only
+# Dynamic DNS, in namespace `cert-manager`: a CronJob that keeps the DNS-only
 # (unproxied) Cloudflare A records `records` in `zone` on the network's
 # public IPv4 (ddns.py, from Cloudflare's /cdn-cgi/trace). Every other public
 # hostname is a proxied tunnel route (apps/cloudflared), not managed here.
 #
-# Token: Secret ddns/cloudflare-api-token (sops, key api-token).
+# Token: the ACME issuers' Secret cert-manager/cloudflare-api-token (sops,
+# key api-token), so one file holds it. The namespace enforces `restricted`.
 # Docs: docs/k8s/apps.md#dynamic-dns
 { lib, ... }:
 let
-  namespace = "ddns";
+  inherit (import ../../infra/cert-manager/settings.nix)
+    namespace
+    acmeZone
+    cloudflareTokenSecret
+    cloudflareTokenKey
+    ;
   name = "ddns";
-  zone = "neuros.is";
+  zone = acmeZone;
   records = [ "*.at.neuros.is" ];
-  secretName = "cloudflare-api-token";
   labels."app.kubernetes.io/name" = name;
 in
 {
   validation.strict = true;
 
   resources.core.v1 = {
-    Namespace.${namespace}.metadata.labels = {
-      "pod-security.kubernetes.io/enforce" = "restricted";
-      "pod-security.kubernetes.io/warn" = "restricted";
-    };
     ConfigMap.${name} = {
       metadata = { inherit namespace labels; };
       data."ddns.py" = builtins.readFile ./ddns.py;
@@ -68,7 +69,7 @@ in
                       ZONE = zone;
                       RECORDS = builtins.toJSON records;
                       TTL = "300";
-                      TOKEN_FILE = "/token/api-token";
+                      TOKEN_FILE = "/token/${cloudflareTokenKey}";
                     };
                 securityContext = {
                   allowPrivilegeEscalation = false;
@@ -103,7 +104,7 @@ in
               }
               {
                 name = "token";
-                secret.secretName = secretName;
+                secret.secretName = cloudflareTokenSecret;
               }
             ];
           };

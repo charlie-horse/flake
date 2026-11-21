@@ -33,7 +33,8 @@ rec {
   # their policies allow (the zone and anything under it).
   acmeZone = "neuros.is";
   # Cloudflare API token (Zone:DNS:Edit on acmeZone) in `namespace`, from
-  # sops: k8s/secrets/cert-manager/cloudflare-api-token.sops.yaml.
+  # sops: k8s/secrets/cert-manager/cloudflare-api-token.sops.yaml. Also read
+  # by apps/ddns.
   cloudflareTokenSecret = "cloudflare-api-token";
   cloudflareTokenKey = "api-token";
 }

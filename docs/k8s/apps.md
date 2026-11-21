@@ -71,11 +71,10 @@ then `kubectl -n <ns> get challenges` while a DNS-01 challenge is pending.
 
 #### The Cloudflare API token
 
-One token, in two Secrets: `cert-manager/cloudflare-api-token` (the
-issuers) and `ddns/cloudflare-api-token` ([Dynamic DNS](#dynamic-dns)),
-both key `api-token`. Without them the issuers are Ready (account
-registration needs no token) but every challenge fails, and the `ddns` Jobs
-fail. To create or replace them:
+The Secret `cert-manager/cloudflare-api-token` (key `api-token`), read by
+the issuers and by the [Dynamic DNS](#dynamic-dns) Job. Without it the
+issuers are Ready (account registration needs no token) but every challenge
+fails, and the `ddns` Jobs fail. To create or replace it:
 
 1. Cloudflare dashboard, My Profile → API Tokens → Create Token → Custom
    token. Permissions: Zone / DNS / Edit and Zone / Zone / Read. Zone
@@ -87,15 +86,13 @@ fail. To create or replace them:
 
    ```sh
    nix shell nixpkgs#sops nixpkgs#yq-go
-   read -rs t && export t=$(printf %s "$t" | base64 -w0)
-   for ns in cert-manager ddns; do
-     f=k8s/secrets/$ns/cloudflare-api-token.sops.yaml; mkdir -p "${f%/*}"
-     ns=$ns yq -n '.apiVersion = "v1" | .data["api-token"] = strenv(t) | .kind = "Secret" | .metadata.name = "cloudflare-api-token" | .metadata.namespace = strenv(ns) | .type = "Opaque" | sort_keys(..)' \
-       | sops encrypt --filename-override "$f" --input-type yaml --output-type yaml /dev/stdin > "$f"
-   done; unset t
+   f=k8s/secrets/cert-manager/cloudflare-api-token.sops.yaml
+   read -rs t && t=$(printf %s "$t" | base64 -w0) yq -n \
+     '.apiVersion = "v1" | .data["api-token"] = strenv(t) | .kind = "Secret" | .metadata.name = "cloudflare-api-token" | .metadata.namespace = "cert-manager" | .type = "Opaque" | sort_keys(..)' \
+     | sops encrypt --filename-override "$f" --input-type yaml --output-type yaml /dev/stdin > "$f"; unset t
    ```
 
-   The same lines replace both files.
+   The same lines replace it.
 3. PR, merge. cert-manager and each `ddns` Job read the Secret when they
    use it; no restart. Revoke the old token in Cloudflare after a
    replacement is applied.
@@ -224,9 +221,9 @@ Every public hostname goes through one locally managed tunnel
 
 ## Dynamic DNS
 
-`components/apps/ddns/` runs a CronJob every 5 minutes that keeps the
+`components/apps/ddns/` runs a CronJob (namespace `cert-manager`) every 5 minutes that keeps the
 DNS-only (unproxied) A records in its `records` on the network's public
-IPv4, with the token in `ddns/cloudflare-api-token`
+IPv4, with the token in `cert-manager/cloudflare-api-token`
 ([above](#the-cloudflare-api-token)). The router forwards TCP 443 to the
 VIP (`cluster.vip`); every node accepts 443 (`modules/cluster/firewall.nix`).
 
@@ -238,8 +235,9 @@ Rules:
 - Removing a name from `records` leaves its record in Cloudflare; delete it
   in the dashboard.
 
-Status: `kubectl -n ddns get jobs`, `kubectl -n ddns logs job/<job>`.
-To run it now: `kubectl -n ddns create job --from=cronjob/ddns ddns-now`.
+Status: `kubectl -n cert-manager get jobs`,
+`kubectl -n cert-manager logs job/<job>`. To run it now:
+`kubectl -n cert-manager create job --from=cronjob/ddns ddns-now`.
 
 ## Open WebUI
 
