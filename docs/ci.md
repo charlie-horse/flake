@@ -30,7 +30,8 @@ To compare a host's config with what runs on it, on the host:
 
 ## render.yml
 
-- Every push to `main` publishes the render its `checks` run built;
+- Every push to `main` publishes the render its `checks` run built, to
+  GHCR and to ATCR (secrets `ATCR_USERNAME`, `ATCR_APP_PASSWORD`);
   dispatching `render.yml` on `main` builds and republishes the current
   render. Flux accepts only artifacts signed by this
   workflow on `main`.
@@ -38,8 +39,8 @@ To compare a host's config with what runs on it, on the host:
   Secret `flux-system/webhook-token`, no trailing newline.
   `FLUX_WEBHOOK_URL` is `https://<cluster.fluxWebhook.host>` plus the
   Receiver's `status.webhookPath`; update it whenever the token changes.
-- The GHCR package `manifests` must stay public (Flux pulls it without
-  credentials).
+- The GHCR package `manifests` must stay public (with
+  `flakeRegistry = "ghcr"`, Flux pulls it without credentials).
 
 ## update.yml
 
@@ -51,16 +52,21 @@ To compare a host's config with what runs on it, on the host:
 
 ## pki-export-image.yml
 
-On `main` it pushes the image and writes its digest to the job summary; pin
-that digest in `k8s/components/infra/cluster-pki/export.nix`
+On `main` it pushes the image, mirrors it to ATCR and writes its digest to
+the job summary; pin that digest in
+`k8s/components/infra/cluster-pki/export.nix`
 ([pki.md](pki.md#export-job-image)).
 
 ## atproto-images.yml
 
-On `main` it pushes the ATProto service images (one job per image) and
-writes each digest to the job summary; pin them as in
+On `main` it pushes the ATProto service images (one job per image), mirrors
+each to ATCR and writes each digest to the job summary; pin them as in
 [k8s/apps.md](k8s/apps.md#atproto-services). The GHCR packages must stay
-public (the kubelets pull without credentials).
+public (the kubelets pull them without credentials).
+
+Both image workflows mirror with the secrets `ATCR_USERNAME` and
+`ATCR_APP_PASSWORD` ([k8s/apps.md](k8s/apps.md#atcr)), copying the GHCR
+manifest unchanged, so a digest is the same in both registries.
 
 Jobs use r440's binary cache through `.github/actions/nix-cache`
 ([build-cache.md](build-cache.md#github-actions)).

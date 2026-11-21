@@ -1,5 +1,6 @@
-# Push the pki-export image to GHCR from main (`nix flake check` builds it
-# on every PR: checks.pki-export-image). docs/pki.md#export-job-image
+# Push the pki-export image to GHCR from main and mirror it to ATCR with the
+# same digest (`nix flake check` builds it on every PR: checks.pki-export-image).
+# docs/pki.md#export-job-image
 name: pki-export-image
 
 on:
@@ -70,3 +71,21 @@ jobs:
             echo "Pin it in k8s/components/infra/cluster-pki/export.nix:"
             echo "\`digest = \"$digest\";\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mirror to ATCR
+        env:
+          ATCR_USERNAME: ${{ secrets.ATCR_USERNAME }}
+          ATCR_APP_PASSWORD: ${{ secrets.ATCR_APP_PASSWORD }}
+          IMAGE: pki-export
+        run: |
+          set -euo pipefail
+          src="ghcr.io/${GITHUB_REPOSITORY,,}/$IMAGE@$(cat digest)"
+          dst="cr.neuros.is/$ATCR_USERNAME/flake/$IMAGE"
+          echo "$ATCR_APP_PASSWORD" | skopeo login cr.neuros.is -u "$ATCR_USERNAME" --password-stdin
+          for tag in "${GITHUB_SHA::12}" main; do
+            skopeo copy --all --preserve-digests "docker://$src" "docker://$dst:$tag"
+          done
+          got=$(skopeo inspect --raw "docker://$dst:${GITHUB_SHA::12}" | sha256sum | cut -d' ' -f1)
+          [ "sha256:$got" = "$(cat digest)" ] || { echo "::error::ATCR digest sha256:$got != $(cat digest)"; exit 1; }
+          echo "mirrored $dst@sha256:$got"
+          echo "Mirrored to \`$dst\` (same digest)." >> "$GITHUB_STEP_SUMMARY"

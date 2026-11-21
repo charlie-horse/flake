@@ -58,6 +58,8 @@ asserts it.
 
 Flux can't run before the pod network and DNS, so the first apply is
 manual; afterwards Flux owns everything in the render, itself included.
+Bootstrap from a commit with `flakeRegistry = "ghcr"`: ATCR doesn't exist
+yet ([apps.md](apps.md#the-flakes-images-and-fluxs-source)).
 Use the break-glass admin kubeconfig on any node
 (`/etc/kubernetes/admin.kubeconfig`, root only; [../pki.md](../pki.md)):
 build as admin, run `kubectl` and `flux` as root.

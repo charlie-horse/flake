@@ -6,7 +6,7 @@
 #   garage.nix   Garage: the hold's S3 store
 #
 # Everything on r440 (hostPath PVs under /var/lib/atcr). AppView and hold
-# images: ghcr.io/charlie-horse/flake/atcr-{appview,hold} (settings.nix);
+# images: atcr-{appview,hold} (settings.nix, k8sLib.flakeImages);
 # Secret atproto/atcr-secrets (sops). Operating it: docs/k8s/apps.md#atcr
 { ... }:
 {

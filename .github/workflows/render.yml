@@ -3,10 +3,11 @@
 #   render   takes the render that checks.yml built (its `manifests`
 #            artifact) when a checks run on main succeeds, or builds
 #            .#k8s.manifests when dispatched.
-#   publish  pushes the tree to GHCR as an OCI artifact
-#            (ghcr.io/<repo>/manifests, tags <sha12> and main), signs it with
-#            cosign (keyless, this workflow's GitHub OIDC identity) and pings
-#            Flux's webhook. Flux applies only artifacts signed by this
+#   publish  pushes the tree as an OCI artifact to GHCR
+#            (ghcr.io/<repo>/manifests) and ATCR
+#            (cr.neuros.is/<ATCR_USERNAME>/flake/manifests), tags <sha12> and
+#            main, signs each with cosign (keyless, this workflow's GitHub
+#            OIDC identity) and pings Flux's webhook. Flux applies only artifacts signed by this
 #            workflow on main (k8s/components/flux/sync.nix).
 #
 # Pull requests are checked by checks.yml (`nix flake check` builds the
@@ -128,6 +129,7 @@ jobs:
         run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
 
       - name: Push and sign the artifact
+        id: ghcr
         run: |
           set -euo pipefail
           url="oci://ghcr.io/$GITHUB_REPOSITORY/manifests:${SHA::12}"
@@ -140,7 +142,26 @@ jobs:
           cosign sign --yes "$ref"
           echo "published \`$ref\`" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Push and sign the artifact on ATCR
+        env:
+          ATCR_USERNAME: ${{ secrets.ATCR_USERNAME }}
+          ATCR_APP_PASSWORD: ${{ secrets.ATCR_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          echo "$ATCR_APP_PASSWORD" | docker login cr.neuros.is -u "$ATCR_USERNAME" --password-stdin
+          url="oci://cr.neuros.is/$ATCR_USERNAME/flake/manifests:${SHA::12}"
+          out=$(flux push artifact "$url" --path manifests -o json \
+            --source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --revision="main@sha1:$SHA")
+          echo "$out"
+          flux tag artifact "$url" --tag main
+          ref=$(echo "$out" | jq -r '.repository + "@" + .digest')
+          cosign sign --yes "$ref"
+          echo "published \`$ref\`" >> "$GITHUB_STEP_SUMMARY"
+
+      # Flux reads one of the two registries (cluster.flakeRegistry).
       - name: Notify Flux
+        if: ${{ !cancelled() && steps.ghcr.outcome == 'success' }}
         env:
           TOKEN: ${{ secrets.FLUX_WEBHOOK_TOKEN }}
           URL: ${{ secrets.FLUX_WEBHOOK_URL }}
