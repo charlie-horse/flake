@@ -18,6 +18,7 @@ procedures use, except the root-CA tools in `ca-ceremony-tools`
 | [pki.md](pki.md) | Cluster PKI: renewal, break-glass, offline signing, CA rotation, export job |
 | [hosts/c4130.md](hosts/c4130.md) | Deploying c4130 |
 | [hosts/c4130-vllm.md](hosts/c4130-vllm.md) | vLLM rules, running a custom model, bumping vllm-fork, kill switches |
+| [hosts/c4130-spindle.md](hosts/c4130-spindle.md) | Tangled spindle (CI runner): signing key, going live, allow-list |
 | [hosts/m2mini.md](hosts/m2mini.md) | Deploying m2mini, vendor firmware |
 | [hosts/famine.md](hosts/famine.md) | Deploying Famine, YubiKey, enrolling it in sops |
 | [k8s/README.md](k8s/README.md) | Render, deployment, bootstrapping a fresh cluster |

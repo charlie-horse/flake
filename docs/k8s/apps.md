@@ -199,7 +199,9 @@ Every public hostname goes through one locally managed tunnel
 
 - **New hostname.** Add it to `routes` in
   `components/apps/cloudflared/files.nix` (with its `host`/`serviceIP` in
-  `cluster/definition.nix`), merge, then add its DNS route.
+  `cluster/definition.nix`; a service on a host instead gets its
+  `lanIP:port` and a firewall rule for the nodes' LAN IPs), merge, then add
+  its DNS route.
 - **DNS route.** A proxied CNAME to `<tunnel id>.cfargotunnel.com`, made
   with the Cloudflare account cert ([../secrets.md](../secrets.md)), as
   admin on c4130:
@@ -340,6 +342,7 @@ certificate `atproto-edge/at-wildcard-tls`.
   cannot open the existing sealed keys.
 - Back up `/var/lib/tangled-knot` on r440 (repos, LFS, sealed keys, SSH
   host key).
+- CI: the spindle on c4130 ([../hosts/c4130-spindle.md](../hosts/c4130-spindle.md)).
 
 ### ATCR
 

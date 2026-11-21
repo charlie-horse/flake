@@ -11,7 +11,7 @@
 # KNOT_MASTER_KEY, unseals sealed-keys). Image: pkgs/atproto-images/
 # tangled-knot.nix, pushed to GHCR by .github/workflows/atproto-images.yml;
 # replicas 0 while digest is null.
-# No spindle (CI runner): it needs KVM or Docker.
+# CI runner: the spindle on c4130 (hosts/c4130/spindle.nix).
 # Operation: docs/k8s/apps.md#atproto-services
 {
   lib,

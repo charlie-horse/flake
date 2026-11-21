@@ -14,5 +14,6 @@
     ./hardware-configuration.nix
     ./vllm
     ./builder.nix
+    ./spindle.nix
   ];
 }
