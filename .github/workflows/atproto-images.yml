@@ -1,4 +1,5 @@
-# Push the ATProto service images (pkgs/atproto-images) to GHCR from main.
+# Push the ATProto service images (pkgs/atproto-images) to GHCR from main
+# and mirror them to ATCR (cr.neuros.is) with the same digest.
 # Pin each printed digest in its component under
 # k8s/components/apps/atproto/. docs/k8s/apps.md#atproto-services
 name: atproto-images
@@ -73,3 +74,21 @@ jobs:
             echo
             echo "\`$repo@$digest\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mirror to ATCR
+        env:
+          ATCR_USERNAME: ${{ secrets.ATCR_USERNAME }}
+          ATCR_APP_PASSWORD: ${{ secrets.ATCR_APP_PASSWORD }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -euo pipefail
+          src="ghcr.io/${GITHUB_REPOSITORY,,}/$IMAGE@$(cat digest)"
+          dst="cr.neuros.is/$ATCR_USERNAME/flake/$IMAGE"
+          echo "$ATCR_APP_PASSWORD" | skopeo login cr.neuros.is -u "$ATCR_USERNAME" --password-stdin
+          for tag in "${GITHUB_SHA::12}" main; do
+            skopeo copy --all --preserve-digests "docker://$src" "docker://$dst:$tag"
+          done
+          got=$(skopeo inspect --raw "docker://$dst:${GITHUB_SHA::12}" | sha256sum | cut -d' ' -f1)
+          [ "sha256:$got" = "$(cat digest)" ] || { echo "::error::ATCR digest sha256:$got != $(cat digest)"; exit 1; }
+          echo "mirrored $dst@sha256:$got"
+          echo "Mirrored to \`$dst\` (same digest)." >> "$GITHUB_STEP_SUMMARY"

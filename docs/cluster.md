@@ -40,7 +40,7 @@ sudo journalctl -u etcd --since -5min | grep -iE 'x509|tls|handshake'   # empty
 1. Edit `k8s/` (or `cluster/definition.nix`), branch → PR. `checks.yml`
    renders the PR's commit (`nix flake check`).
 2. Merge. Once `checks.yml` passes on `main`, `render.yml` pushes the
-   render to GHCR as a cosign-signed OCI artifact and pings Flux's
+   render to GHCR and ATCR as a cosign-signed OCI artifact and pings Flux's
    webhook; Flux applies it within seconds
    ([ci.md](ci.md), [k8s/README.md](k8s/README.md)).
 

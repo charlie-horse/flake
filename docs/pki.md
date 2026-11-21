@@ -199,6 +199,7 @@ brings it to the hosts.
 The CronJob runs the image pinned by `digest` in
 `k8s/components/infra/cluster-pki/export.nix`; `digest = null;` suspends
 it. On `main`, `.github/workflows/pki-export-image.yml` pushes the image
+to GHCR and ATCR ([k8s/apps.md](k8s/apps.md#the-flakes-images-and-fluxs-source))
 and prints the digest in the step summary. Move the pin in a PR; a new
 image never reaches the cluster without one. Build locally with
 `nix build .#pki-export-image` (a `docker-archive` stream:

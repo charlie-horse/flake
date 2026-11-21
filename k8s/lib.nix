@@ -2,6 +2,24 @@
 # every component as the `k8sLib` module argument by k8s/render.nix.
 { lib, cluster }:
 {
+  # The flake's images (and Flux's source, `manifests`) in the registry
+  # cluster.flakeRegistry. `ref name digest`: a null digest means tag main.
+  # Pods pulling them set `imagePullSecrets = k8sLib.flakeImages.pullSecrets;`.
+  flakeImages = rec {
+    atcr = cluster.flakeRegistry == "atcr";
+    registry =
+      assert lib.elem cluster.flakeRegistry [
+        "atcr"
+        "ghcr"
+      ];
+      if atcr then
+        "${cluster.atcr.host}/${cluster.atcr.ciHandle}/flake"
+      else
+        "ghcr.io/charlie-horse/flake";
+    ref = name: digest: "${registry}/${name}${if digest == null then ":main" else "@${digest}"}";
+    pullSecrets = lib.optional atcr { name = cluster.atcr.pullSecret; };
+  };
+
   # A node-local volume: a hostPath PersistentVolume pinned to `node` and
   # pre-bound (claimRef) to the claim of the same name in `namespace`, plus
   # that claim. StorageClass `local` (components/infra/local-storage.nix), reclaim

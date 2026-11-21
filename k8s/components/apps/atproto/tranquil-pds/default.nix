@@ -9,8 +9,9 @@
 # PV). Accounts are did:web:<handle>, hosted here, or did:plc. Login: password/passkey, or SSO through authentik's
 # provider `tranquil-pds` (group `pds-users`); new accounts need an invite
 # code either way. Secret atproto/tranquil-pds-secrets (sops). Image:
-# pkgs/atproto-images/tranquil-pds.nix, pushed to GHCR by
-# .github/workflows/atproto-images.yml; replicas 0 while digest is null.
+# pkgs/atproto-images/tranquil-pds.nix, pushed to GHCR and ATCR by
+# .github/workflows/atproto-images.yml (k8sLib.flakeImages); replicas 0
+# while digest is null.
 # Operating it: docs/k8s/apps.md#tranquil-pds
 {
   lib,
@@ -27,8 +28,7 @@ let
 
   # From .github/workflows/atproto-images.yml on main.
   digest = "sha256:f95a19855a1b4afa92562eee07caff9ff5a3a300d1e26500bc55bed324c94d6c";
-  imageRepo = "ghcr.io/charlie-horse/flake/tranquil-pds";
-  image = if digest == null then "${imageRepo}:main" else "${imageRepo}@${digest}";
+  image = k8sLib.flakeImages.ref "tranquil-pds" digest;
   # Handles are <name>.<handleDomain>, resolved over HTTPS
   # (/.well-known/atproto-did), so *.<handleDomain> must reach this Service.
   inherit (cluster.tranquilPds) handleDomain;
@@ -108,6 +108,7 @@ in
       template = {
         metadata.labels = labels;
         spec = {
+          imagePullSecrets = k8sLib.flakeImages.pullSecrets;
           # CI builds the image for x86_64 only.
           nodeSelector."kubernetes.io/arch" = "amd64";
           securityContext = {

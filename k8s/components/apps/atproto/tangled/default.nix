@@ -9,8 +9,9 @@
 # One replica, state on r440 (hostPath PV, /data): repos/, lfs/,
 # sealed-keys, ssh_host_key. Secret atproto/tangled-knot-secrets (sops:
 # KNOT_MASTER_KEY, unseals sealed-keys). Image: pkgs/atproto-images/
-# tangled-knot.nix, pushed to GHCR by .github/workflows/atproto-images.yml;
-# replicas 0 while digest is null.
+# tangled-knot.nix, pushed to GHCR and ATCR by
+# .github/workflows/atproto-images.yml (k8sLib.flakeImages); replicas 0
+# while digest is null.
 # No spindle (CI runner): it needs KVM or Docker.
 # Operation: docs/k8s/apps.md#atproto-services
 {
@@ -27,8 +28,7 @@ let
 
   # From .github/workflows/atproto-images.yml on main.
   digest = "sha256:f5c37644269f7dad776b1d1b63eddab144e7e2efbea2b436a8ea30e86a90e386";
-  imageRepo = "ghcr.io/charlie-horse/flake/tangled-knot";
-  image = if digest == null then "${imageRepo}:main" else "${imageRepo}@${digest}";
+  image = k8sLib.flakeImages.ref "tangled-knot" digest;
   uid = 1000; # the image's User
 
   # Knot admins; the first is the knot's owner.
@@ -83,6 +83,7 @@ in
         metadata.labels = labels;
         spec = {
           securityContext.seccompProfile.type = "RuntimeDefault";
+          imagePullSecrets = k8sLib.flakeImages.pullSecrets;
           # CI builds the image for x86_64 only.
           nodeSelector."kubernetes.io/arch" = "amd64";
           # The knot drains for up to 40 s on SIGTERM.

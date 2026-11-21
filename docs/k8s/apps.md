@@ -261,7 +261,8 @@ through the [TLS edge](#atproto-tls-edge) instead.
 
 Images: Tranquil PDS, the knot and ATCR's AppView and hold are built from
 `pkgs/atproto-images/` and pushed to `ghcr.io/charlie-horse/flake/<image>`
-by `.github/workflows/atproto-images.yml` on `main`. A component whose
+by `.github/workflows/atproto-images.yml` on `main`, which mirrors each to
+[ATCR](#atcr) with the same digest. A component whose
 `digest` is `null` runs no pods. To deploy or update one: merge the image
 change, run or wait for the workflow, copy the digest from its summary
 into `digest` in the component, PR, merge.
@@ -345,7 +346,8 @@ certificate `atproto-edge/at-wildcard-tls`.
 
 Push and pull as `cr.neuros.is/<handle>/<repo>`; log in with
 `docker login cr.neuros.is` (an ATProto handle and an app password from
-that account's PDS). Pulls are anonymous. Only the hold's captain
+that account's PDS). Every pull needs a login too: any account may pull;
+only the hold's captain
 (`ownerDid` in `components/apps/atproto/atcr/hold.nix`) and its crew may
 push; manage crew and storage at `https://hold.neuros.is/admin`.
 
@@ -363,6 +365,52 @@ push; manage crew and storage at `https://hold.neuros.is/admin`.
   `curl https://cr.neuros.is/v2/`.
 - Back up `/var/lib/atcr` on r440 (blobs, signing and OAuth keys). Tags and
   manifests live in each owner's PDS.
+
+
+#### The flake's images and Flux's source
+
+`flakeRegistry` in `cluster/definition.nix` picks where the cluster pulls
+the flake's images (`k8sLib.flakeImages`) and Flux's source: `"atcr"` or
+`"ghcr"`. CI pushes every image and render to both, with the same image
+digests: to ATCR as `cr.neuros.is/<cluster.atcr.ciHandle>/flake/<name>`,
+logged in with the GitHub secrets `ATCR_USERNAME` (equal to `ciHandle`, crew
+of the hold) and `ATCR_APP_PASSWORD` (an app password of that account).
+
+- **Pull Secrets.** With `"atcr"`, every namespace that pulls (`atproto`,
+  `cluster-pki`, `flux-system`) needs the Secret `<cluster.atcr.pullSecret>`,
+  type `kubernetes.io/dockerconfigjson`, holding an app password of
+  `<cluster.atcr.pullHandle>`, an account that is not crew. For each
+  namespace, with `NS=<namespace>` and `PULL_HANDLE=<pullHandle>` exported:
+
+  ```sh
+  f=k8s/secrets/$NS/atcr-pull.sops.yaml
+  read -rs p && printf '{"auths":{"cr.neuros.is":{"auth":"%s"}}}' \
+    "$(printf %s "$PULL_HANDLE:$p" | base64 -w0)" | base64 -w0 \
+    | yq -n '.apiVersion="v1" | .kind="Secret" | .type="kubernetes.io/dockerconfigjson"
+        | .metadata.name="atcr-pull" | .metadata.namespace=strenv(NS)
+        | .data.".dockerconfigjson"=load_str("/dev/stdin")' > "$f"; unset p
+  sops encrypt -i "$f"
+  ```
+
+  then PR, merge. A new app password goes into all three files.
+- **A pull from ATCR** needs the AppView, the PDS, the hold, Garage and the
+  tunnel. Pods already running, and pods restarting on a node that holds
+  their image, keep working while one is down.
+- **Switching to GHCR** (ATCR or the PDS down and a fix must deploy, or a
+  fresh cluster): set `flakeRegistry = "ghcr"`, PR, merge. While ATCR is
+  down, `render.yml` fails its ATCR step and Flux can't fetch that commit:
+  point the source at GHCR by hand (break-glass kubeconfig on a node), and
+  the GHCR render keeps it there:
+
+  ```sh
+  kubectl -n flux-system patch ocirepository flux-system-oci --type merge \
+    -p '{"spec":{"url":"oci://ghcr.io/charlie-horse/flake/manifests","secretRef":null}}'
+  ```
+
+  Back to ATCR: set `"atcr"` once `curl https://cr.neuros.is/v2/` answers
+  401 and an image pull works (`crictl pull --creds …` on a node), PR, merge.
+- **Tags and manifests** of the images live in the PDS repo of
+  `ciHandle`: back up the PDS database with `/var/lib/atcr`.
 
 ## LLDAP
 

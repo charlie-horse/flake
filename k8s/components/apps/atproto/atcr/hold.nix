@@ -107,11 +107,12 @@ in
       template = {
         metadata.labels = labels;
         spec = s.podSpec // {
+          imagePullSecrets = k8sLib.flakeImages.pullSecrets;
           initContainers = [ s.chownData ];
           containers = [
             {
               name = "hold";
-              image = s.imageRef image;
+              image = k8sLib.flakeImages.ref image.name image.digest;
               env =
                 lib.mapAttrsToList (n: v: {
                   name = n;

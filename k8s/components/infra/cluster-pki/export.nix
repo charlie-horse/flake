@@ -1,13 +1,17 @@
 # Token, image digest and activation: docs/pki.md, "In-cluster issuance".
-{ lib, cluster, ... }:
+{
+  lib,
+  cluster,
+  k8sLib,
+  ...
+}:
 let
   inherit (import ./settings.nix) namespace;
   name = "pki-export";
 
   # From .github/workflows/pki-export-image.yml on main; null keeps the CronJob suspended.
   digest = "sha256:f74eab678c8f67e17890646efccaaa13e2352fba17eb1463ba3805f1d8bba4df";
-  imageRepo = "ghcr.io/charlie-horse/flake/pki-export";
-  image = if digest == null then "${imageRepo}:main" else "${imageRepo}@${digest}";
+  image = k8sLib.flakeImages.ref "pki-export" digest;
 
   leafSecrets = map (l: l.name) (import ./leaves.nix { inherit lib cluster; });
 
@@ -61,6 +65,7 @@ in
         ttlSecondsAfterFinished = 604800;
         template.spec = {
           serviceAccountName = name;
+          imagePullSecrets = k8sLib.flakeImages.pullSecrets;
           automountServiceAccountToken = true;
           restartPolicy = "Never";
           nodeSelector."kubernetes.io/arch" = "amd64";

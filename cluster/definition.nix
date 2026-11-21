@@ -85,7 +85,18 @@
   atcr = {
     host = "cr.neuros.is";
     serviceIP = "10.96.0.27";
+    # CI pushes the flake's images and render as <host>/<ciHandle>/flake/
+    # <name>; the GitHub secret ATCR_USERNAME must equal ciHandle.
+    ciHandle = "ci.at.neuros.is";
+    # dockerconfigjson Secret in each namespace that pulls from ATCR.
+    pullSecret = "atcr-pull";
+    # Account whose app password is in every pullSecret; not crew of the hold.
+    pullHandle = "nodes.at.neuros.is";
   };
+
+  # Where the cluster pulls the flake's images and Flux's source from:
+  # "atcr" or "ghcr". CI pushes to both. docs/k8s/apps.md#atcr
+  flakeRegistry = "atcr";
 
   # ATCR hold (blob storage service).
   atcrHold = {
