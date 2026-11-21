@@ -26,7 +26,7 @@ let
   port = 3000;
 
   # From .github/workflows/atproto-images.yml on main.
-  digest = null;
+  digest = "sha256:f95a19855a1b4afa92562eee07caff9ff5a3a300d1e26500bc55bed324c94d6c";
   imageRepo = "ghcr.io/charlie-horse/flake/tranquil-pds";
   image = if digest == null then "${imageRepo}:main" else "${imageRepo}@${digest}";
   # Handles are <name>.<handleDomain>, resolved over HTTPS
