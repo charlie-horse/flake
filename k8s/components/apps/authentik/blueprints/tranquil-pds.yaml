@@ -1,8 +1,7 @@
 # Tranquil PDS (k8s/components/apps/atproto/tranquil-pds): confidential
-# client for members of the group `pds-users`. The client secret is the
-# value SSO_OIDC_CLIENT_SECRET in the sops Secret
-# atproto/tranquil-pds-secrets, set on this provider by hand
-# (docs/k8s/apps.md#tranquil-pds), never in git in the clear.
+# client for members of the group `pds-users`. The client secret comes from
+# the sops Secret authentik/tranquil-pds-oidc (same value as
+# atproto/tranquil-pds-oidc), never from git in the clear.
 # @TRANQUIL_PDS_HOST@ is filled in by blueprints.nix.
 version: 1
 metadata:
@@ -25,6 +24,8 @@ entries:
       name: tranquil-pds
       client_type: confidential
       client_id: tranquil-pds
+      # Secret authentik/tranquil-pds-oidc, via the worker's env (chart.nix).
+      client_secret: !Env TRANQUIL_PDS_CLIENT_SECRET
       grant_types:
         - authorization_code
       authorization_flow: !Find [authentik_flows.flow, [slug, authz-implicit]]

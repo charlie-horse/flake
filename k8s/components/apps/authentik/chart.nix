@@ -98,7 +98,19 @@ in
         # Required anti-affinity on kubernetes.io/hostname: one per node.
         global.affinity.podAntiAffinity = "hard";
         server = common;
-        worker = common;
+        # OIDC client secrets the blueprints read with !Env (sops Secrets in
+        # this namespace, shared with the client's own namespace).
+        worker = common // {
+          env = [
+            {
+              name = "TRANQUIL_PDS_CLIENT_SECRET";
+              valueFrom.secretKeyRef = {
+                name = "tranquil-pds-oidc";
+                key = "CLIENT_SECRET";
+              };
+            }
+          ];
+        };
       };
     })
   ];
