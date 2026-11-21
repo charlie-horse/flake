@@ -29,6 +29,13 @@ rec {
       ${cluster.binaryCache.host} = "${
         cluster.nodes.${cluster.binaryCache.node}.lanIP
       }:${toString cluster.binaryCache.port}";
+    }
+    # The Tangled spindle: a NixOS service on its node (hosts/c4130/
+    # spindle.nix), whose firewall opens the port to the nodes' LAN IPs.
+    // {
+      ${cluster.tangledSpindle.host} = "${
+        cluster.nodes.${cluster.tangledSpindle.node}.lanIP
+      }:${toString cluster.tangledSpindle.port}";
     };
 
   # cloudflared sends every hostname to the nginx sidecar. JSON is YAML.

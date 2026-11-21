@@ -52,6 +52,12 @@
     # docs/hosts/c4130-vllm.md.
     vllm-fork.url = "github:charlie-horse/vllm-sm70/latest";
 
+    # c4130's Tangled spindle (nixosModules.spindle, its package and the
+    # microVM image): the Tangled monorepo at a release tag. No
+    # nixpkgs.follows, so the build is upstream's tested set; move it with
+    # the tag. docs/hosts/c4130-spindle.md.
+    tangled.url = "git+https://tangled.org/@tangled.org/core?ref=refs/tags/v1.20.1";
+
     # m2mini's Asahi support (pinned rev; bump deliberately).
     apple-silicon-m2mini.url = "github:nix-community/nixos-apple-silicon/57a14ae9be0eaf7bf66e95490ed2d7c6f4bd4c9e";
     apple-silicon-m2mini.inputs.nixpkgs.follows = "nixpkgs";

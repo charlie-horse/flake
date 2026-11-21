@@ -81,6 +81,18 @@
     serviceIP = "10.96.0.25";
   };
 
+  # Tangled spindle (CI runner), a NixOS service on `node`
+  # (hosts/c4130/spindle.nix). Not a Service: the tunnel's nginx sidecar
+  # forwards to http://<nodes.<node>.lanIP>:<port>. The hostname is the
+  # spindle's identity (did:web:<host>): never change it.
+  tangledSpindle = {
+    host = "spindle.neuros.is";
+    node = "c4130";
+    port = 6555;
+    # Served publicly by describeSpindle.
+    contactEmail = "charliesyvertsen06@icloud.com";
+  };
+
   # ATCR AppView (OCI registry API and web UI).
   atcr = {
     host = "cr.neuros.is";
