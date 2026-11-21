@@ -16,6 +16,10 @@ rec {
         "headlamp"
         "openWebui"
         "fluxWebhook"
+        "tranquilPds"
+        "tangledKnot"
+        "atcr"
+        "atcrHold"
       ]
     )
     # r440's Nix binary cache: not in the cluster, but nginx (basic auth)

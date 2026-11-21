@@ -18,6 +18,7 @@ let
   placeholders = {
     "@HEADLAMP_HOST@" = cluster.headlamp.host;
     "@OPEN_WEBUI_HOST@" = cluster.openWebui.host;
+    "@TRANQUIL_PDS_HOST@" = cluster.tranquilPds.host;
   };
 
   fill =

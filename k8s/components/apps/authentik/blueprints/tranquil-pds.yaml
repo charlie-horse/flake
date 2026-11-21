@@ -1,0 +1,61 @@
+# Tranquil PDS (k8s/components/apps/atproto/tranquil-pds): confidential
+# client for members of the group `pds-users`. The client secret is the
+# value SSO_OIDC_CLIENT_SECRET in the sops Secret
+# atproto/tranquil-pds-secrets, set on this provider by hand
+# (docs/k8s/apps.md#tranquil-pds), never in git in the clear.
+# @TRANQUIL_PDS_HOST@ is filled in by blueprints.nix.
+version: 1
+metadata:
+  name: neurosis - tranquil-pds OIDC
+  labels:
+    blueprints.goauthentik.io/description: Tranquil PDS OIDC client (k8s/components/apps/authentik)
+entries:
+  - model: authentik_core.group
+    id: pds-users
+    identifiers:
+      name: pds-users
+    attrs:
+      name: pds-users
+
+  - model: authentik_providers_oauth2.oauth2provider
+    id: provider
+    identifiers:
+      name: tranquil-pds
+    attrs:
+      name: tranquil-pds
+      client_type: confidential
+      client_id: tranquil-pds
+      grant_types:
+        - authorization_code
+      authorization_flow: !Find [authentik_flows.flow, [slug, authz-implicit]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, app-logout]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+      issuer_mode: per_provider
+      sub_mode: hashed_user_id
+      include_claims_in_id_token: true
+      access_token_validity: minutes=5
+      redirect_uris:
+        - matching_mode: strict
+          url: https://@TRANQUIL_PDS_HOST@/oauth/sso/callback
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+        - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+
+  - model: authentik_core.application
+    id: application
+    identifiers:
+      slug: tranquil-pds
+    attrs:
+      name: Tranquil PDS
+      provider: !KeyOf provider
+      meta_launch_url: https://@TRANQUIL_PDS_HOST@/app/
+      policy_engine_mode: any
+
+  # Only members of pds-users may log in to Tranquil PDS.
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf application
+      group: !KeyOf pds-users
+    attrs:
+      order: 0

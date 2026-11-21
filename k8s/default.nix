@@ -44,6 +44,9 @@ let
     "apps/authentik" = ./components/apps/authentik;
     "apps/headlamp" = ./components/apps/headlamp.nix;
     "apps/open-webui" = ./components/apps/open-webui.nix;
+    "apps/atproto" = ./components/apps/atproto;
+    "apps/lldap" = ./components/apps/lldap;
+    "apps/atproto-edge" = ./components/apps/atproto-edge;
   };
 
   # Deferred components: rendered under <dir>/<component>/ and applied by a
@@ -60,6 +63,7 @@ let
       "infra/cert-manager-issuers" = ./components/infra/cert-manager/issuers.nix;
       "infra/cert-manager-acme" = ./components/infra/cert-manager/acme.nix;
       "infra/cluster-pki-issuers" = ./components/infra/cluster-pki/issuers.nix;
+      "apps/atproto-edge-certs" = ./components/apps/atproto-edge/certificate.nix;
     };
     # sops-encrypted Secrets: every ./secrets/<namespace>/<name>.sops.yaml
     # is copied verbatim (never parsed or re-serialised: that would break
