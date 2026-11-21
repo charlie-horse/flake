@@ -38,10 +38,64 @@ Rules:
   ([README.md](README.md#deferred-components)).
 - Keep durations under the intermediate's remaining life.
 - `cluster-ca` is for in-cluster TLS only; public hostnames go through the
-  [Cloudflare tunnel](#cloudflare-tunnel). Clients trust `ca.crt` from any
-  issued Secret, or `cluster/pki/root-ca.pem`.
+  [Cloudflare tunnel](#cloudflare-tunnel) or, served without it, get a
+  [Let's Encrypt](#public-certificates-lets-encrypt) certificate. Clients
+  trust `ca.crt` from any issued Secret, or `cluster/pki/root-ca.pem`.
 - Anyone who may create a Certificate may get any non-CA name signed by
   `cluster-ca`.
+
+### Public certificates (Let's Encrypt)
+
+The ClusterIssuers `letsencrypt-staging` and `letsencrypt-production`
+(`components/infra/cert-manager/acme.nix`) solve ACME DNS-01 through
+Cloudflare with the token in the Secret `cert-manager/cloudflare-api-token`.
+Request as [above](#requesting-a-certificate), with
+`issuerRef: { group: cert-manager.io, kind: ClusterIssuer, name: letsencrypt-staging }`
+until the certificate is Ready, then `letsencrypt-production`.
+
+Rules:
+
+- `dnsNames` only, each `neuros.is` or under it (wildcards such as
+  `*.at.neuros.is` included); no `commonName`, IPs, URIs, subject or
+  usages beyond `digital signature`, `key encipherment`, `server auth`.
+  approver-policy denies anything else and the request stays unapproved.
+- A certificate here does not reach clients of a proxied (orange-cloud)
+  Cloudflare record: they see Cloudflare's edge certificate. It serves a
+  DNS-only record pointing at something that terminates TLS with the
+  Secret.
+- Let's Encrypt rate-limits production (duplicate certificates, failed
+  validations): debug against staging.
+
+Status: `kubectl get clusterissuer`, `kubectl -n <ns> describe certificate <name>`,
+then `kubectl -n <ns> get challenges` while a DNS-01 challenge is pending.
+
+#### The Cloudflare API token
+
+The Secret `cert-manager/cloudflare-api-token` (key `api-token`), read by
+the issuers and by the [Dynamic DNS](#dynamic-dns) Job. Without it the
+issuers are Ready (account registration needs no token) but every challenge
+fails, and the `ddns` Jobs fail. To create or replace it:
+
+1. Cloudflare dashboard, My Profile → API Tokens → Create Token → Custom
+   token. Permissions: Zone / DNS / Edit and Zone / Zone / Read. Zone
+   Resources: Include / Specific zone / `neuros.is`. Set an expiry and
+   note it.
+2. On a machine with an admin sops identity
+   ([secrets.md](secrets.md#changing-a-value-rotation)), on a branch, paste
+   the token at the prompt:
+
+   ```sh
+   nix shell nixpkgs#sops nixpkgs#yq-go
+   f=k8s/secrets/cert-manager/cloudflare-api-token.sops.yaml
+   read -rs t && t=$(printf %s "$t" | base64 -w0) yq -n \
+     '.apiVersion = "v1" | .data["api-token"] = strenv(t) | .kind = "Secret" | .metadata.name = "cloudflare-api-token" | .metadata.namespace = "cert-manager" | .type = "Opaque" | sort_keys(..)' \
+     | sops encrypt --filename-override "$f" --input-type yaml --output-type yaml /dev/stdin > "$f"; unset t
+   ```
+
+   The same lines replace it.
+3. PR, merge. cert-manager and each `ddns` Job read the Secret when they
+   use it; no restart. Revoke the old token in Cloudflare after a
+   replacement is applied.
 
 ### Renewing the intermediate
 
@@ -164,6 +218,27 @@ Every public hostname goes through one locally managed tunnel
 - Keep nginx replacing `X-Forwarded-For` with `Cf-Connecting-Ip`, and keep
   authentik's trusted proxy CIDRs limited to the nodes' own addresses, or
   clients can forge their IP.
+
+## Dynamic DNS
+
+`components/apps/ddns/` runs a CronJob (namespace `cert-manager`) every 5 minutes that keeps the
+DNS-only (unproxied) A records in its `records` on the network's public
+IPv4, with the token in `cert-manager/cloudflare-api-token`
+([above](#the-cloudflare-api-token)). The router forwards TCP 443 to
+r440's LAN address (`cluster.nodes.r440.lanIP`); while r440 is down, nothing
+answers on public 443. Every node accepts 443 (`modules/cluster/firewall.nix`).
+
+Rules:
+
+- A name in `records` must not also be a tunnel route or a proxied record
+  in Cloudflare: the Job fails while a name has more than one A record, and
+  does not touch CNAMEs.
+- Removing a name from `records` leaves its record in Cloudflare; delete it
+  in the dashboard.
+
+Status: `kubectl -n cert-manager get jobs`,
+`kubectl -n cert-manager logs job/<job>`. To run it now:
+`kubectl -n cert-manager create job --from=cronjob/ddns ddns-now`.
 
 ## Open WebUI
 

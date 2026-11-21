@@ -33,6 +33,8 @@ idle. The offline backup age key works anywhere without any of this
 | `flux-system/sops-age` (Flux's age key, recipient `&flux`) | Kubernetes Secret only; never in git, on disk or copied out | once per cluster ([k8s/secrets.md](k8s/secrets.md#the-bootstrap-key-flux-systemsops-age)). Lost: make a new one, set `&flux` to its recipient, `sops updatekeys` every `k8s/secrets/*/*.sops.yaml`, PR, merge |
 | `FLUX_WEBHOOK_TOKEN`, `FLUX_WEBHOOK_URL`, `NIX_CACHE_NETRC` | GitHub Actions secrets | by hand ([ci.md](ci.md)) |
 | Cloudflare account cert (DNS routes) | `c4130:~admin/.cloudflared/cert.pem` | `cloudflared tunnel login` |
+| Cloudflare API token `cert-manager/cloudflare-api-token` (Zone DNS Edit + Zone Read, zone `neuros.is` only; ACME issuers and dynamic DNS) | `k8s/secrets/cert-manager/cloudflare-api-token.sops.yaml` | before it expires: new token, `sops` the file, PR, merge, revoke the old one ([k8s/apps.md](k8s/apps.md#the-cloudflare-api-token)) |
+| ACME account keys `cert-manager/letsencrypt-{staging,production}-account` | Kubernetes Secrets only, made by cert-manager | never; lost, cert-manager registers a new account |
 | Binary cache: signing key, htpasswd, client netrc | `secrets/r440.yaml` (`harmonia-signing-key`, `nix-cache-htpasswd`), `secrets/<host>.yaml` (`nix-cache-netrc`) | [build-cache.md](build-cache.md) |
 | Remote-build SSH key `nixremote` | `secrets/c4130.yaml`; public half in `hosts/r440/builder.nix` | `ssh-keygen`, `sops` the private half, update the public half, PR, merge, switch both |
 | Tailscale auth key (reinstall only) | `/var/lib/tailscale/authkey` (root, 0600) on the new server; delete after enrolment | admin console: pre-approved, non-ephemeral, tagged `tag:node` ([cluster.md](cluster.md#tailscale)) |

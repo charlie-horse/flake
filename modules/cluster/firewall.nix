@@ -5,6 +5,8 @@
 #   tcp 10250        kubelet              (workers)
 #   udp 8472         flannel VXLAN        (workers)
 #   VRRP (proto 112) keepalived           (every node)
+# and tcp 443 (public HTTPS, forwarded by the router to r440) from
+# anywhere, on every node.
 # Sources: every node's LAN IP and the VIP. tailscale0 carries most
 # node-to-node traffic (the cluster names resolve to tailnet IPs): it is
 # trusted on nodes with trustTailscale = true (default); otherwise only the
@@ -65,6 +67,7 @@ in
   config = mkIf cfg.enable {
     networking.firewall = {
       enable = lib.mkDefault true;
+      allowedTCPPorts = [ 443 ];
       trustedInterfaces = lib.optional node.trustTailscale "tailscale0";
       interfaces.tailscale0 = mkIf (!node.trustTailscale) {
         allowedTCPPorts = tcpPorts;
