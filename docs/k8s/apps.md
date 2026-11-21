@@ -280,16 +280,17 @@ Handles are `<name>.at.neuros.is`, served by the
 [TLS edge](#atproto-tls-edge), not the tunnel: Cloudflare's Universal SSL
 covers one level (`*.neuros.is`) only.
 
-- **authentik client secret.** authentik's provider `tranquil-pds` must
-  carry the client secret from the Secret: Applications → Providers →
-  `tranquil-pds` → Client Secret, paste the output of
-  `sops decrypt --extract '["data"]["SSO_OIDC_CLIENT_SECRET"]' k8s/secrets/atproto/tranquil-pds-secrets.sops.yaml | base64 -d`.
-  The blueprint never sets it.
+- **OIDC client secret.** Two sops Secrets hold the same value, key
+  `CLIENT_SECRET`: `atproto/tranquil-pds-oidc` (read by the PDS) and
+  `authentik/tranquil-pds-oidc` (read by authentik's worker; the blueprint
+  sets it on the provider). To change it, put one new value into both files
+  ([secrets.md](secrets.md#changing-a-value-rotation)), merge, then
+  `kubectl -n authentik rollout restart deploy/authentik-worker` and
+  `kubectl -n atproto rollout restart deploy/tranquil-pds`.
 - **The Secret `atproto/tranquil-pds-secrets`:** `JWT_SECRET`, `DPOP_SECRET`
   (changing either logs everyone out), `MASTER_KEY` (encrypts the account
   signing keys: never change it), `POSTGRES_PASSWORD` (change it in the
-  database first, as for authentik), `SSO_OIDC_CLIENT_SECRET` (set the new
-  value in authentik too). After a change:
+  database first, as for authentik). After a change:
   `kubectl -n atproto rollout restart deploy/tranquil-pds`.
 - Without the tunnel: `kubectl -n atproto port-forward svc/tranquil-pds 3000:80`.
 - Back up the database (`pg_dump -Fc` in `tranquil-pds-postgresql-0`) and

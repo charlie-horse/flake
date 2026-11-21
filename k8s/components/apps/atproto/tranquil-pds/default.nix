@@ -63,8 +63,11 @@ let
     "JWT_SECRET"
     "DPOP_SECRET"
     "MASTER_KEY"
-    "SSO_OIDC_CLIENT_SECRET"
   ];
+
+  # The OIDC client secret; authentik reads the same value from its own copy
+  # (authentik/tranquil-pds-oidc, blueprints/tranquil-pds.yaml).
+  oidcSecretName = "tranquil-pds-oidc";
 
   probe = path: {
     httpGet = {
@@ -152,7 +155,16 @@ in
                   name = secretName;
                   inherit key;
                 };
-              }) secretEnv;
+              }) secretEnv
+              ++ [
+                {
+                  name = "SSO_OIDC_CLIENT_SECRET";
+                  valueFrom.secretKeyRef = {
+                    name = oidcSecretName;
+                    key = "CLIENT_SECRET";
+                  };
+                }
+              ];
               ports = [
                 {
                   name = "http";
