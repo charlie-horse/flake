@@ -224,8 +224,9 @@ Every public hostname goes through one locally managed tunnel
 `components/apps/ddns/` runs a CronJob (namespace `cert-manager`) every 5 minutes that keeps the
 DNS-only (unproxied) A records in its `records` on the network's public
 IPv4, with the token in `cert-manager/cloudflare-api-token`
-([above](#the-cloudflare-api-token)). The router forwards TCP 443 to the
-VIP (`cluster.vip`); every node accepts 443 (`modules/cluster/firewall.nix`).
+([above](#the-cloudflare-api-token)). The router forwards TCP 443 to
+r440's LAN address (`cluster.nodes.r440.lanIP`); while r440 is down, nothing
+answers on public 443. Every node accepts 443 (`modules/cluster/firewall.nix`).
 
 Rules:
 

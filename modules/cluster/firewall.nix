@@ -5,7 +5,7 @@
 #   tcp 10250        kubelet              (workers)
 #   udp 8472         flannel VXLAN        (workers)
 #   VRRP (proto 112) keepalived           (every node)
-# and tcp 443 (public HTTPS, forwarded by the router to the VIP) from
+# and tcp 443 (public HTTPS, forwarded by the router to r440) from
 # anywhere, on every node.
 # Sources: every node's LAN IP and the VIP. tailscale0 carries most
 # node-to-node traffic (the cluster names resolve to tailnet IPs): it is
