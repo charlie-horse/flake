@@ -1,11 +1,10 @@
 # LLDAP (lightweight LDAP user directory), namespace `lldap`.
 #
-#   Service lldap (ClusterIP): ldap 3890 (plain LDAP, in-cluster only),
-#   http 17170 (web UI, reached with kubectl port-forward; no public host)
-#   base DN dc=neuros,dc=is; admin uid=admin,ou=people,dc=neuros,dc=is
+#   Service lldap (ClusterIP): `ldap` (plain LDAP, in-cluster only) and
+#   `http` (web UI, reached with kubectl port-forward; no public host)
 #
-# One replica (SQLite in /data), data on r440 (hostPath PV). The init
-# container chowns /data to the image's user (1000), the server runs as it.
+# One replica (SQLite in /data), data in a node-local volume. The init
+# container chowns /data to `uid`, the server runs as it.
 # Secret lldap/lldap-secrets (sops: LLDAP_JWT_SECRET, LLDAP_KEY_SEED,
 # LLDAP_LDAP_USER_PASS), read at start. Operating it: docs/k8s/apps.md#lldap
 { lib, k8sLib, ... }:

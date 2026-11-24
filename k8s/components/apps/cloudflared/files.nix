@@ -22,9 +22,9 @@ rec {
         "atcrHold"
       ]
     )
-    # r440's Nix binary cache: not in the cluster, but nginx (basic auth)
-    # on r440's LAN address (hosts/r440/cache.nix), which the firewall
-    # opens to the nodes' LAN IPs, i.e. to this hostNetwork pod on any node.
+    # The Nix binary cache: not in the cluster, but nginx (basic auth) on
+    # the LAN address of cluster.binaryCache.node. The host firewall must
+    # admit the nodes' LAN IPs (this pod uses hostNetwork).
     // {
       ${cluster.binaryCache.host} = "${
         cluster.nodes.${cluster.binaryCache.node}.lanIP

@@ -1,7 +1,7 @@
 # Garage: single-node S3 store for the hold's blobs (bucket `atcr-blobs`).
 # `--single-node --default-bucket` makes the layout, the access key
 # (S3_ACCESS_KEY_ID/S3_SECRET_ACCESS_KEY from the Secret) and the bucket at
-# start; capacity is the size of r440's root filesystem. Reached in the
+# start; capacity is the size of the node's root filesystem. Reached in the
 # cluster at atcr-garage:3900 and publicly as https://<atcrHold.host>/atcr-blobs/
 # through the hold pod's nginx (hold.nix).
 { k8sLib, ... }:

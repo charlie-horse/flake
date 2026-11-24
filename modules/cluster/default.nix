@@ -1,5 +1,5 @@
-# Host side of the "neurosis" Kubernetes cluster (manual services.kubernetes,
-# no easyCerts, no roles, no addons: those are rendered with catenix under k8s/).
+# Host side of the Kubernetes cluster: services.kubernetes set up by hand
+# (no easyCerts, roles or addons). In-cluster resources come from k8s/.
 #
 # Needs two specialArgs (lib/system/mkServer.nix passes both):
 #   cluster  = import ./cluster/definition.nix;   # pure data
@@ -154,14 +154,10 @@ in
         }
       ];
 
-      # dhcpcd runs on every interface unless told otherwise; on a LAN
-      # carrier loss it drops the LAN address and routes and adds an IPv4LL
-      # default route via flannel.1, cutting the node off every apiserver.
-      #   - deny the CNI, overlay and tailscale interfaces (pod veths, cni0,
-      #     flannel.1, tailscale0 are never DHCP clients). A list: merges
-      #     with the hosts' own entries (bond0 etc. in hosts/*/builder.nix).
-      #   - persistent: keep the LAN address (and with it the node's own
-      #     apiserver endpoint and etcd peer address) when carrier drops.
+      # dhcpcd (the DHCP client) must skip the pod, overlay and Tailscale
+      # interfaces and keep the LAN address when the link drops; otherwise
+      # it routes via flannel.1 and the node loses every apiserver. The
+      # deny list merges with the hosts' own entries.
       networking.dhcpcd = {
         denyInterfaces = [
           "veth*"
@@ -172,9 +168,9 @@ in
         persistent = true;
       };
 
-      # Manual PKI: no easyCerts / certmgr / cfssl, no roles (they would
-      # turn easyCerts and flannel back on), no NixOS addons (CoreDNS etc.
-      # come from k8s/ via Flux).
+      # Manual PKI: no easyCerts / certmgr / cfssl. Keep roles empty: roles
+      # turn easyCerts and flannel back on. No NixOS addons: k8s/ (applied
+      # by Flux) provides CoreDNS etc.
       services.kubernetes = {
         easyCerts = false;
         pki.enable = false;
@@ -183,16 +179,15 @@ in
         addonManager.enable = false;
         addons.dns.enable = false;
         caFile = cfg.secret "ca.pem";
-        # Only used by NixOS defaults we override; the VIP is the stable
-        # apiserver address.
+        # The VIP (virtual IP, ./keepalived.nix) is the stable apiserver
+        # address.
         masterAddress = cluster.vip;
         apiserverAddress = "https://${cluster.vip}:${toString cluster.apiserverPort}";
         clusterCidr = cluster.podCidr;
       };
 
-      # The kubelet module sets net.ipv4.ip_forward = 1 (hosts rely on it,
-      # e.g. for Tailscale). Keep it in the stages without a kubelet; a
-      # second definition next to the kubelet's would be a conflict.
+      # IP forwarding in the stages without a kubelet (the kubelet module
+      # sets it otherwise; a second definition next to it is a conflict).
       boot.kernel.sysctl."net.ipv4.ip_forward" = lib.mkIf (!config.services.kubernetes.kubelet.enable) 1;
     })
   ];

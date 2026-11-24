@@ -1,7 +1,7 @@
 # flake: NixOS config for the neurosis cluster
 
-NixOS 26.05 servers c4130, r440 and m2mini (one Kubernetes cluster), the
-workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
+This repository is a Nix flake: code that declares the NixOS hosts and the
+Kubernetes resources Flux (the in-cluster deploy tool) applies (`k8s/`).
 `AGENTS.md` is a symlink to this file. How everything works:
 [docs/README.md](docs/README.md). Changing a host:
 [docs/cluster.md#changing-a-host](docs/cluster.md#changing-a-host).
@@ -58,10 +58,15 @@ workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
    what the Nix code declares (nodes, roles, addresses, ports, services,
    components, option values, versions): read it from the source. Docs hold
    only what the code can't say: procedures to operate it, and rules whose
-   breach the code can't prevent.
+   breach the code can't prevent. Docs cover only the code in this
+   repository, plus the minimum hardware detail a reader needs. Don't
+   describe the cluster's layout or the network; name a specific host or
+   piece of hardware only when a procedure can't be followed without it.
 2. **Docs say how things work now.** No history, dates of past events,
-   rationale ("why"), plans, decisions, open questions or status notes.
-   Present tense, terse. A constraint you must follow is written as a rule.
+   rationale ("why"), measurements of past runs, plans, decisions, open
+   questions, owners, people's or agents' names, work windows or status
+   notes. Present tense, terse. A constraint you must follow is written as
+   a rule.
 3. **Tasks live in the project, not in git.** No TODO/FIXME/XXX, follow-ups
    or "later" notes in code or docs.
 4. **Where docs live.** Prose goes in `docs/`; [docs/README.md](docs/README.md)
@@ -71,7 +76,13 @@ workstation Famine, and the in-cluster resources Flux deploys (`k8s/`).
    `docs/`.
 5. **One home per topic.** Edit a topic in its doc and link to it elsewhere.
    A new topic gets a row in docs/README.md.
-6. **Code comments stay short and local.** At most 15 contiguous comment
-   lines; longer prose goes to the doc, with a one-line pointer in the code.
+6. **Code text is docs too.** Comments, docstrings, script help text,
+   patch headers and provenance notes follow every rule here. A comment
+   says what the code next to it does, in at most 15 contiguous lines;
+   longer prose goes to the doc, with a one-line pointer in the code.
 7. **Docs change in the same PR as the code.** Moving or renaming a doc or
    heading fixes every link to it.
+8. **Plain language.** Write so a reader new to NixOS and Kubernetes can
+   follow: short sentences, plain words, and each term of art defined on
+   first use. A README opens by saying what the thing is. Prefer a list or
+   table to dense prose.

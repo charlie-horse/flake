@@ -7,8 +7,8 @@ let
     ;
 in
 {
-  # WARNING Don't use "null" as a return value as it is
-  # used to filter out non-matching cases
+  # Never use the string "null" as a case's value: it marks non-matching
+  # cases.
   switch = (
     value: pred: cases:
     findSingle (_: true) (abort "No matching case") (abort "Multiple matching cases") (

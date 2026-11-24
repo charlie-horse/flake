@@ -1,10 +1,10 @@
 # Dynamic DNS, in namespace `cert-manager`: a CronJob that keeps the DNS-only
 # (unproxied) Cloudflare A records `records` in `zone` on the network's
-# public IPv4 (ddns.py, from Cloudflare's /cdn-cgi/trace). Every other public
-# hostname is a proxied tunnel route (apps/cloudflared), not managed here.
+# public IPv4 (ddns.py, from Cloudflare's /cdn-cgi/trace). Proxied tunnel
+# routes (apps/cloudflared) are not managed here.
 #
 # Token: the ACME issuers' Secret cert-manager/cloudflare-api-token (sops,
-# key api-token), so one file holds it. The namespace enforces `restricted`.
+# key api-token). The namespace enforces `restricted`.
 # Docs: docs/k8s/apps.md#dynamic-dns
 { lib, ... }:
 let

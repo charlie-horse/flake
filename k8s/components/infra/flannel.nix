@@ -5,10 +5,9 @@
 #
 # `transport` picks what VXLAN runs over:
 #   "lan"        (default) --public-ip = the node's InternalIP (lanIP), so
-#                flanneld never picks the keepalived VIP, bond0 or
-#                tailscale0; udp/8472 open between LAN IPs
-#   "tailscale"  --iface=tailscale0, MTU 1280 - 50; slower, for nodes that
-#                stop sharing a LAN
+#                flanneld never picks another address of the node
+#   "tailscale"  --iface=tailscale0, MTU 1280 - 50; for nodes that don't
+#                share a LAN
 {
   lib,
   pkgs,
@@ -52,8 +51,8 @@ let
           c
           // {
             env = c.env ++ [ hostIPEnv ];
-            # flanneld runs in the host network, and 8081 (the chart's
-            # health port) is taken on c4130 by the LMCache dashboard.
+            # flanneld runs in the host network: its health port must not be
+            # the chart's 8081, which hosts/c4130/vllm uses.
             command = map (
               a: if a == "--healthz-port=8081" then "--healthz-port=${toString healthzPort}" else a
             ) c.command;

@@ -33,7 +33,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
-      # r440's binary cache: .github/actions/nix-cache, docs/ci.md.
+      # The flake's binary cache: .github/actions/nix-cache, docs/ci.md.
       - id: nix-cache
         uses: ./.github/actions/nix-cache
         with:

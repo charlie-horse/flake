@@ -6,7 +6,7 @@ let
   fetch = catenix.lib.fetchChart pkgs;
 in
 {
-  # fluxcd-community chart; appVersion = Flux v2.9.5.
+  # Flux (fluxcd-community chart).
   flux2 = fetch {
     repo = "https://fluxcd-community.github.io/helm-charts";
     name = "flux2";
@@ -14,7 +14,7 @@ in
     hash = "sha256-UH6MJ0/F2WhmLgTjuLNFa76/QFaTHbk6fkLnN1EIznM=";
   };
 
-  # CoreDNS 1.14.7.
+  # CoreDNS.
   coredns = fetch {
     repo = "https://coredns.github.io/helm";
     name = "coredns";
@@ -36,8 +36,8 @@ in
     hash = "sha256-zahn8zSCHlPguERweETGkcrZ43q39zPGZEiJzYtHyVw=";
   };
 
-  # authentik 2026.8.5 (server + worker; the bundled postgresql subchart is
-  # disabled, components/apps/authentik/postgres.nix runs its own). No Redis.
+  # authentik server and worker (the bundled postgresql subchart is off;
+  # components/apps/authentik/postgres.nix runs its own).
   authentik = fetch {
     repo = "https://charts.goauthentik.io";
     name = "authentik";
@@ -45,8 +45,8 @@ in
     hash = "sha256-AOWfrkxAKCFu1gxbWOTpUa5EJ+WzfSimHkRTyOjAqM8=";
   };
 
-  # cert-manager v1.21.3 (controller, webhook, cainjector; CRDs rendered by
-  # the chart, crds.enabled). The workload CA, components/infra/cert-manager/.
+  # cert-manager: controller, webhook, cainjector and the CRDs
+  # (components/infra/cert-manager/).
   cert-manager = fetch {
     repo = "https://charts.jetstack.io";
     name = "cert-manager";
@@ -54,7 +54,7 @@ in
     hash = "sha256-kjGAYWkePhiNrUUdpesTcGa9jlpFk1/gZs8sztLElRw=";
   };
 
-  # cert-manager approver-policy v0.29.0 (approves by CertificateRequestPolicy).
+  # cert-manager approver-policy (approves by CertificateRequestPolicy).
   cert-manager-approver-policy = fetch {
     repo = "https://charts.jetstack.io";
     name = "cert-manager-approver-policy";
@@ -62,7 +62,7 @@ in
     hash = "sha256-HxPA3jUQR4GekLuDv2lTXlPYhEkMte8StRiOdB3t+OY=";
   };
 
-  # Headlamp 0.46.0 (Kubernetes web UI; OIDC via authentik, no Ingress).
+  # Headlamp, a Kubernetes web UI.
   headlamp = fetch {
     repo = "https://kubernetes-sigs.github.io/headlamp/";
     name = "headlamp";

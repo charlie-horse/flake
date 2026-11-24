@@ -1,7 +1,6 @@
-# Builds go to r440 over the direct 2x25G link (bond0, 10.25.0.0/30).
-# Keeps compiles (nvcc, nodejs) off this box's RAM, which vLLM + LMCache
-# hold. Substitution from r440's cache goes through https://cache.neuros.is
-# (custom.nixCache below), not the link. docs/build-cache.md.
+# Sends every build to r440 (a Nix remote builder) over the direct link
+# (bond0, below). Substitutes come from the binary cache (custom.nixCache
+# below), not over the link. docs/build-cache.md.
 { config, ... }:
 let
   r440 = "10.25.0.2";
@@ -33,8 +32,7 @@ in
     "enp8s0f*"
     "bond0"
   ];
-  # r440 may reach the vLLM API over the link (source 10.25.0.2 only);
-  # ssh is already open globally.
+  # Lets r440 reach the vLLM API over the link; ssh is open globally.
   networking.firewall.extraCommands = ''
     iptables -A nixos-fw -i bond0 -s ${r440} -p tcp \
       --dport ${toString config.services.vllm-sm70.port} -j nixos-fw-accept
@@ -55,15 +53,14 @@ in
       hostName = r440;
       protocol = "ssh-ng";
       sshUser = "nixremote";
-      # sops key nixremote-ssh-key (secrets/c4130.yaml), root 0600; was
-      # /root/.ssh/nixremote (generated on c4130). Its public half is
+      # sops key nixremote-ssh-key (secrets/c4130.yaml). Its public half is
       # c4130BuilderKey in hosts/r440/builder.nix.
       sshKey = config.sops.secrets.nixremote-ssh-key.path;
       # base64 of r440's /etc/ssh/ssh_host_ed25519_key.pub
       publicHostKey = "c3NoLWVkMjU1MTkgQUFBQUMzTnphQzFsWkRJMU5URTVBQUFBSUtFQlc0WnFNNnN1VjJLSUxpcVVnUlNPaVhzMTRCdlVhWk5wM2ZrRTNBdUcgcm9vdEByNDQwCg==";
       systems = [ "x86_64-linux" ];
-      # Matches r440's builderMaxJobs (its builder.nix): 2 builds x 8
-      # cores, so at most 16 nvcc on r440 (2 x 16 ran it out of RAM).
+      # Must equal builderMaxJobs in hosts/r440/builder.nix (builds x cores
+      # at most 16 nvcc on r440; more runs r440 out of RAM).
       maxJobs = 2;
       speedFactor = 4;
       supportedFeatures = [
@@ -80,17 +77,14 @@ in
     max-jobs = 0;
     builders-use-substitutes = true;
   };
-  # Substitutes from r440 through https://cache.neuros.is like every other
-  # host (modules/system/nix-cache.nix; netrc: sops key nix-cache-netrc),
-  # not over the link. docs/build-cache.md#binary-cache.
+  # Substitutes from the binary cache (modules/system/nix-cache.nix; netrc:
+  # sops key nix-cache-netrc). docs/build-cache.md#binary-cache.
   custom.nixCache.enable = true;
   # CUDA redist packages (nvcc, cuBLAS, ...) from nixpkgs' CUDA cache.
   custom.nixCache.cuda.enable = true;
-  # Root's own ssh (e.g. `nix store ping --store ssh-ng://nixremote@10.25.0.2`)
-  # needs r440's host key too; the daemon uses publicHostKey above. The key
-  # is r440's entry from modules/programs/ssh.nix (cluster/definition.nix,
-  # nodes.r440.sshHostKey); this adds the link address to its names. The
-  # cluster Host block there matches names only, so this ssh keeps its own
-  # user and key.
+  # Adds the link address to r440's known-hosts entry (from
+  # modules/programs/ssh.nix), so root's own ssh over the link (e.g.
+  # `nix store ping --store ssh-ng://nixremote@<link address>`) trusts it.
+  # The daemon uses publicHostKey above instead.
   programs.ssh.knownHosts.r440.hostNames = [ r440 ];
 }

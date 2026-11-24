@@ -1,9 +1,24 @@
 # Kubernetes apps: operating them
 
-Procedures for the in-cluster apps. What each app runs, where, and with
-which settings: read its component under `k8s/components/`. Layout, render,
-Flux and bootstrap: [README.md](README.md). Changing a Secret value:
+Procedures for the apps that run in the cluster. What each app runs and
+with which settings: read its component under `k8s/components/`. Render,
+Flux and bootstrap: [README.md](README.md) (it also defines Flux,
+component and Kustomization). Changing a Secret value:
 [secrets.md](secrets.md#changing-a-value-rotation).
+
+Terms:
+
+- **cert-manager**: issues TLS certificates in the cluster. An **Issuer**
+  (one namespace) or **ClusterIssuer** (all namespaces) signs them; a
+  **Certificate** object asks for one and names the Secret to store it in.
+- **ACME DNS-01**: how Let's Encrypt checks that you own a name: cert-manager
+  writes a TXT record through the Cloudflare API.
+- **OIDC** (OpenID Connect): login through an identity provider, here
+  authentik; each app is a **provider** (client) in authentik.
+- **Blueprint**: an authentik YAML file that declares providers and groups.
+- **port-forward**: `kubectl port-forward` makes a cluster Service reachable
+  on your machine's localhost.
+- **PDS** (Personal Data Server): hosts ATProto (Bluesky protocol) accounts.
 
 ## cert-manager
 
@@ -37,7 +52,7 @@ Rules:
   does), and the component must be **deferred**
   ([README.md](README.md#deferred-components)).
 - Keep durations under the intermediate's remaining life.
-- `cluster-ca` is for in-cluster TLS only; public hostnames go through the
+- Use `cluster-ca` for in-cluster TLS only. Public hostnames go through the
   [Cloudflare tunnel](#cloudflare-tunnel) or, served without it, get a
   [Let's Encrypt](#public-certificates-lets-encrypt) certificate. Clients
   trust `ca.crt` from any issued Secret, or `cluster/pki/root-ca.pem`.
@@ -59,10 +74,9 @@ Rules:
   `*.at.neuros.is` included); no `commonName`, IPs, URIs, subject or
   usages beyond `digital signature`, `key encipherment`, `server auth`.
   approver-policy denies anything else and the request stays unapproved.
-- A certificate here does not reach clients of a proxied (orange-cloud)
-  Cloudflare record: they see Cloudflare's edge certificate. It serves a
-  DNS-only record pointing at something that terminates TLS with the
-  Secret.
+- Use these certificates only for DNS-only Cloudflare records that point
+  at something serving TLS with the Secret. Clients of a proxied
+  (orange-cloud) record see Cloudflare's edge certificate instead.
 - Let's Encrypt rate-limits production (duplicate certificates, failed
   validations): debug against staging.
 
@@ -110,14 +124,14 @@ Certificate and Issuer in the cluster, the `cluster-pki` Issuers included.
 
 ## authentik
 
-SSO (OIDC) for people. The cluster never depends on it: if authentik is
-down, only OIDC logins fail; the break-glass is
+Single sign-on (OIDC) for people. If authentik is down, only OIDC logins
+fail; the break-glass is
 `sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig` on any node
 ([../pki.md](../pki.md)). Database backups: `pg_dump -Fc` files in the
 backup volume declared in `components/apps/authentik/backup.nix`.
 
-Give `akadmin` a strong password plus MFA (the admin UI is public), and add
-real users rather than sharing it. Without the tunnel:
+Rule: give `akadmin` a strong password plus MFA (the admin UI is public),
+and add real users rather than sharing it. Without the tunnel:
 
 ```sh
 kubectl -n authentik port-forward svc/authentik-server 9000:80
@@ -170,7 +184,8 @@ kubectl --user=neurosis-oidc auth whoami   # oidc:<username>, groups oidc:cluste
 
 kubelogin serves its login page on `http://localhost:8000` (or `:18000`)
 on the machine running kubectl. When kubectl runs over SSH, forward the
-port first: `ssh -L 8000:localhost:8000 <host>`. Older kubectl without
+port first: `ssh -L 8000:localhost:8000 <host>`
+([../../CLAUDE.md](../../CLAUDE.md#access)). Older kubectl without
 `--exec-interactive-mode`: add `interactiveMode: IfAvailable` under the
 user's `exec:` in the kubeconfig by hand.
 
@@ -193,9 +208,10 @@ Without the tunnel: `kubectl -n headlamp port-forward svc/headlamp 4466:80`
 
 ## Cloudflare tunnel
 
-Every public hostname goes through one locally managed tunnel
-(`cluster.tunnel` in `cluster/definition.nix`), run in the cluster by
-`components/apps/cloudflared/`; routes are in `files.nix`.
+Every public hostname goes through one Cloudflare tunnel (an outbound
+connection from the cluster to Cloudflare that carries the traffic):
+`cluster.tunnel` in `cluster/definition.nix`, run by
+`components/apps/cloudflared/`, routes in `files.nix`.
 
 - **New hostname.** Add it to `routes` in
   `components/apps/cloudflared/files.nix` (with its `host`/`serviceIP` in
@@ -215,18 +231,18 @@ Every public hostname goes through one locally managed tunnel
 
   then PR, merge, `kubectl -n cloudflared rollout restart deploy/cloudflared`
   (a new tunnel id also goes in `cluster.tunnel`).
-- Keep nginx replacing `X-Forwarded-For` with `Cf-Connecting-Ip`, and keep
-  authentik's trusted proxy CIDRs limited to the nodes' own addresses, or
-  clients can forge their IP.
+- Rule: keep nginx replacing `X-Forwarded-For` with `Cf-Connecting-Ip`,
+  and keep authentik's trusted proxy CIDRs limited to the nodes' own
+  addresses. Otherwise clients can forge their IP.
 
 ## Dynamic DNS
 
-`components/apps/ddns/` runs a CronJob (namespace `cert-manager`) every 5 minutes that keeps the
-DNS-only (unproxied) A records in its `records` on the network's public
-IPv4, with the token in `cert-manager/cloudflare-api-token`
-([above](#the-cloudflare-api-token)). The router forwards TCP 443 to
-r440's LAN address (`cluster.nodes.r440.lanIP`); while r440 is down, nothing
-answers on public 443. Every node accepts 443 (`modules/cluster/firewall.nix`).
+`components/apps/ddns/` runs a CronJob (a Job on a schedule) in the
+namespace `cert-manager`. It points the DNS-only (unproxied) A records in
+its `records` at the network's public IPv4, with the token in
+`cert-manager/cloudflare-api-token` ([above](#the-cloudflare-api-token)).
+Public port 443 reaches the cluster only through the router's port forward
+([TLS edge](#atproto-tls-edge)).
 
 Rules:
 
@@ -276,8 +292,8 @@ and the first account is admin (it mints further invites in the UI).
 Choose did:web at signup for a DID of `did:web:<handle>`, which the PDS
 serves; the owner of the knot and the hold is `adminDid` in
 `cluster/definition.nix`.
-Handles are `<name>.at.neuros.is`, served by the
-[TLS edge](#atproto-tls-edge), not the tunnel: Cloudflare's Universal SSL
+Handles are `<name>.at.neuros.is`. Rule: serve them through the
+[TLS edge](#atproto-tls-edge), never the tunnel; Cloudflare's Universal SSL
 covers one level (`*.neuros.is`) only.
 
 - **OIDC client secret.** Two sops Secrets hold the same value, key
@@ -287,8 +303,9 @@ covers one level (`*.neuros.is`) only.
   ([secrets.md](secrets.md#changing-a-value-rotation)), merge, then
   `kubectl -n authentik rollout restart deploy/authentik-worker` and
   `kubectl -n atproto rollout restart deploy/tranquil-pds`.
-- **Mail.** The PDS sends from `pds@neuros.is` through iCloud's SMTP, so
-  that address must exist under the neuros.is custom domain in iCloud+.
+- **Mail.** The PDS sends through iCloud's SMTP. Its sender address
+  (in `components/apps/atproto/tranquil-pds/`) must exist under the
+  neuros.is custom domain in iCloud+.
   The Secret `atproto/tranquil-pds-mail` holds `MAIL_SMARTHOST_USERNAME`
   (the Apple Account's primary email) and `MAIL_SMARTHOST_PASSWORD` (an
   app-specific password from account.apple.com → Sign-In and Security).
@@ -303,24 +320,25 @@ covers one level (`*.neuros.is`) only.
   `kubectl -n atproto rollout restart deploy/tranquil-pds`.
 - Without the tunnel: `kubectl -n atproto port-forward svc/tranquil-pds 3000:80`.
 - Back up the database (`pg_dump -Fc` in `tranquil-pds-postgresql-0`) and
-  `/var/lib/tranquil-pds` on r440.
+  `/var/lib/tranquil-pds` on the node its volume is pinned to.
 
 ### ATProto TLS edge
 
 Public HTTPS for PDS handles (`https://<name>.at.neuros.is`): handle
-resolution and did:web documents only, served by the DaemonSet in
-`components/apps/atproto-edge/` on r440's LAN address, port 443, with the Let's Encrypt
-certificate `atproto-edge/at-wildcard-tls`.
+resolution and did:web documents only, served by nginx in
+`components/apps/atproto-edge/` with the Let's Encrypt certificate
+`atproto-edge/at-wildcard-tls`.
 
-- Router: forward TCP 443 to r440's `lanIP`. While r440 is down, handles
-  don't resolve.
+- Router: forward TCP 443 to the `lanIP` of the node the edge runs on
+  (`components/apps/atproto-edge/default.nix`). While that node is down,
+  handles don't resolve.
 - Cloudflare DNS: `*.at.neuros.is` A record, DNS only (not proxied), to the
   public address.
 - Certificate and renewal:
   `kubectl -n atproto-edge get certificate at-wildcard-tls` (Ready True;
-  `kubectl describe` shows Not After and Renewal Time). nginx reloads a
-  renewed certificate within 5 minutes; check with
-  `openssl s_client -connect <r440 lanIP>:443 -servername charlie.at.neuros.is </dev/null 2>/dev/null | openssl x509 -noout -dates`.
+  `kubectl describe` shows Not After and Renewal Time). nginx picks up a
+  renewed certificate on its next reload check; check with
+  `openssl s_client -connect <edge node lanIP>:443 -servername charlie.at.neuros.is </dev/null 2>/dev/null | openssl x509 -noout -dates`.
 - Smoke test from outside:
   `curl https://charlie.at.neuros.is/.well-known/atproto-did` returns the
   DID; any other path returns 404.
@@ -336,10 +354,10 @@ certificate `atproto-edge/at-wildcard-tls`.
 - Git over HTTPS (clone, fetch) works through the tunnel; SSH does not
   reach the knot through `knot.neuros.is`.
 - `atproto/tangled-knot-secrets`, key `KNOT_MASTER_KEY`: unseals
-  `/var/lib/tangled-knot/sealed-keys` on r440. Never change it: a new key
-  cannot open the existing sealed keys.
-- Back up `/var/lib/tangled-knot` on r440 (repos, LFS, sealed keys, SSH
-  host key).
+  `/var/lib/tangled-knot/sealed-keys`. Never change it: a new key cannot
+  open the existing sealed keys.
+- Back up `/var/lib/tangled-knot` on the node its volume is pinned to
+  (repos, LFS, sealed keys, SSH host key).
 
 ### ATCR
 
@@ -361,15 +379,16 @@ push; manage crew and storage at `https://hold.neuros.is/admin`.
   `kubectl -n atproto rollout restart deploy/atcr-garage deploy/atcr-hold`.
 - Health: `curl https://hold.neuros.is/xrpc/_health`,
   `curl https://cr.neuros.is/v2/`.
-- Back up `/var/lib/atcr` on r440 (blobs, signing and OAuth keys). Tags and
-  manifests live in each owner's PDS.
+- Back up `/var/lib/atcr` on the node its volumes are pinned to (blobs,
+  signing and OAuth keys). Tags and manifests live in each owner's PDS.
 
 ## LLDAP
 
-No public hostname. Web UI: `kubectl -n lldap port-forward svc/lldap 17170:17170`,
-then http://localhost:17170, user `admin`. In-cluster LDAP:
-`ldap://lldap.lldap.svc.cluster.local:3890`, base DN `dc=neuros,dc=is`,
-bind DN `uid=admin,ou=people,dc=neuros,dc=is`. Give LDAP clients their own
+LLDAP is a small LDAP user directory. Web UI:
+`kubectl -n lldap port-forward svc/lldap 17170:17170`, then
+http://localhost:17170, user `admin`. LDAP clients in the cluster use the
+Service `lldap.lldap.svc.cluster.local` and the base DN in
+`components/apps/lldap/default.nix`. Rule: give each LDAP client its own
 user in the group `lldap_strict_readonly`, not the admin.
 
 The Secret `lldap/lldap-secrets`:
@@ -385,4 +404,4 @@ The Secret `lldap/lldap-secrets`:
 
 New values: `openssl rand -base64 48 | tr -d "\n"`. After a change:
 `kubectl -n lldap rollout restart deploy/lldap`. Removing the component
-leaves `/var/lib/lldap/data` on r440 (PV reclaim Retain); delete it by hand.
+leaves `/var/lib/lldap/data` on its node; delete it by hand.

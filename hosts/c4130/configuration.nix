@@ -5,10 +5,9 @@
   ...
 }:
 {
-  # md RAID (local_store, see hardware-configuration.nix): mdmonitor exits 1
-  # without MAILADDR or PROGRAM. There is no MTA here, so
-  # md events (Fail, DegradedArray, ...) go to the journal instead:
-  # journalctl -t mdadm.
+  # Logs md RAID events (Fail, DegradedArray, ...) for local_store
+  # (hardware-configuration.nix) to the journal: journalctl -t mdadm.
+  # mdmonitor exits 1 without MAILADDR or PROGRAM; this host has no mail.
   boot.swraid.mdadmConf = ''
     PROGRAM ${pkgs.writeShellScript "mdadm-event-log" ''
       exec ${pkgs.util-linux}/bin/logger -t mdadm -p daemon.warning -- "md event: $*"
@@ -26,8 +25,7 @@
   i18n.defaultLocale = "en_US.UTF-8";
   networking.hostName = "c4130";
   networking.firewall.enable = true;
-  # Cluster ports (etcd 2379/2380, apiserver 6443, kubelet, flannel VXLAN
-  # 8472/udp) are opened by modules/cluster, to the cluster nodes only.
+  # modules/cluster opens the cluster ports, to the cluster nodes only.
   networking.firewall.allowedTCPPorts = [
     22
     80
@@ -36,7 +34,7 @@
   # IP forwarding (v4 and v6) comes from modules/server/tailscale.nix
   # (useRoutingFeatures = "server") and the kubelet module.
 
-  # Tailscale (modules/server/tailscale.nix): exit node + 10.0.1.0/24, tag:node.
+  # Tailscale options: modules/server/tailscale.nix.
   server.tailscale = {
     advertiseRoutes = [ "10.0.1.0/24" ];
     advertiseTags = [ "tag:node" ];

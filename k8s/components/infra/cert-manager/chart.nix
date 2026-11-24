@@ -7,7 +7,7 @@
 # The pods meet `restricted` with the chart's defaults (non-root, seccomp
 # RuntimeDefault, all capabilities dropped, no privilege escalation,
 # read-only root fs).
-# Nothing tolerates c4130's GPU taint: they run on r440 and m2mini.
+# Nothing tolerates a node taint, so the pods stay off tainted nodes.
 {
   pkgs,
   catenix,
@@ -39,7 +39,7 @@ in
         prometheus.enabled = false;
         # A Helm post-install hook; Flux applies plain manifests (noHooks).
         startupapicheck.enabled = false;
-        # The built-in approver would approve every request, cluster-pki's included.
+        # Off: the built-in approver approves every request, cluster-pki's included.
         disableAutoApproval = true;
 
         # The controller is leader-elected: one replica; a restart only
@@ -48,8 +48,8 @@ in
         resources = resources "64Mi";
 
         # Every create/update of a cert-manager.io object goes through the
-        # webhook (failurePolicy Fail), so two replicas on different nodes
-        # (c4130 is tainted: r440 and m2mini) and a PDB.
+        # webhook (failurePolicy Fail): two replicas on different nodes and
+        # a PDB keep it answering.
         webhook = {
           replicaCount = 2;
           podDisruptionBudget = {

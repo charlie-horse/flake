@@ -73,9 +73,8 @@ in
       })
     ];
 
-    # nixos-unstable replaced services.journald.extraConfig with
-    # settings.Journal (setting extraConfig is now an error). Both branches
-    # until flake.lock's nixpkgs-unstable has settings; then keep that one.
+    # settings.Journal where nixpkgs has it (extraConfig is an error
+    # there), else extraConfig.
     services.journald =
       if options.services.journald ? settings then
         { settings.Journal.SystemMaxUse = "500M"; }

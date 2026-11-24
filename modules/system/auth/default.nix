@@ -67,9 +67,8 @@ let
   u2fAuthFile = pkgs.writeText "auth-u2f-keys" (concatLines u2fMappings);
   rsshKeyFile = pkgs.writeText "auth-rssh-keys" (concatLines hw.rsshKeys);
 
-  # `cue` (a "touch the device" prompt) exists from pam_rssh 1.2.0 on; an
-  # unknown option makes pam_rssh fail outright. The desktop pin carries
-  # 1.2.0-rc2, which lacks it.
+  # `cue` (a "touch the device" prompt) only from pam_rssh 1.2.0 on, not in
+  # its release candidates: an unknown option makes pam_rssh fail outright.
   rsshHasCue =
     versionAtLeast pkgs.pam_rssh.version "1.2.0" && !(hasInfix "-rc" pkgs.pam_rssh.version);
 
@@ -230,9 +229,8 @@ in
       default = true;
       description = ''
         sshd accepts keys only (no PasswordAuthentication, no
-        KbdInteractiveAuthentication), wherever sshd runs. A leaked admin
-        password must not give a shell over plain SSH. Tailscale SSH does
-        not use sshd.
+        KbdInteractiveAuthentication), wherever sshd runs. Tailscale SSH
+        does not use sshd.
       '';
     };
 
@@ -251,8 +249,8 @@ in
         defaultText = lib.literalExpression ''[ "sudo" ] ++ optional config.security.polkit.enable "polkit-1"'';
         description = ''
           PAM services that authenticate with one hardware factor and no
-          password. polkit-1 is included where polkit runs (m2mini, Famine):
-          polkit lets wheel become root (pkexec, run0) too.
+          password. polkit-1 is included where polkit runs: polkit lets
+          wheel become root (pkexec, run0) too.
         '';
       };
 
@@ -294,8 +292,8 @@ in
 
     desktopU2f.enable = mkEnableOption ''
       pam_u2f as an alternative to the password in every PAM service
-      (NixOS's security.pam.u2f, origin pam://sortofasian, per-user
-      mappings in ~/.config/Yubico/u2f_keys). Set by custom.yubikey.enable
+      (NixOS's security.pam.u2f, per-user mappings in
+      ~/.config/Yubico/u2f_keys). Set by custom.yubikey.enable
       (modules/system/yubikey.nix), which also places the mapping'';
   };
 

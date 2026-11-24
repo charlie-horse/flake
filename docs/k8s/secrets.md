@@ -2,10 +2,21 @@
 
 Every Kubernetes Secret the cluster's workloads need is a sops-encrypted
 manifest in git, `k8s/secrets/<namespace>/<name>.sops.yaml`, decrypted in
-the cluster by kustomize-controller. Not in git: the Secrets the cluster
-makes itself (the cert-manager webhook's own CA, the leaves cert-manager
-issues) and the one bootstrap secret, `flux-system/sops-age`
+the cluster by Flux. Not in git: the Secrets the cluster makes itself (the
+cert-manager webhook's own CA, the certificates cert-manager issues) and
+the one bootstrap secret, `flux-system/sops-age`
 ([below](#the-bootstrap-key-flux-systemsops-age)).
+
+Terms:
+
+- **sops**: a tool that encrypts the values of a YAML file and leaves its
+  keys readable. Each file is encrypted to one or more **age** keys
+  (recipients, listed in `/.sops.yaml`).
+- **MAC**: the checksum sops stores in each file; decryption fails if any
+  value or the key order changed.
+- **kustomize-controller**: the Flux controller that builds and applies a
+  Kustomization (a Flux object that applies one directory of the render)
+  and decrypts sops files on the way.
 
 The inventory of every secret, in and out of the cluster, is
 [../secrets.md](../secrets.md); add a row there for any new one. Overview
@@ -25,8 +36,8 @@ Who reads a Secret: grep its name in `k8s/components/`.
   `render.nix`) and the `sops` flake check (`scripts/check-sops.py`,
   [../ci.md](../ci.md)) check the same set;
   change both together. The first four stay in the clear (kustomize and
-  Flux read them), `data`/`stringData` are encrypted. No `immutable` (Flux
-  could not apply a rotation).
+  Flux read them), `data`/`stringData` are encrypted. Never set
+  `immutable`: Flux can't apply a rotation to an immutable Secret.
 - **Apply.** The Kustomization `secrets` (`k8s/components/flux/secrets.nix`)
   decrypts them with `flux-system/sops-age`. Like the
   [deferred components](README.md#deferred-components), a missing key, a
@@ -70,8 +81,8 @@ with `nix shell nixpkgs#sops nixpkgs#jq nixpkgs#yq-go nixpkgs#openssl`
    end: add keys with `sops "$f"`, in sorted position.)
 2. PR. CI renders it (sorted keys, path, encryption) and runs the secrets
    guard. Merge.
-3. `render.yml` publishes and Flux applies it within seconds; to force or
-   check it (OIDC, or the break-glass kubeconfig on a node,
+3. `render.yml` publishes and Flux applies it. To force or check it
+   (OIDC, or the break-glass kubeconfig on a node,
    [../pki.md](../pki.md)):
    `flux reconcile kustomization secrets --with-source`, then
    `flux get kustomizations secrets` (Ready, the new revision).
@@ -133,13 +144,14 @@ above.
 ## The bootstrap key (flux-system/sops-age)
 
 Flux's age private key, recipient `&flux` in `/.sops.yaml`. It
-exists only in the cluster (and so in etcd and its backups); never in git,
-never on disk, never copied out. Until it exists the Kustomization
+exists only in the cluster (and so in etcd and its backups). Rule: never
+put it in git or on disk, and never copy it out. Until it exists the Kustomization
 `secrets` is not Ready and the Secrets keep their last applied values (on a
 fresh cluster: none, so the apps wait in `CreateContainerConfigError`).
 
 On a fresh cluster, after the [Bootstrap](README.md#bootstrap-fresh-cluster),
-make a new one as root on a node:
+make a new one as root on a node ([../../CLAUDE.md](../../CLAUDE.md#access)
+for logging in):
 
 ```sh
 sudo -i
@@ -154,7 +166,7 @@ nix shell nixpkgs#age nixpkgs#kubectl -c bash -ec '
 (The key name must end in `.agekey`.) Then re-wrap every file for the new
 recipient: on a branch, set `&flux` in `/.sops.yaml` to the printed
 recipient, run `sops updatekeys -y <file>` for each
-`k8s/secrets/*/*.sops.yaml` with an admin identity, PR, merge. The values are unchanged; only the
-wrapped data key is new. The same applies if the Secret is ever lost or
-deleted on a running cluster. Never re-create it with a different key
-without re-wrapping: `secrets` would fail on every file.
+`k8s/secrets/*/*.sops.yaml` with an admin identity, PR, merge. The values
+stay the same; only the wrapped data key is new. Do the same if the Secret
+is lost or deleted on a running cluster. Never re-create it with a
+different key without re-wrapping: `secrets` fails on every file.

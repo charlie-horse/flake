@@ -2,15 +2,15 @@
 # neurosis root CA ceremony: the first-time ceremony only (refuses while
 # slot 9c holds a key). docs/pki.md, "YubiKey root CA".
 #
-# Runs on whatever machine the user plugs the admin YubiKey 19830800 into
+# Runs on whatever machine the user plugs the admin YubiKey ($SERIAL) into
 # (slot 82, the sops key, is never touched), from a checkout of this repo
 # (only .sops.yaml is read), user present. Root only if no pcscd is
 # reachable and ca-pcscd must be started.
 #   CSR_DIR=~/csrs ca-ceremony        # k8s.csr etcd.csr front-proxy.csr
 #   MODE=rehearsal CSR_DIR=... ca-ceremony   # SoftHSM key, no card
 # PIN+touch: 1 (root) + 4 (intermediates). The PIN is read with `read -s`
-# into a 0600 tmpfs file (step's `pin-source=`), removed on exit: without
-# pin-source step silently tries 123456 and burns one of 3 PIN tries.
+# into a 0600 tmpfs file (step's `pin-source=`), removed on exit. pin-source
+# must be set: without it step silently tries 123456 and uses up a PIN try.
 set -euo pipefail
 umask 077
 
@@ -188,7 +188,7 @@ cmp <(openssl x509 -in "$OUT/workload.pem" -noout -pubkey) <(openssl pkey -in "$
 
 # --- 5. Workload Secret, sops-encrypted straight from tmpfs ----------------
 # docs/k8s/secrets.md "Adding one": keys sorted, data = base64 of exact bytes.
-# type kubernetes.io/tls to match the Secret cert-manager made (type is immutable).
+# type must be kubernetes.io/tls, like cert-manager's Secret (a Secret's type is immutable).
 say "Encrypting cert-manager/cluster-ca -> $OUT/cluster-ca.sops.yaml (for $SECRET_PATH)"
 b64() { base64 -w0 "$@"; }
 {

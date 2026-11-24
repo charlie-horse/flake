@@ -1,8 +1,7 @@
-# Apiserver VIP (cluster.vip, 10.0.0.200) with keepalived on EVERY
-# node. VRRP over the LAN interface, unicast between the nodes' LAN IPs;
-# the highest-priority node whose LOCAL https://127.0.0.1:6443/readyz
-# answers holds the VIP (c4130 150 > r440 100 > m2mini 50). /readyz is
-# readable anonymously (system:public-info-viewer): no client cert needed.
+# The apiserver VIP (virtual IP, cluster.vip), held by keepalived on every
+# node. Nodes talk VRRP (the failover protocol) over the LAN, unicast. The
+# highest-priority node whose local apiserver answers /readyz holds the
+# VIP. /readyz needs no client cert.
 {
   config,
   lib,

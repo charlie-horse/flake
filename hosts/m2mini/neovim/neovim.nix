@@ -7,7 +7,7 @@ in
     (pkgs.neovim.override {
       configure.customRC =
         concatMapStrings
-          # Read config file contents; supports lua files
+          # Read each config file: .lua wrapped in a lua heredoc, .vim as is
           (
             f:
             if hasSuffix ".lua" f then
@@ -17,7 +17,7 @@ in
             else
               ""
           )
-          # get all files in the config dir
+          # Every file in ./config
           (filesystem.listFilesRecursive ./config);
 
       configure.packages.neovimPlugins.start =

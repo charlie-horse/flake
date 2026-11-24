@@ -33,9 +33,9 @@ in
       };
   };
 
-  # r440's binary cache, https://cache.neuros.is (modules/system/nix-cache.nix).
-  # r440 builds and holds x86_64 only, so m2mini gets only arch-independent
-  # paths from it (sources, fixed-output downloads, data). netrc: sops key
+  # The cluster's binary cache (modules/system/nix-cache.nix). It holds
+  # x86_64 paths, so this host gets only arch-independent paths from it
+  # (sources, fixed-output downloads, data). netrc: sops key
   # nix-cache-netrc in secrets/m2mini.yaml (docs/build-cache.md); without
   # it Nix warns and uses cache.nixos.org alone.
   custom.nixCache.enable = true;

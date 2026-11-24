@@ -1,14 +1,14 @@
 # Public TLS edge for Tranquil PDS handles, namespace `atproto-edge`:
 #
-#   https://<name>.<handleDomain> -> router TCP 443 -> r440 lanIP:443
-#     -> nginx (this DaemonSet, on r440 only, hostPort 443 on its LAN IP)
+#   https://<name>.<handleDomain> -> router TCP 443 -> <node> lanIP:443
+#     -> nginx (this DaemonSet, on `node` only, hostPort 443 on its LAN IP)
 #     -> http://<tranquilPds.serviceIP>:80
 #
 # Serves /.well-known/atproto-did and /.well-known/did.json of
 # *.<handleDomain> only (nginx.conf). Certificate: Secret at-wildcard-tls,
 # from the deferred component apps/atproto-edge-certs (./certificate.nix).
-# nginx reloads when the mounted certificate changes. hostPort is why the
-# namespace is `privileged`. Docs: docs/k8s/apps.md#atproto-tls-edge
+# nginx reloads when the mounted certificate changes. hostPort needs the
+# namespace to be `privileged`. Docs: docs/k8s/apps.md#atproto-tls-edge
 {
   lib,
   cluster,

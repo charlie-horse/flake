@@ -39,8 +39,7 @@
       starship init fish | source
     '';
   };
-  # Tailscale SSH runs remote commands through fish: use `ssh ... bash -s`
-  # or `ssh -t ... bash` for sh syntax.
+  # Login shell is fish; running sh commands over SSH: CLAUDE.md#access.
   users.users.admin.shell = pkgs.fish;
   users.users.charlie = lib.mkIf config.custom.server.legacyCharlie.enable {
     shell = pkgs.fish;

@@ -2,7 +2,7 @@
 rec {
   namespace = "atproto";
 
-  # Images built from upstream v0.1.4 by pkgs/atproto-images/atcr.nix and
+  # Images built by pkgs/atproto-images/atcr.nix and
   # pushed by .github/workflows/atproto-images.yml. A null digest keeps the
   # Deployment at 0 replicas.
   images = {

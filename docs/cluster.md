@@ -1,51 +1,55 @@
 # neurosis cluster: operations
 
-The cluster is declared in `cluster/definition.nix` (nodes, roles,
-addresses) and `modules/cluster/` (host side); everything inside it is
-`k8s/`, deployed by Flux ([k8s/README.md](k8s/README.md)). Read those, not
-this doc, for what runs where. Every secret: [secrets.md](secrets.md).
+Procedures for the Kubernetes cluster the servers form. The nodes and
+their roles are in `cluster/definition.nix`, the host side in
+`modules/cluster/`, and everything inside the cluster in `k8s/`, which Flux
+(the in-cluster tool that applies the rendered manifests) deploys
+([k8s/README.md](k8s/README.md)). Every secret: [secrets.md](secrets.md).
+Getting onto a host: [CLAUDE.md](../CLAUDE.md#access).
 
 ## Changing a host
 
-1. Branch → PR → CI (`checks.yml`, [ci.md](ci.md)) → merge.
+1. Branch → PR → CI ([ci.md](ci.md)) → merge.
 2. On the host, as admin:
-   `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#<host>`
-   (m2mini adds `--override-input m2mini-vendorfw path:/boot/vendorfw`).
-3. One host at a time; after each, `systemctl --failed` (`switch` exiting
-   with status 4 means a unit failed) and the etcd check below. Never take
-   two etcd members down together.
-4. c4130: GC first (`sudo nix-env -p /nix/var/nix/profiles/system --delete-generations +2 && sudo nix-collect-garbage`;
-   [hosts/c4130.md](hosts/c4130.md)).
+   `cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos#<host>`.
+   c4130 and m2mini have their own deploy steps:
+   [hosts/c4130.md](hosts/c4130.md#deploying-c4130),
+   [hosts/m2mini.md](hosts/m2mini.md#deploy).
+3. Switch one host at a time. After each, read `systemctl --failed`
+   (`switch` exits with status 4 when a unit failed) and run the etcd check
+   below. Never take two etcd members down together.
 
-Never edit files in `/etc/nixos` or run `nix flake update` on a host, and
-never `sudo git` there (root-owned files break the next pull until a switch
-or boot re-owns the tree). Builds happen on r440 ([build-cache.md](build-cache.md)).
+Rules for `/etc/nixos` (no edits, no `nix flake update`, no git as root):
+[CLAUDE.md](../CLAUDE.md#access). If a root-run git left root-owned files
+there, a switch or reboot gives the tree back to admin. Builds run on the
+remote builder ([build-cache.md](build-cache.md)).
 
 ### etcd health check (any member, in bash)
 
+etcd is the database that stores the cluster state; each node with the
+`etcd` role runs one member.
+
 ```sh
 D=/run/secrets/pki; n=$(hostname); C=$D/etcd-server-$n
-E="sudo etcdctl --endpoints=https://r440:2379,https://c4130:2379,https://m2mini:2379 \
+E="sudo etcdctl --endpoints=https://$n:2379 \
    --cacert=$D/etcd-ca.pem --cert=$C.pem --key=$C-key.pem"
-$E endpoint health --cluster -w table     # 3 x true
+$E endpoint health --cluster -w table     # every member true
 $E endpoint status --cluster -w table     # 1 leader, raft index moving
-$E member list -w table                   # r440/c4130/m2mini, unchanged
+$E member list -w table                   # the etcd nodes of cluster/definition.nix
 sudo journalctl -u etcd --since -5min | grep -iE 'x509|tls|handshake'   # empty
 ```
 
-`snapshot save` takes exactly one endpoint: use `--endpoints=https://$n:2379`.
+`$E snapshot save <file>` works as is: it takes exactly one endpoint.
 
 ## Changing something in the cluster
 
-1. Edit `k8s/` (or `cluster/definition.nix`), branch → PR. `checks.yml`
-   renders the PR's commit (`nix flake check`).
-2. Merge. Once `checks.yml` passes on `main`, `render.yml` pushes the
-   render to GHCR as a cosign-signed OCI artifact and pings Flux's
-   webhook; Flux applies it within seconds
-   ([ci.md](ci.md), [k8s/README.md](k8s/README.md)).
+1. Edit `k8s/` (or `cluster/definition.nix`) on a branch and open a PR. CI
+   renders it as part of `nix flake check`.
+2. Merge. CI on `main` publishes the render and Flux applies it
+   ([ci.md](ci.md#renderyml), [k8s/README.md](k8s/README.md#deployment)).
 
-Check or force it, with your OIDC kubeconfig or, on a node, the
-break-glass one ([Kubernetes API access](#kubernetes-api-access)):
+Check or force it with your OIDC kubeconfig or, on a node, the break-glass
+one ([Kubernetes API access](#kubernetes-api-access)):
 
 ```sh
 F="nix shell nixpkgs#fluxcd -c flux"                                # OIDC
@@ -57,50 +61,55 @@ $F get kustomizations                 # all Ready
 
 ## Kubernetes API access
 
-- **Break-glass:** on any node,
-  `sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig …`
+A kubeconfig is the file that tells `kubectl` which API server to use and
+how to log in.
+
+- **Break-glass** (admin access that works without the login service): on
+  any node, `sudo kubectl --kubeconfig /etc/kubernetes/admin.kubeconfig …`
   ([pki.md](pki.md#break-glass)).
-- **People:** OIDC through authentik, kubectl with kubelogin or Headlamp
-  ([k8s/apps.md](k8s/apps.md)).
-- **kubeconfig server:** the keepalived VIP on the LAN or the Tailscale
-  Service from the tailnet (`vip`, `apiserverTailscaleService` and `domain`
-  in `cluster/definition.nix`), e.g.
-  `kubectl config set-cluster neurosis --server=https://kube-api.leaffish-monster.ts.net:6443`.
+- **People:** OIDC (single sign-on) through authentik, with kubectl and
+  kubelogin, or Headlamp ([k8s/apps.md](k8s/apps.md)).
+- **kubeconfig server:** on the LAN, the API's virtual IP (`vip`); from the
+  tailnet, the Tailscale Service
+  `https://<apiserverTailscaleService>.<domain>:<apiserverPort>`. All values
+  are in `cluster/definition.nix`. Set it with
+  `kubectl config set-cluster <name> --server=<url>`.
 
 ## Tailscale
 
-The servers' Tailscale prefs are declared in `modules/server/tailscale.nix`
-and `server.tailscale.*` per host. Rules:
+The servers' Tailscale settings are in `modules/server/tailscale.nix` and
+`server.tailscale.*` per host. Rules:
 
-- Never turn `ssh` off: Tailscale SSH is the only way into the hosts, and
-  from a session that came in over it, that locks everyone out.
-- The flags must match the live prefs (`tailscale debug prefs`) exactly,
-  including `advertiseTags`; `tailscale set` only touches the prefs it
-  names, so a mismatch silently changes routing or SSH at the next switch.
+- Never set `ssh` to false: it locks everyone out of the hosts.
+- Keep the flags equal to the live prefs (`tailscale debug prefs`),
+  `advertiseTags` included. A mismatch changes routing or SSH at the next
+  switch.
 - A hand-made `tailscale set` is undone by the next boot or switch: change
   the Nix instead.
 
-**Reinstall:** generate a pre-approved, non-ephemeral auth key tagged
-`tag:node` in the admin console. On the new host, as root (never in git,
-the store or a command line):
+**Reinstall:** in the Tailscale admin console, generate an auth key that is
+pre-approved, non-ephemeral and tagged `tag:node`. On the new host (never
+put the key in git, the Nix store or a command line):
 
 ```sh
 sudo install -d -m 0700 /var/lib/tailscale
 sudo sh -c 'umask 077; cat > /var/lib/tailscale/authkey'   # paste, ^D
 ```
 
-Switch, then delete the file once the node shows up. Without the file
-`tailscaled-autoconnect` is skipped.
+Switch, then delete the file once the node shows up. Without the file,
+`tailscaled-autoconnect` does nothing.
 
 ### Tailscale Service for the API (`svc:kube-api`)
 
-Declared in `modules/cluster/tailscale-service.nix`. The node advertises it
-unapproved until this admin-console setup (once per tailnet) is done:
+A Tailscale Service is one tailnet name that forwards to every host that
+advertises it. Declared in `modules/cluster/tailscale-service.nix`. The
+nodes advertise it, unapproved, until this admin-console setup is done
+(once per tailnet):
 
 1. Services → Advertise → Define a Service: name `kube-api`, endpoint
    `tcp:6443`, description "neurosis Kubernetes API".
 2. Policy file: approve tag:node hosts automatically and let the admins
-   reach it (adjust `src` to who should use kubectl):
+   reach it (set `src` to who may use kubectl):
 
    ```jsonc
    "tagOwners": {
@@ -119,19 +128,19 @@ unapproved until this admin-console setup (once per tailnet) is done:
    Without `autoApprovers`, approve each host by hand on the service's page
    (Service hosts → Approve).
 
-Clients ≥ 1.94 need no `--accept-routes` (older Linux clients do). A
-running but unready apiserver still gets traffic (no `/readyz` check).
+Linux clients older than Tailscale 1.94 need `--accept-routes` to reach it.
+The Service also sends traffic to an apiserver that runs but is not ready.
 
 Check (read-only), on a node and from a client:
 
 ```sh
 tailscale serve status --json        # Services."svc:kube-api".TCP."6443"
 tailscale debug prefs | jq .AdvertiseServices   # ["svc:kube-api"]
-kubectl --server=https://kube-api.leaffish-monster.ts.net:6443 get --raw /readyz
+kubectl --server=https://kube-api.<domain>:6443 get --raw /readyz
 ```
 
-After a change to `apiserverExtraSANs`, cert-manager reissues the
-`apiserver-<node>` Certificates; run the export job
-([pki.md](pki.md#export-job)), merge its PR and switch the hosts. Check each
-with `curl -skf https://127.0.0.1:6443/readyz` (`-f`: a not-ready apiserver
-still answers, with HTTP 500).
+After a change to `apiserverExtraSANs`, cert-manager (the in-cluster
+certificate issuer) reissues the `apiserver-<node>` Certificates. Run the
+export job ([pki.md](pki.md#export-job)), merge its PR and switch the hosts.
+Check each with `curl -skf https://127.0.0.1:6443/readyz` (`-f` makes curl
+fail on the HTTP 500 a not-ready apiserver returns).

@@ -1,13 +1,11 @@
 # The OpenSSH client on every host (desktops via modules/, servers via
 # modules/server/default.nix).
 #
-#   /etc/ssh/ssh_config  Host block for the cluster nodes, by NAME only:
-#                        User admin, ForwardAgent, IdentitiesOnly and one
-#                        public-key IdentityFile per admin sk- key (ssh then
-#                        offers that key from the agent). No IPs: c4130's
-#                        nix-daemon reaches r440 as nixremote@10.25.0.2 with
-#                        its own key (hosts/c4130/builder.nix).
-#   ssh_known_hosts      every node's ed25519 host key (cluster/definition.nix)
+#   /etc/ssh/ssh_config  Host block for the cluster nodes, by name only
+#                        (no IPs): user admin, agent forwarding, and one
+#                        public-key IdentityFile per admin FIDO2 (sk-) key,
+#                        so ssh offers that key from the agent.
+#   ssh_known_hosts      every node's host key (cluster/definition.nix)
 #   desktops             a per-user ssh-agent; servers use the forwarded one
 {
   pkgs,
@@ -89,9 +87,8 @@ in
     }) cluster.nodes;
 
     programs.ssh.startAgent = mkDefault true;
-    # nixos-unstable's gnome-keyring (Famine) also enables gcr-ssh-agent by
-    # default, and only one SSH agent may run: keep OpenSSH's ssh-agent.
-    # The option does not exist in older nixpkgs, hence the check.
+    # Only one SSH agent may run: turn off gnome-keyring's gcr-ssh-agent
+    # (where nixpkgs has the option) when OpenSSH's ssh-agent runs.
     services.gnome = optionalAttrs (options.services.gnome ? gcr-ssh-agent) {
       gcr-ssh-agent.enable = mkIf cfg.startAgent false;
     };

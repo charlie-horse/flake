@@ -53,8 +53,8 @@
     };
 
   # Tolerations for every taint any node carries (cluster/definition.nix,
-  # nodes.<n>.taints; e.g. c4130's nvidia.com/gpu=vllm), for workloads that
-  # must run on every node (one replica per node).
+  # nodes.<n>.taints), for workloads that must run on every node (one
+  # replica per node).
   nodeTolerations = lib.unique (
     lib.concatMap (
       n:
@@ -66,9 +66,8 @@
   );
 
   # A chart `patch` (catenix.importChart) that pins the Service `service` to
-  # a fixed ClusterIP. ClusterIP is immutable, so the Service also carries
-  # Flux's force annotation: if the IP ever changes, Flux recreates the
-  # Service instead of failing to patch it.
+  # a fixed ClusterIP. It also sets Flux's force annotation, so Flux
+  # recreates the Service when the IP changes (ClusterIP is immutable).
   fixedServiceIP =
     { service, ip }:
     manifest:

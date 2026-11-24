@@ -1,7 +1,5 @@
-# cert-manager, namespace `cert-manager`: the workload PKI. Bootstrap
-# certificates (etcd, apiserver, kubelets, ...) reach the nodes as sops
-# files (secrets/pki/, docs/pki.md): they must exist before the cluster, and
-# so cert-manager, can run.
+# cert-manager, namespace `cert-manager`: the workload PKI. The cluster's
+# own certificates come from sops files instead (secrets/pki/, docs/pki.md).
 #
 #   chart.nix            controller, webhook, cainjector and the CRDs
 #   approver-policy.nix  the only approver
@@ -12,9 +10,8 @@
 #   crds.nix             the two charts' CRDs, for the deferred components
 #   settings.nix         names shared by all of them
 #
-# Workloads use issuerRef: { kind: ClusterIssuer, name: cluster-ca };
-# public names in neuros.is use letsencrypt-production.
-# Docs: docs/k8s/apps.md#cert-manager
+# Workloads use ClusterIssuer cluster-ca; public names use
+# letsencrypt-production. Docs: docs/k8s/apps.md#cert-manager
 { ... }:
 let
   inherit (import ./settings.nix) namespace;

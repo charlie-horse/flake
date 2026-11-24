@@ -51,7 +51,7 @@ in
   # chart's default: the release namespace), where a ClusterIssuer reads it.
   resources."cert-manager.io".v1.ClusterIssuer.${caIssuer}.spec.ca.secretName = caSecret;
 
-  # Allows what cert-manager's auto-approver did, except CA certs (the intermediate is pathlen:0).
+  # Allows what cert-manager's built-in approver allows, except CA certs (the intermediate is pathlen:0).
   resources."policy.cert-manager.io".v1alpha1.CertificateRequestPolicy.${caIssuer}.spec = {
     selector.issuerRef = {
       group = "cert-manager.io";

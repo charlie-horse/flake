@@ -16,7 +16,7 @@ in
             // {
               inherit system;
               # Desktop-side pkgs (mkHost / mkHostIso); mkServer
-              # never uses it.
+              # does not use it.
               pkgs = import inputs.nixpkgs-unstable {
                 inherit system;
                 config.allowUnfree = true;

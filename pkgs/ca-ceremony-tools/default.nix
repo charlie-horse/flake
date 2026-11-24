@@ -2,7 +2,7 @@
 # step + step-kms-plugin, ca-pcscd, ca-ceremony = ./ceremony.sh, sops,
 # age-plugin-yubikey, yq, softhsm for MODE=rehearsal, ca-openssl), as one
 # package entered ad hoc with `nix shell <flake>#ca-ceremony-tools`. No host
-# installs it or runs pcscd permanently, so using it needs no switch.
+# installs it or runs pcscd permanently.
 # Usage and gotchas: docs/pki.md, "Tools: ca-ceremony-tools".
 # Nothing here writes to the card by itself (slot 82 and FIDO2 untouched).
 {
@@ -31,12 +31,10 @@
   git,
 }:
 let
-  # step-cli >= 0.31.0: 0.30.2 (nixos-26.05) loads the issuer certificate of
-  # `step certificate sign --kms ... <csr> <crt> <key>` through the KMS
-  # plugin whenever --kms is set, so a root.pem file fails ("scheme is
-  # missing"); 0.31.0 reads it as a file. Same src and vendor hashes as
-  # nixos-unstable's step-cli 0.31.0, so both FODs come from the cache. Drop
-  # this once the 26.05 step-cli is >= 0.31.0.
+  # step-cli must be >= 0.31.0: older versions load the issuer certificate
+  # of `step certificate sign --kms ...` through the KMS plugin, so a
+  # root.pem file fails ("scheme is missing"). Builds 0.31.0 when nixpkgs
+  # has an older one.
   step-cli' =
     if lib.versionAtLeast step-cli.version "0.31.0" then
       step-cli

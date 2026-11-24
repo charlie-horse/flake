@@ -15,12 +15,12 @@ let
     ;
 in
 {
-  # Server host builder (c4130, r440, m2mini). Unlike mkHost it does NOT
-  # import ../../modules wholesale: a server gets its host dir,
-  # modules/cluster, the server baseline (modules/server) and `modules`.
+  # Server host builder. Unlike mkHost it does NOT import ../../modules
+  # wholesale: a server gets its host dir, modules/cluster, the server
+  # baseline (modules/server) and `modules`.
   #   mkServer {
   #       path = ./hosts/c4130;         # host dir (or file)
-  #       nixpkgs = inputs.nixpkgs;     # per-host nixpkgs input (26.05)
+  #       nixpkgs = inputs.nixpkgs;     # per-host nixpkgs input
   #       preModules = [ ... ];         # optional, imported BEFORE path
   #       modules = [ ... ];            # optional extra modules (after)
   #       specialArgs = { ... };        # optional extra specialArgs
@@ -50,9 +50,9 @@ in
           hostName = name;
         }
         // specialArgs;
-        # Keep the order the host flake had (list options such as firewall
-        # ports merge in import order): preModules (e.g. apple-silicon),
-        # the host dir, then the cluster module, then extras.
+        # Import order: preModules (e.g. apple-silicon), the host dir, the
+        # cluster module, then extras. Keep it: list options such as
+        # firewall ports merge in import order.
         modules =
           preModules
           ++ [

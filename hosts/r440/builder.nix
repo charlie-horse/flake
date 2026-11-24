@@ -1,24 +1,23 @@
-# r440 as a Nix remote builder for c4130, over the direct 2x25G link
-# (bond0, 10.25.0.0/30); sshd listens everywhere. The binary cache is
-# ./cache.nix (https://cache.neuros.is for every host, c4130 included).
-# docs/build-cache.md#remote-builder.
+# r440 as a Nix remote builder (a host that runs builds for another) for
+# c4130, over the direct link (bond0, below). The binary cache is
+# ./cache.nix. docs/build-cache.md#remote-builder.
 { lib, ... }:
 let
   # Public half of c4130's builder key (private half: sops key
   # nixremote-ssh-key in secrets/c4130.yaml). Only `nix-daemon --stdio` may run with it.
   c4130BuilderKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDXr3aoLaBGm+3dzLd3GmtM3URqjiJLX6Wy7Ox6YC3k+ root@c4130";
 
-  # Concurrent builds x cores. Each CUDA tree (flint, LMCache) runs
-  # min(NIX_BUILD_CORES, 16) nvcc jobs at ~1-2+ GiB each; more than 16 nvcc
-  # in total exhausts r440's 46 GiB. Keep maxJobs in c4130's builder.nix
-  # equal to this, and builderMaxJobs x cores at 16. ./memory.nix caps
-  # nix-daemon at 36G as the backstop.
+  # Concurrent builds. Each CUDA build (flint, LMCache) runs up to `cores`
+  # nvcc jobs at 1-2+ GiB each. Keep builderMaxJobs x cores at 16 or less,
+  # or the builds run this host out of RAM, and keep maxJobs in
+  # hosts/c4130/builder.nix equal to this. ./memory.nix caps nix-daemon's
+  # memory as the backstop.
   builderMaxJobs = 2;
 in
 {
   # --- Direct link -----------------------------------------------------
-  # LACP across both cables: one address, survives a cable/port failure,
-  # and parallel substitutions/builds hash onto both links (layer3+4).
+  # LACP bond (two cables as one link with one address): it survives a
+  # cable or port failure and spreads connections over both cables.
   networking.bonds.bond0 = {
     interfaces = [
       "ens3f0np0"
@@ -45,8 +44,8 @@ in
     "ens3f*"
     "bond0"
   ];
-  # c4130's end of the link as a name for its pinned host key
-  # (modules/programs/ssh.nix), e.g. `ssh admin@10.25.0.1`.
+  # Adds c4130's link address to its pinned host key
+  # (modules/programs/ssh.nix), so `ssh admin@<link address>` trusts it.
   programs.ssh.knownHosts.c4130.hostNames = [ "10.25.0.1" ];
 
   # --- Remote builder ----------------------------------------------------
@@ -76,8 +75,8 @@ in
   nix.daemonCPUSchedPolicy = "batch";
   nix.daemonIOSchedClass = "idle";
 
-  # Builds for c4130 substitute their inputs here (builders-use-substitutes):
-  # CUDA redist packages from nixpkgs' CUDA cache.
+  # Builds for c4130 fetch their inputs here (builders-use-substitutes),
+  # including CUDA packages from nixpkgs' CUDA cache.
   custom.nixCache.cuda.enable = true;
 
   # The binary cache (harmonia behind nginx with basic auth) is ./cache.nix.

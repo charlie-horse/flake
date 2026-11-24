@@ -1,15 +1,20 @@
 # CI
 
-`nix flake check` is the gate: a commit is good when it passes. The checks
-are the flake's `checks` (`parts/checks.nix`); CI (`checks.yml`) only runs
-`nix flake check`. Each workflow's header comment says what it does.
+`nix flake check` builds every check the flake declares
+(`parts/checks.nix`). It is the gate: a commit is good when it passes. CI
+(GitHub Actions, `.github/workflows/checks.yml`) only runs
+`nix flake check`. Each workflow's header comment says what it does. Jobs
+use r440's binary cache through `.github/actions/nix-cache`
+([build-cache.md](build-cache.md#github-actions)).
 
 - Run `nix flake check` before every commit. The hook in `.githooks/` does
   it; enable it once per clone with `git config core.hooksPath .githooks`.
 - A new check goes in `parts/checks.nix` as a flake check, never as a CI
-  step. It must fetch only through fixed-output derivations and build
-  nothing heavier than the k8s render.
-- CI never builds a NixOS toplevel; builds happen on r440
+  step. It must fetch only through fixed-output derivations (builds whose
+  output hash is fixed in the source) and build nothing heavier than the
+  k8s render.
+- CI never builds a NixOS toplevel (a host's whole system); builds happen
+  on r440
   ([build-cache.md](build-cache.md)).
 - `nix fmt` fixes what the `format` check reports.
 - After changing recipients in `.sops.yaml`, run `sops updatekeys` on every
@@ -29,6 +34,9 @@ To compare a host's config with what runs on it, on the host:
 `nix-diff /run/current-system $(nix eval --raw /etc/nixos#nixosConfigurations.<host>.config.system.build.toplevel.drvPath)`.
 
 ## render.yml
+
+The render is the Kubernetes manifests the flake builds from `k8s/`; Flux
+(the in-cluster deployer) applies it.
 
 - Every push to `main` publishes the render its `checks` run built;
   dispatching `render.yml` on `main` builds and republishes the current
@@ -61,6 +69,3 @@ On `main` it pushes the ATProto service images (one job per image) and
 writes each digest to the job summary; pin them as in
 [k8s/apps.md](k8s/apps.md#atproto-services). The GHCR packages must stay
 public (the kubelets pull without credentials).
-
-Jobs use r440's binary cache through `.github/actions/nix-cache`
-([build-cache.md](build-cache.md#github-actions)).

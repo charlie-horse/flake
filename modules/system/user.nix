@@ -1,4 +1,4 @@
-# The desktop user (custom.user.name; Famine: charlie). Desktops only
+# The desktop user (custom.user.name). Desktops only
 # (mkHost imports modules/ wholesale; mkServer does not). admin, root and
 # users.mutableUsers: modules/system/admin.nix.
 { lib, config, ... }:
@@ -28,11 +28,9 @@ in
   };
 
   config = {
-    # The desktop user keeps a password (greeter, hyprlock; no sudo). The
-    # plaintext is the sops key <user>-password (the option's default; on
-    # Famine charlie-password) in sops.defaultSopsFile,
-    # secrets/<hostname>.yaml (Famine: famine.yaml); the host derives the
-    # yescrypt hash and sets hashedPasswordFile (custom.sopsPasswords,
+    # The desktop user's password (greeter, hyprlock; no sudo): the sops
+    # key <user>-password in secrets/<hostname>.yaml. The host derives the
+    # hash and sets hashedPasswordFile (custom.sopsPasswords,
     # modules/system/sops.nix).
     custom.sopsPasswords.${user.name} = { };
 

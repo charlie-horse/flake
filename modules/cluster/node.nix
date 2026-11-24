@@ -1,16 +1,13 @@
 # kubelet + kube-proxy + container runtime on nodes with the "worker" role.
 #
-# CRI per node (cluster.nodes.<n>.cri):
-#   "containerd" (default): virtualisation.containerd with the CRI plugin,
-#       runc as default runtime handler, "nvidia" handler on gpu nodes,
-#       optional "crun" handler (clusterNode.crun.enable). Matching
-#       RuntimeClasses (runc, nvidia, crun) are cluster objects in k8s/.
-#   "cri-o": virtualisation.cri-o; kept working as the alternative.
+# The container runtime (CRI) is set per node by cluster.nodes.<n>.cri:
+#   "containerd": runc by default, an "nvidia" handler on gpu nodes, an
+#       optional "crun" handler. The matching RuntimeClasses are in k8s/.
+#   "cri-o": the alternative runtime.
 #
-# Networking: flannel runs as a DaemonSet (k8s/), in kube-subnet-mgr mode
-# with podCidr. The host provides the CNI side: the flannel + portmap
-# plugins in /opt/cni/bin (NixOS kubelet module) and the conflist below in
-# /etc/cni/net.d (read-only, from the store), so the DaemonSet must NOT run
+# Pod networking: flannel runs as a DaemonSet from k8s/. The host provides
+# the CNI (container network interface) plugins in /opt/cni/bin and the
+# read-only conflist below in /etc/cni/net.d, so the DaemonSet must NOT run
 # flannel's install-cni / install-cni-plugin init containers.
 {
   config,
@@ -98,8 +95,7 @@ in
         unschedulable = false;
         cni.configDir = cniConfigDir;
         extraOpts = nodeLabelsFlag;
-        # Per-node KubeletConfiguration fields (e.g. c4130's absolute
-        # evictionHard / image GC thresholds).
+        # Per-node KubeletConfiguration fields (cluster.nodes.<n>.kubeletConfig).
         extraConfig = node.kubeletConfig;
       };
 

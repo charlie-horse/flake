@@ -3,8 +3,9 @@ rec {
   namespace = "authentik";
 
   # sops-encrypted in k8s/secrets/authentik/authentik-secrets.sops.yaml,
-  # applied by the Flux Kustomization `secrets` (docs/k8s/apps.md#the-secret-authentikauthentik-secrets): keys AUTHENTIK_SECRET_KEY, AUTHENTIK_POSTGRESQL__PASSWORD,
-  # AUTHENTIK_BOOTSTRAP_PASSWORD.
+  # applied by the Flux Kustomization `secrets`. Keys AUTHENTIK_SECRET_KEY,
+  # AUTHENTIK_POSTGRESQL__PASSWORD, AUTHENTIK_BOOTSTRAP_PASSWORD
+  # (docs/k8s/apps.md#the-secret-authentikauthentik-secrets).
   secretName = "authentik-secrets";
 
   blueprintsConfigMap = "authentik-blueprints";
@@ -13,7 +14,7 @@ rec {
     name = "authentik-postgresql";
     database = "authentik";
     user = "authentik";
-    # Same major as the chart's own (disabled) postgresql default.
+    # Keep the major version the chart's own (disabled) postgresql uses.
     image = "docker.io/library/postgres:17.11-trixie";
     labels = {
       "app.kubernetes.io/name" = "postgresql";

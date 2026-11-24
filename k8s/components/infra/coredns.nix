@@ -4,11 +4,9 @@
 # so tools that look for either find it.
 #
 # Upstream resolution: `forward . /etc/resolv.conf`, the node's resolver
-# (CoreDNS pods use dnsPolicy Default). On every node that is Tailscale's
-# 100.100.100.100, so MagicDNS names (<node>.leaffish-monster.ts.net)
-# resolve from pods too; flannel's --ip-masq SNATs the queries to the
-# node. The fd7a:...::53 entry is unreachable from IPv4-only pods and is
-# simply marked unhealthy by `forward`.
+# (CoreDNS pods use dnsPolicy Default), so pods resolve every name the node
+# resolves. `forward` marks the resolver's IPv6 entry unhealthy (the pods
+# are IPv4-only); that is expected.
 {
   pkgs,
   catenix,

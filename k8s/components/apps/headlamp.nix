@@ -1,5 +1,5 @@
 # Headlamp (Kubernetes web UI), namespace `headlamp`: the Headlamp Helm
-# chart, one replica, amd64 only (nodeSelector): with c4130 tainted, r440.
+# chart, one replica, amd64 nodes only (nodeSelector).
 #
 # Login is OIDC against authentik's confidential provider `headlamp`
 # (per-provider issuer, a second JWT authenticator on the apiserver:
@@ -9,7 +9,7 @@
 #
 # Secret headlamp-oidc (sops, key OIDC_CLIENT_SECRET, copied from authentik),
 # read at start. The namespace enforces `restricted`. Public at
-# https://k8s.neuros.is through apps/cloudflared to the fixed ClusterIP
+# cluster.headlamp.host through apps/cloudflared to the fixed ClusterIP
 # cluster.headlamp.serviceIP. Docs: docs/k8s/apps.md#headlamp
 {
   pkgs,
@@ -89,10 +89,9 @@ in
           inCluster = true;
           unsafeUseServiceAccountToken = false;
           oidc = {
-            # Neither the chart's own Secret (it would hold the client
-            # secret, in git) nor envFrom an external one: the non-secret
-            # settings are plain env values, the client secret is one
-            # secretKeyRef (env below).
+            # No chart Secret (it would put the client secret in git) and
+            # no envFrom: the non-secret settings are plain env values, the
+            # client secret is one secretKeyRef (env below).
             secret.create = false;
             externalSecret.enabled = false;
             clientID = "headlamp";
