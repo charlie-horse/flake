@@ -1,7 +1,6 @@
 # Checks: the repository's gate. Runs on every pull request and push to
-# main, whatever changed. It only checks; it never builds a NixOS toplevel
-# (the c4130 closure alone is CUDA + torch + vLLM, far beyond a hosted
-# runner) and never writes.
+# main, whatever changed. It only checks: it must never build a NixOS
+# toplevel (too large for a hosted runner) and never writes.
 #
 #   flake-check    `nix flake check`, the single gate (parts/checks.nix).
 #                  On main it also uploads the render it built (artifact
@@ -35,8 +34,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # r440's binary cache, if NIX_CACHE_NETRC is available (not on fork
-      # PRs): .github/actions/nix-cache, docs/ci.md.
+      # The flake's binary cache, if NIX_CACHE_NETRC is available (not on
+      # fork PRs): .github/actions/nix-cache, docs/ci.md.
       - id: nix-cache
         uses: ./.github/actions/nix-cache
         with:

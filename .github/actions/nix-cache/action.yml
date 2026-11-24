@@ -1,5 +1,5 @@
-# r440's Nix binary cache (https://cache.neuros.is, basic auth) for a job,
-# as nix.conf lines for cachix/install-nix-action's `extra_nix_config`:
+# The flake's Nix binary cache (basic auth) for a job, as nix.conf lines
+# for cachix/install-nix-action's `extra_nix_config`:
 #
 #   - id: nix-cache
 #     uses: ./.github/actions/nix-cache
@@ -11,10 +11,10 @@
 #
 # Without the secret (fork PRs, Dependabot) the output is empty: cache.nixos.org
 # only. The netrc goes to $RUNNER_TEMP (mode 600), never printed. Read-only.
-# URL and key mirror cluster/definition.nix `binaryCache`; change both
-# together. Details: docs/build-cache.md#github-actions.
+# CACHE_URL and CACHE_KEY must match cluster/definition.nix `binaryCache`.
+# Details: docs/build-cache.md#github-actions.
 name: nix-cache
-description: nix.conf lines for r440's binary cache, if the netrc secret is set
+description: nix.conf lines for the flake's binary cache, if the netrc secret is set
 inputs:
   netrc:
     description: >-
@@ -49,13 +49,13 @@ runs:
         )
         {
           echo 'nix-conf<<NIX_CACHE_CONF_EOF'
-          # After cache.nixos.org (40): only what it lacks comes from r440.
+          # After cache.nixos.org: only what it lacks comes from this cache.
           echo "extra-substituters = $CACHE_URL?priority=50"
           echo "extra-trusted-public-keys = $CACHE_KEY"
           echo "netrc-file = $netrc"
-          # A down cache costs seconds and is skipped for 60 s.
+          # A down cache costs seconds and is skipped.
           echo "connect-timeout = 5"
           echo "fallback = true"
           echo 'NIX_CACHE_CONF_EOF'
         } >> "$GITHUB_OUTPUT"
-        echo "r440's cache enabled ($CACHE_URL, read-only)."
+        echo "Binary cache enabled ($CACHE_URL, read-only)."

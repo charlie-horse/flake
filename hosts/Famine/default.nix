@@ -50,12 +50,12 @@ in
     steam = true;
     star-citizen.enable = true;
 
-    # r440's binary cache after cache.nixos.org; netrc: sops key
+    # The cluster's binary cache after cache.nixos.org; netrc: sops key
     # nix-cache-netrc in secrets/famine.yaml.
     nixCache.enable = true;
 
-    # Off: no pam-yubikeys in secrets/famine.yaml, so login/sudo take the
-    # password only. docs/hosts/famine.md#yubikey
+    # Needs sops key pam-yubikeys in secrets/famine.yaml to turn on; while
+    # off, login and sudo take the password only. docs/hosts/famine.md#yubikey
     yubikey.enable = false;
   };
 
@@ -73,7 +73,7 @@ in
     gparted
     ledger-live-desktop
     protonup-qt
-    # Renamed to proton-vpn (protonvpn-gui is a deprecated alias).
+    # proton-vpn where nixpkgs has it, else the deprecated alias.
     (pkgs.proton-vpn or protonvpn-gui)
     parsec-bin
     obs-studio

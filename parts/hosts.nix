@@ -1,17 +1,15 @@
 # Flake-level outputs: the `lib` output and every nixosConfiguration.
 #
-# Hosts are built exactly as before flake-parts: lib.custom (./lib) is
-# nixpkgs-unstable's lib extended with `custom`, and each host gets the plain
-# flake `inputs` (not flake-parts' `inputs'`) and its own nixpkgs instance.
-# Nothing from perSystem (`pkgs` etc.) reaches host evaluation.
+# lib.custom (./lib) is nixpkgs-unstable's lib extended with `custom`. Each
+# host gets the plain flake `inputs` (not flake-parts' `inputs'`) and its
+# own nixpkgs instance; nothing from perSystem (`pkgs` etc.) reaches host
+# evaluation.
 #
 # Which nixpkgs:
-#   - desktops (mkHost): nixpkgs-unstable. mkHost calls this lib's
-#     nixosSystem and passes the lib itself as specialArgs, so it must stay
-#     nixpkgs-unstable's lib for the desktops to stay on unstable.
-#   - servers (mkServer): `nixpkgs` (26.05), through `nixpkgs.lib.nixosSystem`
-#     of the input passed in. They take only eval-time helpers (mkDefault,
-#     removeSuffix) from this lib; no unstable package reaches them.
+#   - desktops (mkHost): nixpkgs-unstable. mkHost uses this lib's
+#     nixosSystem, so this lib must stay nixpkgs-unstable's.
+#   - servers (mkServer): `nixpkgs`, through the nixosSystem of the input
+#     passed in. They take only eval-time helpers from this lib.
 { inputs, config, ... }:
 let
   lib = config.flake.lib;
@@ -45,7 +43,7 @@ in
     (lib.system.aarch64-linux.mkServer {
       path = ../hosts/m2mini;
       nixpkgs = inputs.nixpkgs;
-      # Same order as m2mini's own flake: apple-silicon first.
+      # apple-silicon is imported before the host dir.
       preModules = [ inputs.apple-silicon-m2mini.nixosModules.default ];
       modules = [
         { m2mini.vendorFirmware = inputs.m2mini-vendorfw; }

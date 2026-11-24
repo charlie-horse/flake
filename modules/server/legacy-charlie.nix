@@ -1,5 +1,5 @@
 # enable = true: a `charlie` wheel account next to admin, mutable users.
-# enable = false (set on every server): admin only, immutable users, root locked.
+# enable = false: admin only, immutable users, root locked.
 # /etc/nixos's owner follows it (modules/server/default.nix).
 { config, lib, ... }:
 let
@@ -24,7 +24,7 @@ in
       isNormalUser = true;
       extraGroups = [ "wheel" ];
       # No hashedPassword/hashedPasswordFile: with mutableUsers the existing
-      # /etc/shadow hash stays. Host-specific bits: hosts/m2mini.
+      # /etc/shadow hash stays.
     };
   };
 }

@@ -1,13 +1,13 @@
 # authentik (SSO / OIDC identity provider), namespace `authentik`.
 #
 #   chart.nix       server + worker (authentik Helm chart), one of each per node
-#   postgres.nix    PostgreSQL 17 StatefulSet, data on m2mini (hostPath PV)
-#   backup.nix      daily `pg_dump -Fc` CronJob to r440 (14 kept)
+#   postgres.nix    PostgreSQL StatefulSet, data in a node-local volume
+#   backup.nix      daily `pg_dump -Fc` CronJob to a node-local volume
 #   blueprints.nix  OIDC clients and groups (blueprints/*.yaml)
 #
 # The Secret `authentik-secrets` (settings.nix) is sops-encrypted in
 # k8s/secrets/authentik/; until it is applied the pods wait in
-# CreateContainerConfigError. Public at https://auth.neuros.is through
+# CreateContainerConfigError. Public at cluster.authentik.host through
 # apps/cloudflared. Docs: docs/k8s/apps.md#authentik
 { ... }:
 let

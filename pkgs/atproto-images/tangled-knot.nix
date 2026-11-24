@@ -5,7 +5,7 @@
 let
   inherit (pkgsUnstable) lib;
 
-  # Cargo.toml's rust-version (1.99) is newer than the flake's nixpkgs rustc.
+  # Built with nixpkgs-unstable: Cargo.toml's rust-version needs its rustc.
   knot-server = pkgsUnstable.rustPlatform.buildRustPackage (finalAttrs: {
     pname = "knot-server";
     version = "1.20.1";

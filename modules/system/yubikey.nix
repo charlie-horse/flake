@@ -2,7 +2,7 @@
 # file (sops.defaultSopsFile, secrets/<hostname>.yaml):
 #
 #   pam-yubikeys    pam_u2f mappings, linked to ~/.config/Yubico/u2f_keys:
-#                   `charlie:<keyHandle>,<pubkey>,es256,+presence`, one line,
+#                   `<user>:<keyHandle>,<pubkey>,es256,+presence`, one line,
 #                   from `pamu2fcfg -o pam://sortofasian -i pam://sortofasian`.
 #
 # The PAM side is custom.auth.desktopU2f (modules/system/auth), which this

@@ -1,11 +1,11 @@
-# Open WebUI (chat front-end for c4130's vLLM), namespace `open-webui`.
+# Open WebUI (chat front-end for vLLM), namespace `open-webui`.
 #
-#   https://chat.neuros.is (cluster.openWebui.host) -> cloudflared + nginx
+#   https://<cluster.openWebui.host> -> cloudflared + nginx
 #     (apps/cloudflared) -> Service open-webui at the fixed
 #     ClusterIP cluster.openWebui.serviceIP -> pod :8080
-#   models: vLLM's OpenAI-compatible API on c4130 (LAN, port 8000)
+#   models: vLLM's OpenAI-compatible API (vllmUrl)
 #
-# One replica (SQLite), data on r440 (hostPath PV). Login: local form plus
+# One replica (SQLite), data in a node-local volume. Login: local form plus
 # OIDC via authentik's provider `open-webui` (group `local-ai`); roles are
 # never taken from authentik. Secret open-webui/open-webui-secrets (sops:
 # WEBUI_SECRET_KEY, OAUTH_CLIENT_SECRET), read at start.

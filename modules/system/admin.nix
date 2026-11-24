@@ -1,9 +1,7 @@
-# Local accounts on every host (desktops via modules/, servers via
-# modules/server/default.nix): admin (the only wheel account, FIDO2 SSH
-# login, password from the plaintext sops key `admin-password` in
-# secrets/common.yaml via custom.sopsPasswords), root locked wherever users
-# are immutable, users.mutableUsers = false by default. Details and the
-# lockout risk: docs/auth.md, "sops-nix on the hosts".
+# Local accounts on every host: admin (the only wheel account, FIDO2 SSH
+# login, password from sops via custom.sopsPasswords) and root, locked
+# wherever users are immutable. Details and the lockout risk: docs/auth.md,
+# "sops-nix on the hosts".
 {
   config,
   lib,

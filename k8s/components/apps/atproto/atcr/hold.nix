@@ -1,6 +1,6 @@
 # ATCR hold (blob service with its own embedded PDS, did:web:<atcrHold.host>).
 #
-#   https://hold.neuros.is (cluster.atcrHold.host) -> cloudflared + nginx
+#   https://<cluster.atcrHold.host> -> cloudflared + nginx
 #     (apps/cloudflared) -> Service atcr-hold at the fixed ClusterIP
 #     cluster.atcrHold.serviceIP -> nginx sidecar :8081
 #       /atcr-blobs/...  -> Garage :3900 (S3, presigned URLs)
@@ -9,7 +9,7 @@
 # The hold's S3 endpoint is that public URL, so the presigned URLs it hands
 # to the AppView and to docker clients resolve everywhere. The Service
 # publishes not-ready pods: the hold reaches Garage through itself.
-# Embedded PDS (SQLite, signing key) on r440 at /var/lib/atcr/hold.
+# Embedded PDS (SQLite, signing key) in a node-local volume.
 {
   lib,
   cluster,

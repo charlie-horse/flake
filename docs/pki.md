@@ -8,6 +8,11 @@ declared in `cluster/definition.nix`, `cluster/pki/`,
 inventory of every secret is [secrets.md](secrets.md); how hosts decrypt
 sops files is [auth.md](auth.md#sops-nix-on-the-hosts).
 
+Terms: a **root CA** signs **intermediate** CAs; an intermediate signs
+**leaves** (the certs servers and clients use). **cert-manager** is the
+in-cluster service that issues and renews certs. The **export job** copies
+the issued leaves into git for the hosts.
+
 - [Bootstrap PKI and workload PKI](#bootstrap-pki-and-workload-pki)
 - [YubiKey root CA](#yubikey-root-ca)
 - [Where certs come from](#where-certs-come-from)
@@ -52,7 +57,7 @@ fingerprints: `cluster/pki/`.
   9c and the sops key in 82. The root key has no copy.
 - **Never touch slot 82.**
 - **PIN, PUK and management key** are shared with the sops key. The PIN is
-  held by the user, offline. The PUK is in `secrets/admin.yaml`. The
+  never stored in git. The PUK is in `secrets/admin.yaml`. The
   management key is PIN-protected on the card, so `ykman` asks for the PIN
   when it writes slot 9c. Never put the PIN on a command line or in shell
   history.
@@ -60,8 +65,8 @@ fingerprints: `cluster/pki/`.
   decrypt, so read the PUK from `secrets/admin.yaml` with `admin_backup`.
 - **Card lost, broken or reset:** the root is gone; re-root every
   intermediate under a new root. sops survives through `admin_backup`.
-- The card travels with the user and is never parked in a host. The user
-  runs every signing step.
+- Never leave the card in a host. Only the card holder runs signing
+  steps.
 
 ### Tools: ca-ceremony-tools
 
@@ -83,12 +88,14 @@ desktop with pcscd needs nothing else; on a server, `sudo -i`, then
 
 ## Where certs come from
 
-cert-manager renews a leaf 30 days before expiry; the CronJob
-`cluster-pki/pki-export` opens a PR `pki-renew/<date>` with
-`secrets/pki/<node>.yaml` within a day. Merge it and switch each host
+cert-manager renews a leaf `renewBefore` its expiry
+(`k8s/components/infra/cluster-pki/settings.nix`); the CronJob
+`cluster-pki/pki-export` then opens a PR `pki-renew/<date>` with
+`secrets/pki/<node>.yaml`. Merge it and switch each host
 ([cluster.md, Changing a host](cluster.md#changing-a-host)). If a renewal
-PR sits unmerged, the export job starts failing once a cert on `main` is
-within 14 days of expiry: a failed `pki-export` run is the signal.
+PR sits unmerged, the export job fails once a cert on `main` is within
+`EXPIRY` of expiry (`pkgs/pki-tools/pki/validate.py`): a failed
+`pki-export` run is the signal.
 
 ### On the nodes: `/run/secrets/pki/`
 
@@ -208,7 +215,7 @@ image never reaches the cluster without one. Build locally with
 
 Secret `cluster-pki/pki-export-github`, key `token`, from
 `k8s/secrets/cluster-pki/pki-export-github.sops.yaml`. To renew it (at
-most a year after creation; an admin, with the YubiKey):
+most a year after creation; needs the YubiKey):
 
 1. GitHub > Settings > Developer settings > Fine-grained tokens. Resource
    owner charlie-horse, "Only select repositories": charlie-horse/flake.

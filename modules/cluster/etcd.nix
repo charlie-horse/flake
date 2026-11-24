@@ -1,9 +1,9 @@
 # etcd member on nodes with the "etcd" role.
 #
-# Member names and peer URLs must match the running cluster (r440, c4130,
-# m2mini; https://<name>:2380): changing them is a membership change. <name>
-# resolves to the node's tailnet IP via MagicDNS. initialCluster/-State only
-# matter when a data dir is created; existing members ignore them.
+# Member names and peer URLs must match the running cluster: changing them
+# is an etcd membership change. <name> resolves through MagicDNS
+# (Tailscale's DNS). initialCluster/-State only matter when a data dir is
+# created; existing members ignore them.
 {
   config,
   lib,
@@ -13,7 +13,7 @@
 let
   cfg = config.clusterNode;
   name = cfg.name;
-  # Order is cosmetic; kept fixed for a stable env.
+  # Fixed member order, so the generated config stays the same.
   memberOrder = [
     "r440"
     "c4130"

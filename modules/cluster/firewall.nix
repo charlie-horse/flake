@@ -1,17 +1,8 @@
-# Cluster ports, open to the cluster nodes only (iptables nixos-fw chain):
-#   tcp 2379, 2380   etcd client/peer     (etcd nodes)
-#   tcp 6443         kube-apiserver / VIP (controlPlane nodes, and the
-#                                          HAProxy on other VIP nodes)
-#   tcp 10250        kubelet              (workers)
-#   udp 8472         flannel VXLAN        (workers)
-#   VRRP (proto 112) keepalived           (every node)
-# and tcp 443 (public HTTPS, forwarded by the router to r440) from
-# anywhere, on every node.
-# Sources: every node's LAN IP and the VIP. tailscale0 carries most
-# node-to-node traffic (the cluster names resolve to tailnet IPs): it is
-# trusted on nodes with trustTailscale = true (default); otherwise only the
-# node's cluster ports above are opened on it (c4130). Pods (podCidr) may reach the local apiserver
-# and kubelet (in-cluster clients, metrics-server).
+# Firewall: opens each role's cluster ports (etcd, apiserver, kubelet,
+# flannel, VRRP) to the cluster nodes' LAN IPs and the VIP only, and tcp 443
+# to anyone. tailscale0 is trusted when trustTailscale is set; otherwise
+# only the cluster ports are opened on it. Pods may reach the local
+# apiserver and kubelet.
 {
   config,
   lib,

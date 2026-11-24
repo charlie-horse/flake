@@ -95,7 +95,7 @@ in
           svelte-language-server
           typescript-language-server
           vscode-langservers-extracted
-          # Renamed from dockerfile-language-server-nodejs.
+          # dockerfile-language-server, or its older name.
           (pkgs.dockerfile-language-server or dockerfile-language-server-nodejs)
         ])
         ++ (with (pkgs.callPackage ./customBins.nix { }); [

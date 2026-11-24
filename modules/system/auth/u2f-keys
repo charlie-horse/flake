@@ -2,8 +2,7 @@
 # (modules/system/auth/default.nix). Public data (key handles and public
 # keys), safe in git.
 #
-# One admin line, three credentials (the first is YubiKey 19830800). More
-# keys go on the SAME line with
+# One admin line. More keys go on the SAME line with
 # `pamu2fcfg -n -o pam://neurosis -i pam://neurosis`
 # (docs/auth.md, "Registering the keys"). hardwareFactor also needs a
 # second sk- key in modules/system/admin.nix.

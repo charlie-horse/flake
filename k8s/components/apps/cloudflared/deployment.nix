@@ -3,13 +3,11 @@
 # connector on every node and keeps serving while any node is down;
 # Cloudflare balances between the connectors.
 #
-# hostNetwork, on purpose: the nginx sidecar's connections to the ClusterIPs
-# then leave from the node's own addresses (kube-proxy picks cni0 10.244.N.1
-# or flannel.1 10.244.N.0 as source), and authentik trusts X-Forwarded-*
-# only from those (apps/authentik/chart.nix). An ordinary pod (10.244.N.2
-# and up) can therefore not forge a client IP. Both containers listen on
-# loopback only (nginx 9190, cloudflared's metrics 20250), so nothing is
-# exposed on the nodes.
+# Must use hostNetwork: the nginx sidecar's connections to the ClusterIPs
+# then leave from the node's own addresses (cni0 .1 or flannel.1 .0 of the
+# node's pod CIDR), the only ones authentik trusts for X-Forwarded-*
+# (apps/authentik/chart.nix). Both containers listen on loopback only
+# (files.nix ports), so nothing is exposed on the nodes.
 {
   lib,
   cluster,
@@ -35,8 +33,8 @@ in
     spec = {
       replicas = lib.length (lib.attrNames cluster.nodes);
       selector.matchLabels = labels;
-      # hostNetwork + fixed loopback ports: never two on one node, so replace
-      # one at a time instead of surging.
+      # hostNetwork + fixed loopback ports: never two on one node, so
+      # replace one at a time, no surge.
       strategy = {
         type = "RollingUpdate";
         rollingUpdate = {

@@ -22,7 +22,7 @@ entries:
       name: kubernetes
       client_type: public
       client_id: kubernetes
-      # authentik >= 2026.x allows only the listed grants (empty = none):
+      # authentik allows only the listed grants (empty = none):
       # the browser login (code + PKCE) and kubelogin's silent renewals.
       grant_types:
         - authorization_code

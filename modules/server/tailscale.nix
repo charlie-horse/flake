@@ -1,5 +1,5 @@
-# Tailscale on every server (c4130, r440, m2mini), declaratively. The flags
-# below match the live prefs (`tailscale debug prefs`); per-host values are
+# Tailscale on every server, declaratively. The flags below must match the
+# live prefs (`tailscale debug prefs`); per-host values are
 # server.tailscale.* in configuration.nix.
 #
 #   - tailscaled-set (every start of the unit: boot, any switch that changes
@@ -92,7 +92,7 @@ in
       description = "Tailscale's netfilter mode (NetfilterMode).";
     };
     authKeyFile = mkOption {
-      # A string on purpose: a Nix path would copy the key into the store.
+      # Must be a string: a Nix path would copy the key into the store.
       type = types.str;
       default = "/var/lib/tailscale/authkey";
       description = ''

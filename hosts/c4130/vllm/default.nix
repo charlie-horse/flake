@@ -11,25 +11,23 @@
     enable = true;
     # Only one model fits on the GPUs at a time.
     activeModel = "qwen3.8-27b";
-    # API (8000); no authentication.
+    # Interfaces the API is open on. The API has no authentication.
     firewallInterfaces = [
       "eno1"
       "tailscale0"
     ];
-    # Up to 20 concurrent sequences. KV cache is
-    # ~979K tokens, so 20 long requests share it; above 2 the M<=2 decode
-    # fast paths (VLLM_SM70_MODELOPT_NVFP4_GEMV, ..._MOE_QPN_DECODE) give way
-    # to the batched kernels: more total throughput, less tok/s per request.
+    # Concurrent sequences. Above 2, the M<=2 decode fast paths
+    # (VLLM_SM70_MODELOPT_NVFP4_GEMV, ..._MOE_QPN_DECODE) give way to the
+    # batched kernels: more total throughput, less speed per request.
     models.flint.maxNumSeqs = 20;
-    # Qwen 3.8 27B FP8 + DFlash2 has ~155K tokens of KV; at 4+ concurrent
-    # requests it runs out and total throughput drops. Keep this at 3.
+    # Keep at 3 or less: with more concurrent requests its KV cache (vLLM's
+    # per-token attention memory) runs out and total throughput drops.
     models."qwen3.8-27b".maxNumSeqs = 3;
-    # Serve Flint with vllm-sm70's sm_70 model class. Without the override
-    # vLLM loads upstream's FlintForCausalLM, which needs FlashInfer and bf16
-    # (not available on V100). `args` replaces the built-in list, so this is
-    # the module's Flint list (parser flags: vllm_sm70.reasoning plugin +
-    # glm47_sm70, as in nix/module.nix) plus --hf-overrides; `--dtype half` is already
-    # in the module's common args for every model.
+    # Serves Flint with vllm-sm70's sm_70 model class (--hf-overrides);
+    # upstream's FlintForCausalLM needs FlashInfer and bf16, which V100 lacks.
+    # `args` replaces the module's Flint list (nix/module.nix in vllm-sm70),
+    # so keep this a copy of it plus --hf-overrides. The module's common
+    # args already add `--dtype half`.
     models.flint.args = [
       "--kv-cache-dtype"
       "auto"
@@ -53,7 +51,7 @@
     # L1 is pinned RAM, allocated in full at startup. Keep L1 + the active
     # model's vLLM RAM peak + ~30 GB under 125 GB.
     l1SizeGb = 64;
-    # L2 on c4130's root disk, kept small for disk space. The pruner trims to
+    # L2 lives on the root disk; keep it small. The pruner trims it to
     # <= 80% of this.
     l2SizeGb = 32;
     # Dashboard (8081); no authentication.

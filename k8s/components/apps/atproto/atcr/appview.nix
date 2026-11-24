@@ -1,13 +1,13 @@
 # ATCR AppView: OCI distribution API and web UI, did:web:<atcr.host>.
 #
-#   https://cr.neuros.is (cluster.atcr.host) -> cloudflared + nginx
+#   https://<cluster.atcr.host> -> cloudflared + nginx
 #     (apps/cloudflared) -> Service atcr-appview at the fixed ClusterIP
 #     cluster.atcr.serviceIP -> pod :5000
 #
 # Manifests go to each user's own PDS; blobs to the default hold
 # (did:web:<atcrHold.host>). Pushed layers stream through this pod in 10 MB
 # parts to the hold's presigned S3 URLs; pulls are redirected to them.
-# SQLite (OAuth sessions, JWT and OAuth keys) on r440 at /var/lib/atcr/appview.
+# SQLite (OAuth sessions, JWT and OAuth keys) in a node-local volume.
 {
   lib,
   cluster,

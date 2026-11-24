@@ -1,7 +1,6 @@
 # kube-apiserver, kube-controller-manager and kube-scheduler on nodes with
-# the "controlPlane" role. Every controlPlane node runs all three; the
-# controller-manager and scheduler use leader election, and talk to their
-# local apiserver. Authorization is Node,RBAC (no AlwaysAllow).
+# the "controlPlane" role. The controller-manager and scheduler talk to the
+# local apiserver; leader election picks one active instance of each.
 {
   config,
   lib,
@@ -36,18 +35,16 @@ let
   controllerManagerKubeconfig = kubeconfig "kube-controller-manager" "controller-manager";
   schedulerKubeconfig = kubeconfig "kube-scheduler" "scheduler";
 
-  # OIDC (on when cluster/definition.nix has `oidc`): authentik's provider
-  # `kubernetes` (blueprint: k8s/components/apps/authentik/blueprints/
-  # kubernetes-oidc.yaml). Usernames and groups are prefixed `oidc:`, so a token can never claim a built-in
-  # identity (system:masters, system:nodes, ...); RBAC binds
-  # oidc:cluster-admins (k8s/components/infra/rbac.nix). x509 client certs and
-  # service-account tokens never depend on the issuer: if authentik is down
-  # only OIDC logins fail, and the admin cert is the break-glass.
+  # OIDC (OpenID Connect) logins with tokens from authentik's providers
+  # (k8s/components/apps/authentik/blueprints/). Usernames and groups get
+  # the prefix `oidc:`, so a token can never claim a built-in identity such
+  # as system:masters; RBAC grants rights to them in
+  # k8s/components/infra/rbac.nix. Client certs and service-account tokens
+  # work without the issuer.
   #
-  # One JWT authenticator per issuer: the main one (issuerUrl/audiences) plus
-  # extraIssuers. authentik's issuer is per provider, so every OIDC client
-  # (kubernetes for kubectl, headlamp for Headlamp) is its own issuer. The
-  # claim mappings are the same for all of them.
+  # One JWT authenticator per issuer: issuerUrl/audiences plus
+  # extraIssuers, all with the same claim mappings. Each authentik provider
+  # is its own issuer.
   oidc = cfg.oidc;
   jwtAuthenticator =
     { issuerUrl, audiences }:
@@ -70,10 +67,8 @@ let
           prefix = "oidc:";
         };
       };
-      # (The signature algorithm is a JOSE header, not a claim: CEL
-      # cannot see it. The apiserver accepts the asymmetric algorithms
-      # of the issuer's JWKS; authentik signs RS256 with its
-      # self-signed key pair.)
+      # No rule on the signature algorithm: it is a token header, not a
+      # claim, so these rules cannot see it.
       claimValidationRules = [
         {
           message = "token is expired";
@@ -236,8 +231,8 @@ in
         "--cluster-name=${cluster.name}"
         "--authentication-kubeconfig=${controllerManagerKubeconfig}"
         "--authorization-kubeconfig=${controllerManagerKubeconfig}"
-        # No --cluster-signing-*: the CA key never leaves the operator
-        # machine, so the CSR signer is off (static kubelet certs).
+        # No --cluster-signing-*: the CA key is not on the nodes, so the
+        # CSR signer is off and kubelet certs are static.
       ];
     };
 

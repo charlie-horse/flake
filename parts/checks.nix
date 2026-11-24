@@ -47,7 +47,7 @@
               touch $out
             '';
 
-        # pki-tools (pytest runs in its checkPhase) and the image
+        # pki-tools (pytest runs in its checkPhase) and its image, which
         # pki-export-image.yml pushes from main.
         pki-tools = self'.packages.pki-export;
         pki-export-image = self'.packages.pki-export-image;

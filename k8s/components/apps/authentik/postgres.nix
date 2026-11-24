@@ -1,6 +1,6 @@
 # PostgreSQL for authentik: a plain StatefulSet (official postgres image,
-# not the chart's bundled subchart), single instance, data on m2mini's NVMe
-# (hostPath PV /var/lib/authentik/postgres).
+# not the chart's bundled subchart), single instance, data in a node-local
+# volume (/var/lib/authentik/postgres).
 #
 # The image's entrypoint starts as root, chowns PGDATA and drops to the
 # postgres user (gosu), so this pod is `baseline`, not `restricted`. PGDATA

@@ -1,14 +1,15 @@
 # Tranquil PDS (ATProto Personal Data Server), namespace `atproto`.
 #
-#   https://pds.neuros.is (cluster.tranquilPds.host) and every
-#     *.<handleDomain> (handle resolution) -> cloudflared + nginx
+#   https://<cluster.tranquilPds.host> -> cloudflared + nginx
 #     (apps/cloudflared) -> Service tranquil-pds at the fixed ClusterIP
 #     cluster.tranquilPds.serviceIP -> pod :3000
+#   https://*.<handleDomain> (handle resolution) -> apps/atproto-edge
+#     -> the same Service
 #
-# One replica; repos in PostgreSQL (./postgres.nix), blobs on r440 (hostPath
-# PV). Accounts are did:web:<handle>, hosted here, or did:plc. Login: password/passkey, or SSO through authentik's
-# provider `tranquil-pds` (group `pds-users`); new accounts need an invite
-# code either way. Secret atproto/tranquil-pds-secrets (sops). Image:
+# One replica; repos in PostgreSQL (./postgres.nix), blobs in a node-local
+# volume. Accounts are did:web:<handle>, hosted here, or did:plc. Login:
+# password/passkey, or SSO through authentik's provider `tranquil-pds`
+# (group `pds-users`); new accounts need an invite code either way. Secret atproto/tranquil-pds-secrets (sops). Image:
 # pkgs/atproto-images/tranquil-pds.nix, pushed to GHCR by
 # .github/workflows/atproto-images.yml; replicas 0 while digest is null.
 # Operating it: docs/k8s/apps.md#tranquil-pds

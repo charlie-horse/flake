@@ -1,13 +1,9 @@
 {
   inputs = {
-    # Two nixpkgs, pinned by flake.lock (`nix flake update <name>` to move
-    # one deliberately):
-    #   nixpkgs           nixos-26.05: the servers (c4130, r440, m2mini),
-    #                     the per-system packages/apps and the flake-parts
-    #                     skeleton.
-    #   nixpkgs-unstable  nixos-unstable: ONLY the desktop (Famine), its ISO and
-    #                     the flake-level `lib` that mkHost passes it. Every
-    #                     desktop-side input follows it.
+    # Two nixpkgs, pinned by flake.lock (`nix flake update <name>` moves one):
+    #   nixpkgs           the servers, the per-system packages and apps.
+    #   nixpkgs-unstable  only the desktops, their ISOs and the flake-level
+    #                     `lib`. Every desktop-side input follows it.
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
 
@@ -15,7 +11,7 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
 
-    # ---- Desktops (mkHost: Famine) --------------------------------------
+    # ---- Desktops (mkHost) ----------------------------------------------
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs-unstable";
 
@@ -26,33 +22,21 @@
     aagl.inputs.nixpkgs.follows = "nixpkgs-unstable";
 
     # ---- Secrets (every host) --------------------------------------------
-    # sops-nix (modules/system/sops.nix): secrets/*.yaml, encrypted to the
-    # hosts' SSH host keys (via ssh-to-age) and the admins' age keys, see
-    # .sops.yaml. Follows `nixpkgs` (26.05) on purpose, Famine included:
-    # modules/system/sops.nix takes sops-install-secrets (`sops.package`,
-    # from sops-nix's packages) and the pre-switch check's `sops` and
-    # `ssh-to-age` from sops-nix's own nixpkgs, because Famine's
-    # nixpkgs-unstable pin is too old (its sops 3.9.1 ignores
-    # SOPS_AGE_KEY_CMD, so the check would always fail). Do not repoint
-    # this follows to nixpkgs-unstable. `nix flake update sops-nix` to move
-    # it.
+    # sops-nix (modules/system/sops.nix) decrypts secrets/*.yaml on the hosts.
+    # Must follow `nixpkgs`, not nixpkgs-unstable: modules/system/sops.nix
+    # takes its sops tools from sops-nix's nixpkgs, on the desktops too.
     sops-nix.url = "github:Mic92/sops-nix";
     sops-nix.inputs.nixpkgs.follows = "nixpkgs";
 
-    # ---- Servers (mkServer: c4130, r440, m2mini) -------------------------
-    # All on `nixpkgs` (nixos-26.05).
+    # ---- Servers (mkServer) ----------------------------------------------
+    # All on `nixpkgs`.
 
-    # c4130 vLLM (packages + nixosModules.vllm/lmcache):
-    # charlie-horse/vllm-sm70 (upstream vLLM + sm_70 patch series).
-    # No nixpkgs.follows: vllm-sm70 builds with its own pinned nixpkgs, so a
-    # host nixpkgs bump (update.yml) cannot change the gated build.
-    # Tracks the gated branch `latest`, which moves only after main CI, the
-    # c4130 check, the GPU gate and release sign-off (same commit). The rev
-    # is locked in flake.lock; `nix flake update vllm-fork` to move it.
-    # docs/hosts/c4130-vllm.md.
+    # vLLM for V100 GPUs (packages + nixosModules.vllm/lmcache).
+    # Must not follow `nixpkgs`: vllm-sm70 builds with its own pinned nixpkgs.
+    # Tracks the gated branch `latest`. docs/hosts/c4130-vllm.md.
     vllm-fork.url = "github:charlie-horse/vllm-sm70/latest";
 
-    # m2mini's Asahi support (pinned rev; bump deliberately).
+    # m2mini's Asahi (Apple Silicon) support, pinned to a rev.
     apple-silicon-m2mini.url = "github:nix-community/nixos-apple-silicon/57a14ae9be0eaf7bf66e95490ed2d7c6f4bd4c9e";
     apple-silicon-m2mini.inputs.nixpkgs.follows = "nixpkgs";
 
@@ -65,7 +49,7 @@
 
     # Kubernetes manifests in Nix (k8s/ renders every in-cluster resource).
     catenix.url = "github:charlie-horse/catenix";
-    # One nixpkgs for the renders (helm, kubeconform): the nodes' 26.05.
+    # The renders (helm, kubeconform) use the servers' nixpkgs.
     catenix.inputs.nixpkgs.follows = "nixpkgs";
   };
 

@@ -4,9 +4,8 @@
     fontDir.enable = true;
     packages =
       with pkgs;
-      # nixos-unstable split the `nerdfonts` bundle into `nerd-fonts.<font>`
-      # and removed it. Same fonts and family names either way; keep only
-      # the first branch once flake.lock's nixpkgs-unstable has nerd-fonts.
+      # `nerd-fonts.<font>` where nixpkgs has it, else the `nerdfonts`
+      # bundle. Same fonts and family names either way.
       (
         if pkgs ? nerd-fonts then
           [

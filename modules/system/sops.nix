@@ -38,10 +38,8 @@ let
 
   mkpasswd = "${pkgs.mkpasswd}/bin/mkpasswd";
 
-  # The nixpkgs sops-nix follows (`nixpkgs`, 26.05), for the sops tools the
-  # pre-switch check runs: Famine's nixpkgs-unstable has sops 3.9.1, which
-  # ignores SOPS_AGE_KEY_CMD (3.10+), so the check would always fail there.
-  # On the servers these are the same derivations as their own pkgs'.
+  # The nixpkgs sops-nix follows, for the sops tools the pre-switch check
+  # runs. The check needs sops 3.10+ (SOPS_AGE_KEY_CMD).
   sopsNixPkgs = inputs.sops-nix.inputs.nixpkgs.legacyPackages.${pkgs.stdenv.hostPlatform.system};
 in
 {
@@ -155,12 +153,10 @@ in
     };
 
     sops = {
-      # sops-install-secrets from sops-nix's own flake packages, i.e. built
-      # with the nixpkgs sops-nix follows (`nixpkgs`, 26.05), not with the
-      # host's pkgs: Famine's nixpkgs-unstable is too old for it (its go
-      # 1.23 < the go 1.26 sops-nix's go.mod needs). On the servers this is
-      # the very same derivation as the default. validationPackage (the
-      # manifest check at build time) defaults to this package when not
+      # sops-install-secrets from sops-nix's own flake packages, built with
+      # the nixpkgs sops-nix follows, not with the host's pkgs (it needs a
+      # newer Go than nixpkgs-unstable may have). validationPackage (the
+      # build-time manifest check) defaults to this package when not
       # cross-compiling.
       package = inputs.sops-nix.packages.${pkgs.stdenv.hostPlatform.system}.sops-install-secrets;
       # This one file in the store, not the flake source (see the header).
@@ -223,8 +219,8 @@ in
       failed=0
       for f in ${lib.escapeShellArgs sopsFiles}; do
         # Only the host key: no ~/.config/sops, ~/.ssh or SOPS_AGE_* from
-        # the caller's environment. (SOPS_AGE_SSH_PRIVATE_KEY_FILE did not
-        # work with sops 3.13; SOPS_AGE_KEY_CMD + ssh-to-age does.)
+        # the caller's environment. The key goes through SOPS_AGE_KEY_CMD +
+        # ssh-to-age (SOPS_AGE_SSH_PRIVATE_KEY_FILE does not work).
         if (cd / && env -i HOME="$home" \
           SOPS_AGE_KEY_CMD="${sopsNixPkgs.ssh-to-age}/bin/ssh-to-age -private-key -i $key" \
           ${sopsNixPkgs.sops}/bin/sops -d "$f" >/dev/null 2>"$home/err"); then

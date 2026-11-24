@@ -1,8 +1,8 @@
 # The edge's certificate, deferred component `apps/atproto-edge-certs`:
 # Certificate atproto-edge/at-wildcard-tls for *.<handleDomain> from the
 # ClusterIssuer letsencrypt-production (ACME DNS-01 via Cloudflare).
-# Deferred because cert-manager's webhook validates every cert-manager.io
-# object (failurePolicy Fail). Renewal check: docs/k8s/apps.md#atproto-tls-edge
+# Deferred, like every cert-manager.io object (docs/k8s/README.md#deferred-components).
+# Renewal check: docs/k8s/apps.md#atproto-tls-edge
 {
   pkgs,
   catenix,

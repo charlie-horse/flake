@@ -1,5 +1,6 @@
 # Pestilence (archived)
 
-Not a flake output: neither built nor checked.
-`servarr.nix` holds a plaintext Transmission `rpc-password`; move it out of
-git before restoring the host.
+Config of an archived host. It is not a flake output: nothing builds or
+checks it. Before restoring it, move the plaintext Transmission
+`rpc-password` in `servarr.nix` out of git into sops
+([docs/secrets.md](../../docs/secrets.md)).

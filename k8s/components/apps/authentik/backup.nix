@@ -1,5 +1,5 @@
-# Daily `pg_dump -Fc` of authentik's database to r440 (hostPath PV
-# /var/lib/authentik/backup; the PV's node affinity puts the job there).
+# Daily `pg_dump -Fc` of authentik's database to a node-local volume
+# (/var/lib/authentik/backup; the PV's node affinity places the job).
 # Keeps the newest 14 dumps.
 { k8sLib, ... }:
 let

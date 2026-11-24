@@ -5,6 +5,18 @@ authentication policy (`custom.auth`, `modules/system/auth/`). What each
 option sets is in the module. The inventory of every secret is
 [secrets.md](secrets.md); the cluster PKI is [pki.md](pki.md).
 
+Terms:
+
+- **sops** encrypts secret files so they can live in git. Each file is
+  encrypted to a list of **recipients** (public keys); any matching
+  private key decrypts it. **sops-nix** decrypts them on a host at
+  activation.
+- **FIDO2 key**: a hardware security key such as a YubiKey. **pam_u2f**
+  lets sudo and login ask for a touch on it; **rssh** (pam_rssh) lets sudo
+  accept a signature from the key through a forwarded SSH agent.
+- **The factor**: `custom.auth.hardwareFactor`, which makes sudo and
+  console login require the key.
+
 - [sops-nix on the hosts](#sops-nix-on-the-hosts)
 - [custom.auth](#customauth)
   - [Registering the keys](#registering-the-keys)
@@ -28,7 +40,7 @@ Recipients are in `.sops.yaml`; the host module is `modules/system/sops.nix`.
 - **A file other than the host's own** is selected with
   `sopsFile = builtins.path { path = "${inputs.self}/secrets/<file>.yaml"; name = "<file>.yaml"; }`.
   Never a bare `"${inputs.self}/secrets/..."` (every system then depends on
-  the whole flake source) or a relative `../../secrets` (breaks on the
+  the whole flake source) or a relative `../../secrets` (fails on the
   desktops).
 - **Pre-switch check.** A switch the host could not decrypt is refused
   (`system.preSwitchChecks.sopsDecrypt`). Don't skip it with
@@ -51,9 +63,8 @@ Rules:
   shell there.** Plug a YubiKey into a host only deliberately and briefly,
   and unplug it when done.
 - **Forward the agent only to the host you are working on**, and touch the
-  key only for a sudo you started: root on a connected host can ask your
-  agent for signatures, and a touch can be spent on sudo elsewhere.
-  `ssh-add -c` (confirm each use) narrows this.
+  key only for a sudo you started: root on any host holding your agent can
+  ask it for signatures. Use `ssh-add -c` (confirm each use) to limit this.
 - With the factor on, use sudo over SSH, not `pkexec`/`run0`: polkit's
   agent usually does not see `SSH_AUTH_SOCK`.
 - With the factor on, a failed sudo still says `3 incorrect password
@@ -62,7 +73,7 @@ Rules:
 
 ### Registering the keys
 
-**Prerequisite: two FIDO2 keys**, the YubiKey 19830800 plus a second one,
+**Prerequisite: two FIDO2 keys**, the admin YubiKey plus a second one,
 kept apart. Evaluation refuses `hardwareFactor.enable` until both steps
 are done for both keys.
 
@@ -138,8 +149,8 @@ With the factor on, a host needs a key for sudo **and** for console login.
 - **Both keys lost, a pre-factor generation still on the host.** Boot it
   from the boot menu; sudo and the console take the password there. Switch
   a commit with `custom.auth.hardwareFactor.enable = false;`. c4130 keeps
-  only the previous generation, so this route is gone there after the
-  second switch with the factor on.
+  only the previous generation (its GC step, [c4130.md](hosts/c4130.md)),
+  so this route is gone there after the second switch with the factor on.
 - **No such generation.** Physical access with rescue media (the NixOS
   installer; on m2mini an Asahi-capable USB installer):
   1. Mount the root filesystem and run `nixos-enter --root /mnt`.

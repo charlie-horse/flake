@@ -1,9 +1,11 @@
 # Remote builder and binary cache (r440)
 
-r440 builds for c4130 (`hosts/r440/builder.nix`, `hosts/c4130/builder.nix`)
-and serves its store as a binary cache (`hosts/r440/cache.nix`; clients:
-`custom.nixCache`; values: `cluster/definition.nix` `binaryCache`). The
-secrets are listed in [secrets.md](secrets.md).
+r440 is a **remote builder** for c4130 (c4130's Nix sends builds to it
+over SSH: `hosts/r440/builder.nix`, `hosts/c4130/builder.nix`) and serves
+its Nix store as a **binary cache** (a server other machines download
+finished builds from: `hosts/r440/cache.nix`; clients: `custom.nixCache`;
+host name and port: `cluster/definition.nix` `binaryCache`). The secrets
+are listed in [secrets.md](secrets.md).
 
 ## Remote builder
 
@@ -13,7 +15,8 @@ secrets are listed in [secrets.md](secrets.md).
   nix-daemon's memory cap fails with an OOM kill; retry it.
 - **r440 down:** build on c4130 with `--option max-jobs 4` and expect the
   RAM use.
-- Check from c4130: `sudo nix store ping --store ssh-ng://nixremote@10.25.0.2`.
+- Check from c4130: `sudo nix store ping --store ssh-ng://nixremote@<r440>`,
+  with `<r440>` the address in `hosts/c4130/builder.nix`.
 
 ## Binary cache
 
@@ -40,7 +43,9 @@ URL and key: change them together with `cluster/definition.nix`
 
 ### Adding or revoking a client
 
-A netrc is one line, `machine cache.neuros.is login <user> password <pw>`.
+A netrc (the file Nix reads the cache login from) is one line,
+`machine <cache host> login <user> password <pw>`; `<cache host>` is
+`binaryCache.host` in `cluster/definition.nix`.
 
 - **Revoke:** delete the user's line from `nix-cache-htpasswd`
   (`sops secrets/r440.yaml`), PR, switch r440. For CI, also delete the
@@ -55,11 +60,12 @@ A netrc is one line, `machine cache.neuros.is login <user> password <pw>`.
 
 ### Setting it up
 
-To build it from scratch, in this order; switch one host at a time and run the
+To set up the cache from scratch, in this order; switch one host at a time and run the
 [etcd health check](cluster.md#etcd-health-check-any-member-in-bash)
 after each server.
 
-1. Merge the change. Flux rolls the cloudflared pods. No host uses the
+1. Merge the config that enables the cache. Flux (the in-cluster
+   deployer) rolls the cloudflared pods. No host uses the
    cache until it is switched.
 2. **r440:** `git pull`, switch, `systemctl --failed`, the etcd check.
    nginx answers 500 until the htpasswd exists (step 3).

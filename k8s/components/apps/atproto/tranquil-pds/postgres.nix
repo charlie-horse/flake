@@ -1,5 +1,5 @@
 # PostgreSQL for Tranquil PDS: a plain StatefulSet (official image), single
-# instance, data on r440 (hostPath PV /var/lib/tranquil-pds/postgres).
+# instance, data in a node-local volume (/var/lib/tranquil-pds/postgres).
 #
 # The image's entrypoint starts as root, creates and chowns PGDATA (default
 # /var/lib/postgresql/18/docker, under the mount) and drops to the postgres

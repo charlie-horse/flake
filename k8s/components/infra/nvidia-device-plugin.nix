@@ -1,5 +1,5 @@
 # NVIDIA device plugin: advertises nvidia.com/gpu on the gpu nodes
-# (cluster.nodes.<n>.gpu; c4130's 2x V100). Pinned to them by the
+# (cluster.nodes.<n>.gpu). Pinned to them by the
 # nodeSelector nvidia.com/gpu.present=true, the label node.nix gives gpu
 # nodes; GPU feature discovery and NFD (the chart's optional extras) stay
 # off.
@@ -38,16 +38,14 @@ in
         gfd.enabled = false;
         nfd.enabled = false;
         deviceListStrategy = "envvar";
-        # The CDI spec the NixOS module generates on c4130 names the GPUs
-        # by index (hardware.nvidia-container-toolkit.device-name-strategy
-        # = "index": nvidia.com/gpu=0, =1, =all). With the default "uuid"
-        # the plugin would hand out NVIDIA_VISIBLE_DEVICES=GPU-<uuid>,
-        # which nvidia-container-runtime (CDI mode) turns into the
-        # unresolvable device nvidia.com/gpu=GPU-<uuid>.
+        # Must match the CDI spec's device names, which the NixOS module
+        # makes by index (hardware.nvidia-container-toolkit.device-name-strategy
+        # = "index": nvidia.com/gpu=0, =1, =all). "uuid" yields CDI devices
+        # (nvidia.com/gpu=GPU-<uuid>) that the runtime can't resolve.
         deviceIDStrategy = "index";
       };
       # The chart always renders the MPS control daemon (it only schedules
-      # on nodes labelled nvidia.com/mps.capable); MPS isn't used here.
+      # on nodes labelled nvidia.com/mps.capable); drop it, MPS is unused.
       patch =
         m:
         if m.kind == "DaemonSet" && m.metadata.name == "nvidia-device-plugin-mps-control-daemon" then

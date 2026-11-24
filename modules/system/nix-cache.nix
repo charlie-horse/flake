@@ -1,19 +1,15 @@
-# r440's Nix binary cache (harmonia) as a substituter: https://cache.neuros.is
-# with HTTP basic auth, the same URL on every host and in CI. Imported by
-# modules/server/default.nix and, for desktops, with modules/ wholesale.
-# Server side: hosts/r440/cache.nix.
+# The flake's Nix binary cache as a substituter (a place Nix downloads
+# built packages from), behind HTTP basic auth.
 #
-# Credential: a netrc line (`machine cache.neuros.is login <user> password
+# Credential: a netrc line (`machine <cache host> login <user> password
 # <pw>`), sops key `nix-cache-netrc` in secrets/<hostname>.yaml ->
 # /run/secrets/nix-cache-netrc; never in git, the store or a command line.
 #
-# Substituters are layered by priority (lower first): cache.nixos.org (40),
-# the CUDA cache on CUDA hosts (custom.nixCache.cuda, 45), then r440 (50),
-# which serves only what the public caches lack (our own builds, such as
-# vllm-sm70). A down cache or missing netrc must not break anything:
-# connect-timeout keeps an unreachable cache cheap, and fallback makes Nix
-# skip a failing cache for 60 s and build what it can't fetch.
-# Design, clients and setup: docs/build-cache.md#binary-cache.
+# Substituters are tried by priority, lower first: cache.nixos.org, the
+# CUDA cache (custom.nixCache.cuda), then this cache. A down cache or a
+# missing netrc must not break a build: connect-timeout keeps an
+# unreachable cache cheap, and fallback builds what Nix can't fetch.
+# Setup: docs/build-cache.md#binary-cache.
 {
   config,
   lib,
@@ -30,13 +26,12 @@ let
     ;
   cfg = config.custom.nixCache;
 
-  # Pure data, also read by hosts/r440/cache.nix and k8s/. Through
-  # inputs.self, not a relative path: mkHost imports modules/ from its own
-  # store copy, which has no ../cluster.
+  # Through inputs.self, not a relative path: mkHost imports modules/ from
+  # its own store copy, which has no ../cluster.
   cache = (import "${inputs.self}/cluster/definition.nix").binaryCache;
 
-  # nixpkgs' CUDA team cache (cache.nixos-cuda.org; its own default
-  # priority, 50, would tie r440's).
+  # nixpkgs' CUDA team cache. Its priority must stay below this cache's
+  # (asserted below).
   cudaCache = {
     url = "https://cache.nixos-cuda.org";
     publicKey = "cache.nixos-cuda.org:74DUi4Ye579gUqzH4ziL9IyiJBlDpMRn9MBN8oNan9M=";
@@ -44,14 +39,14 @@ let
 in
 {
   options.custom.nixCache = {
-    enable = mkEnableOption "r440's binary cache (https://${cache.host}) as a substituter";
+    enable = mkEnableOption "the flake's binary cache (https://${cache.host}) as a substituter";
 
     priority = mkOption {
       type = types.int;
       default = 50;
       description = ''
-        Substituter priority (lower first). cache.nixos.org is 40: it is a
-        CDN, while this cache comes through r440's uplink.
+        Substituter priority (lower first). Must stay above
+        cache.nixos.org's, so this cache serves only what that one lacks.
       '';
     };
 
@@ -72,7 +67,7 @@ in
       priority = mkOption {
         type = types.int;
         default = 45;
-        description = "Substituter priority: after cache.nixos.org, before r440's cache.";
+        description = "Substituter priority: after cache.nixos.org, before the flake's cache.";
       };
     };
   };
@@ -82,7 +77,7 @@ in
       assertions = [
         {
           assertion = !cfg.enable || cfg.cuda.priority < cfg.priority;
-          message = "custom.nixCache.cuda.priority must be lower than custom.nixCache.priority: r440's cache comes last.";
+          message = "custom.nixCache.cuda.priority must be lower than custom.nixCache.priority: the flake's cache comes last.";
         }
       ];
       nix.settings = {

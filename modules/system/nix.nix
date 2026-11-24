@@ -18,9 +18,7 @@ in
     ];
     auto-optimise-store = true;
     # trusted-users is root-equivalent (it can import unsigned store paths
-    # and set any nix option), so it follows wheel: root and admin only.
-    # The desktop user is not in wheel (modules/system/user.nix) and may
-    # only use the daemon.
+    # and set any nix option): root and admin only, never the desktop user.
     trusted-users = [
       "root"
       "admin"

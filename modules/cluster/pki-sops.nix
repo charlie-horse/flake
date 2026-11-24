@@ -112,7 +112,7 @@ let
     ]
   ) leaves;
 
-  # Static and identical on every control plane.
+  # The service-account key pair, the same on every control plane.
   saSecrets = lib.optionals hasCP [
     (secret {
       file = "sa.pub";

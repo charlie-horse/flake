@@ -33,7 +33,7 @@ let
         maxUnavailable = 1;
       };
     };
-    # Every node's taints (c4130: nvidia.com/gpu=vllm), so one lands on each.
+    # Every node's taints, so one lands on each node.
     tolerations = k8sLib.nodeTolerations;
     securityContext = {
       runAsNonRoot = true;
@@ -52,14 +52,13 @@ let
     };
   };
 
-  # Honour X-Forwarded-For/-Proto only from the tunnel's proxies: the
-  # in-cluster cloudflared + nginx (apps/cloudflared) run with hostNetwork on
-  # every node, so they reach the ClusterIP from that node's cni0
-  # (10.244.N.1) or flannel.1 (10.244.N.0) address (node podCIDRs: r440 .0,
-  # c4130 .1, m2mini .2), plus the nodes' LAN IPs and loopback for the
-  # healthchecks. Ordinary pods get .2 and up, so they cannot forge client
-  # IPs (authentik's default trusts all of 10/8). -Proto must stay trusted
-  # from the proxies, or the issuer would be http://.
+  # Honour X-Forwarded-For/-Proto only from the tunnel's proxies:
+  # cloudflared + nginx (apps/cloudflared) use hostNetwork, so they reach
+  # the ClusterIP from their node's cni0 (.1) or flannel.1 (.0) address in
+  # each node's pod CIDR, or from a LAN IP; loopback is for healthchecks.
+  # Ordinary pods get .2 and up, so they cannot forge client IPs. Must list
+  # one /31 per node pod CIDR. -Proto must stay trusted from the proxies,
+  # or the issuer becomes http://.
   trustedProxies = [
     "10.244.0.0/31"
     "10.244.1.0/31"

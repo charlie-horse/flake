@@ -20,15 +20,14 @@ let
   cluster = if lib.isFunction definition then definition { inherit lib; } else definition;
 
   # Kubernetes version the charts are rendered for (`helm template
-  # --kube-version`): the (26.05) nixpkgs `kubernetes` package the nodes run.
+  # --kube-version`). Must match the nixpkgs `kubernetes` package the nodes run.
   kubeVersion = "v1.36.3";
 
   # Component -> module (a file, or a directory with default.nix). The
   # name is also the component's directory in the render. Flux applies the
-  # whole tree (but `deferred`, below) as one Kustomization and orders
-  # namespaces and CRDs first by itself; for a manual bootstrap the order is
-  # infra/*, then flux, then apps/* (docs/k8s/README.md#bootstrap-fresh-cluster). Adding a component is
-  # one line here (or in `deferred.modules`); ./render.nix needs no change.
+  # whole tree (except `deferred`, below) as one Kustomization and applies
+  # namespaces and CRDs first. Manual bootstrap order: infra/*, flux,
+  # apps/* (docs/k8s/README.md#bootstrap-fresh-cluster).
   components = {
     "infra/runtime-classes" = ./components/infra/runtime-classes.nix;
     "infra/rbac" = ./components/infra/rbac.nix;
@@ -53,10 +52,9 @@ let
   # Flux Kustomization of their own (components/flux/stages.nix, named after
   # the component's last path element) once `flux-system` has applied the
   # same revision. <dir>/kustomization.yaml lists no resources, which keeps
-  # `flux-system` (path ./) out of the subtree. For objects whose apply
-  # needs a webhook that `flux-system` deploys: cert-manager's validates
-  # every cert-manager.io object (failurePolicy Fail), and in `flux-system` a
-  # down webhook would fail the apply of the whole cluster.
+  # `flux-system` (path ./) out of the subtree. Put here every object whose
+  # apply needs a webhook that `flux-system` deploys (all cert-manager.io
+  # objects): in `flux-system` a down webhook fails the whole apply.
   deferred = {
     dir = "deferred";
     modules = {
@@ -66,8 +64,8 @@ let
       "apps/atproto-edge-certs" = ./components/apps/atproto-edge/certificate.nix;
     };
     # sops-encrypted Secrets: every ./secrets/<namespace>/<name>.sops.yaml
-    # is copied verbatim (never parsed or re-serialised: that would break
-    # the sops MAC) to <dir>/<name>/<namespace>/<name>.sops.yaml and applied
+    # is copied verbatim (never parse or re-serialise it: that breaks the
+    # sops MAC) to <dir>/<name>/<namespace>/<name>.sops.yaml and applied
     # by the Kustomization `<name>`, which decrypts them with the age key
     # in flux-system/sops-age (components/flux/secrets.nix,
     # docs/k8s/secrets.md).

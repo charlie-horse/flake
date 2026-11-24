@@ -63,7 +63,7 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
 
-      # r440's binary cache, if NIX_CACHE_NETRC is available:
+      # The flake's binary cache, if NIX_CACHE_NETRC is available:
       # .github/actions/nix-cache, docs/ci.md.
       - id: nix-cache
         if: github.event_name == 'workflow_dispatch'

@@ -2,9 +2,9 @@
 # pushed and cosign-signed (keyless) by .github/workflows/render.yml on
 # main. Only artifacts signed by that workflow on main are applied.
 #
-# The OCIRepository polls daily; pushes arrive at once via the Receiver
-# (receiver.nix). The Kustomization re-applies every 10 minutes, which also
-# corrects drift.
+# The OCIRepository polls on its `interval`; pushes arrive at once via the
+# Receiver (receiver.nix). The Kustomization re-applies on its `interval`,
+# which also reverts drift.
 { ... }:
 let
   namespace = "flux-system";

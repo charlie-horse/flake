@@ -1,4 +1,4 @@
-# Cluster definition for the "neurosis" cluster (c4130, r440, m2mini).
+# Cluster definition: network, public services and nodes of the cluster.
 #
 # PURE DATA: no functions, no Nix paths, no secrets. Read by modules/cluster
 # (via the `cluster` specialArg from lib/system/mkServer.nix),
@@ -20,13 +20,14 @@
   dnsServiceIP = "10.96.0.10";
   clusterDomain = "cluster.local";
 
-  # Tailscale Service for the API (modules/cluster/tailscale-service.nix):
-  # every controlPlane node hosts svc:kube-api, TCP 6443 -> its local
-  # apiserver, reachable tailnet-wide as kube-api.<domain>:6443.
+  # Name of the Tailscale Service (a tailnet-wide name served by several
+  # nodes) that publishes the API server on the tailnet
+  # (modules/cluster/tailscale-service.nix).
   apiserverTailscaleService = "kube-api";
 
-  # Extra SANs on every apiserver leaf (cert-manager re-issues on change).
-  # The Tailscale Service name must be here for kubectl to verify TLS.
+  # Extra SANs (names a certificate is valid for) on every apiserver leaf
+  # certificate; cert-manager re-issues on change. The Tailscale Service
+  # name must be here, or kubectl fails TLS verification.
   apiserverExtraSANs = [ "kube-api.leaffish-monster.ts.net" ];
 
   # The single Cloudflare tunnel (locally managed: the ingress rules live in
@@ -50,8 +51,8 @@
     serviceIP = "10.96.0.21";
   };
 
-  # Open WebUI (k8s/components/apps/open-webui.nix), chat front-end for c4130's
-  # vLLM; logins through authentik (group local-ai).
+  # Open WebUI (k8s/components/apps/open-webui.nix), chat front-end for
+  # vLLM; logins through authentik.
   openWebui = {
     host = "chat.neuros.is";
     serviceIP = "10.96.0.22";
@@ -93,11 +94,9 @@
     serviceIP = "10.96.0.28";
   };
 
-  # r440's Nix binary cache (harmonia). Not a Service: the tunnel's nginx
-  # sidecar forwards to http://<nodes.r440.lanIP>:<port>, where nginx on
-  # r440 asks for HTTP basic auth (hosts/r440/cache.nix). The signing key
-  # stays on r440 (sops key harmonia-signing-key in secrets/r440.yaml);
-  # this is its public half.
+  # The Nix binary cache on `node` (hosts/r440/cache.nix). Not a
+  # Kubernetes Service: the tunnel forwards to the node's lanIP:port.
+  # publicKey is the public half of the cache's signing key.
   binaryCache = {
     host = "cache.neuros.is";
     node = "r440";
@@ -105,11 +104,10 @@
     publicKey = "r440-cache-1:8fh7/X6s7t2jRyhLZZRc6boWitD/RSJt2B9DxmF5Gj8=";
   };
 
-  # kube-apiserver accepts tokens from authentik's provider `kubernetes`
-  # (issuer = per-provider URL, trailing slash included), and the ID tokens
-  # Headlamp forwards from the confidential provider `headlamp`. authentik's
-  # issuer is per provider, so `headlamp` is a second issuer (with audience
-  # `headlamp`), not just another audience of the first.
+  # OIDC issuers whose tokens kube-apiserver accepts: authentik's provider
+  # `kubernetes`, and provider `headlamp` for the ID tokens Headlamp
+  # forwards. Each authentik provider is its own issuer, so `headlamp` must
+  # be an extra issuer, not an extra audience. Keep the trailing slash.
   oidc = {
     issuerUrl = "https://auth.neuros.is/application/o/kubernetes/";
     audiences = [ "kubernetes" ];
@@ -137,8 +135,8 @@
       cri = "containerd";
       keepalivedPriority = 150;
       labels = { };
-      # Production vLLM owns both V100s. Only pods that tolerate this land
-      # here (the NVIDIA device plugin and flannel do); opt a pod in with
+      # vLLM uses both GPUs. Only pods that tolerate this taint run here
+      # (the NVIDIA device plugin and flannel do); opt a pod in with
       #   tolerations: [{ key: nvidia.com/gpu, operator: Equal,
       #                   value: vllm, effect: NoSchedule }]
       # plus runtimeClassName: nvidia and a nvidia.com/gpu resource limit
@@ -148,14 +146,13 @@
         value = "vllm";
         effect = "NoSchedule";
       };
-      # Only the cluster ports on tailscale0 (vLLM 8000 and the LMCache UI
-      # 8081 are opened there by hosts/c4130/vllm).
+      # Open only the cluster ports on tailscale0; hosts/c4130/vllm opens
+      # its own ports there.
       trustTailscale = false;
       extraSANs = [ ];
-      # / is nearly full: with the upstream defaults (nodefs.available<10%,
-      # imagefs.available<15%) the node sits in DiskPressure. Absolute
-      # thresholds instead.
-      # Every signal is listed: a partial evictionHard zeroes the others.
+      # Absolute eviction thresholds: the upstream percentage defaults put
+      # this node's small / in DiskPressure (kubelet evicts pods).
+      # List every signal: a partial evictionHard zeroes the others.
       kubeletConfig = {
         evictionHard = {
           "memory.available" = "100Mi";

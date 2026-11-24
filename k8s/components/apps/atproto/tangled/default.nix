@@ -1,17 +1,16 @@
 # Tangled knot (git server of the Tangled forge, Rust `knot-server`),
 # namespace `atproto`. The web UI is the hosted appview tangled.org.
 #
-#   https://knot.neuros.is (cluster.tangledKnot.host) -> cloudflared + nginx
+#   https://<cluster.tangledKnot.host> -> cloudflared + nginx
 #     (apps/cloudflared) -> Service tangled-knot at the fixed ClusterIP
 #     cluster.tangledKnot.serviceIP :80 -> pod :5555 (XRPC, smart HTTP, LFS)
 #   git over SSH: the same Service :22 -> pod :2222 (not public)
 #
-# One replica, state on r440 (hostPath PV, /data): repos/, lfs/,
+# One replica, state in a node-local volume (/data): repos/, lfs/,
 # sealed-keys, ssh_host_key. Secret atproto/tangled-knot-secrets (sops:
 # KNOT_MASTER_KEY, unseals sealed-keys). Image: pkgs/atproto-images/
 # tangled-knot.nix, pushed to GHCR by .github/workflows/atproto-images.yml;
 # replicas 0 while digest is null.
-# No spindle (CI runner): it needs KVM or Docker.
 # Operation: docs/k8s/apps.md#atproto-services
 {
   lib,
@@ -40,7 +39,7 @@ let
     KNOT_HOSTNAME = cluster.tangledKnot.host;
     KNOT_ADMINS = ownerDid;
     KNOT_CONTACT_EMAIL = contactEmail;
-    # Fixed per repo at creation; sha1 interoperates with GitHub.
+    # Fixed per repo at creation; must stay sha1 to interoperate with GitHub.
     KNOT_GIT_OBJECT_FORMAT = "sha1";
     # Client IP from nginx (apps/cloudflared, hostNetwork on every node).
     KNOT_XRPC_TRUSTED_PROXY_HEADER = "x-forwarded-for";

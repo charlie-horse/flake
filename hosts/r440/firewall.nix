@@ -1,17 +1,14 @@
-# Firewall for r440, host part (iptables backend, ping allowed, as on
-# c4130). The cluster ports (etcd 2379/2380, apiserver 6443, kubelet,
-# flannel) are NOT opened here: the cluster module (modules/cluster) owns
-# them, restricted to the cluster peers.
+# r440's own firewall rules. Never open the cluster ports here:
+# modules/cluster opens them, to the cluster nodes only.
 { ... }:
 {
   networking.firewall = {
-    # tailscale0 (admins + the cluster nodes, whose names resolve to 100.x
-    # via MagicDNS) is trusted by modules/cluster/firewall.nix on every node.
-    # ssh (22) is opened in ./configuration.nix on every interface.
+    # modules/cluster/firewall.nix trusts tailscale0 on every node;
+    # ./configuration.nix opens ssh on every interface.
     # tailscaled's WireGuard port, for direct (non-relayed) connections.
     allowedUDPPorts = [ 41641 ];
-    # The 25G link to c4130: ssh (remote builds). The cache's nginx port
-    # (5080) is opened per source in ./cache.nix.
+    # ssh on the direct link to c4130, for remote builds. ./cache.nix opens
+    # the cache port per source.
     interfaces.bond0.allowedTCPPorts = [ 22 ];
   };
 }

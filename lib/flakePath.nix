@@ -5,7 +5,7 @@ let
     ;
 in
 {
-  # https://nix.dev/anti-patterns
+  # The flake source as a named store path (https://nix.dev/anti-patterns).
   flakePath = path {
     path = ../.;
     name = "flake";

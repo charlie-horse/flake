@@ -26,12 +26,12 @@ in
   #    device = "/dev/disk/by-label/swap";
   #}];
 
-  # At most 5 system generations. /boot is a 499 MB vfat partition and GRUB
-  # copies each generation's Asahi kernel + initrd there (/boot/kernels), so
-  # unbounded generations fill it and a switch fails. configurationLimit
-  # caps the menu entries (and so the kernels kept on /boot); the nix-gc
-  # pre-start deletes profile generations beyond the newest 5 before the
-  # daily GC, so their closures are collected too.
+  # Caps the number of system generations. GRUB copies each generation's
+  # kernel + initrd to the small /boot partition (/boot/kernels); without a
+  # cap it fills up and a switch fails. configurationLimit caps the menu
+  # entries (and so the kernels on /boot); the nix-gc pre-start deletes the
+  # older profile generations before the daily GC, so their store paths
+  # are collected too.
   boot.loader.grub.configurationLimit = 5;
   systemd.services.nix-gc.preStart = ''
     ${config.nix.package}/bin/nix-env -p /nix/var/nix/profiles/system --delete-generations +5

@@ -1,11 +1,13 @@
 # Docs
 
-Procedures and rules for operating what the flake declares. What runs where
-and how it is configured: read the Nix source. Rules for these docs:
-[CLAUDE.md](../CLAUDE.md#documentation-policy).
+This folder holds the procedures and rules for operating this flake (the
+Nix repo that declares the hosts and the in-cluster resources). What runs
+where and how it is configured: read the Nix source. Rules for these docs:
+[CLAUDE.md](../CLAUDE.md#documentation-policy). Host access (Tailscale, SSH,
+sudo): [CLAUDE.md](../CLAUDE.md#access).
 
-Tools: `nix develop` (or direnv with `.envrc`) has every tool these
-procedures use, except the root-CA tools in `ca-ceremony-tools`
+Tools: `nix develop` (the dev shell; or direnv with `.envrc`) has every
+tool these procedures use, except the root-CA tools in `ca-ceremony-tools`
 ([pki.md](pki.md)). On a host, use the `nix shell` lines given.
 
 | Doc | Procedures for |
