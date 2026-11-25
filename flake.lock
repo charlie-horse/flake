@@ -453,11 +453,11 @@
         "uv2nix": "uv2nix"
       },
       "locked": {
-        "lastModified": 1795572630,
-        "narHash": "sha256-RNERUKHULTHctLTuRruOAvvQri/bLAxtYpfGvo3+4vo=",
+        "lastModified": 1795575466,
+        "narHash": "sha256-dCsS7NzFIxeFcN9d2+pOS8R/SyFnZkVuRafAxRTeYw8=",
         "owner": "charlie-horse",
         "repo": "vllm-sm70",
-        "rev": "2cceaaf034582edb3d395e4c45231a63bf782745",
+        "rev": "79d0ee61840c988520beb4182add15e466566064",
         "type": "github"
       },
       "original": {
