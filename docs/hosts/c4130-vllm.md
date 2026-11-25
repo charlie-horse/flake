@@ -43,7 +43,7 @@ sm_70 (CUDA compute capability 7.0). Deploying:
 - **Clients and Flint reasoning.** Flint always reasons (`enable_thinking`
   does nothing). The reasoning is in `message.reasoning` (streaming:
   `delta.reasoning`); `reasoning_content` is empty. For Qwen entries send
-  `chat_template_kwargs.enable_thinking=true`. For `inkling-2-mini` follow
+  `chat_template_kwargs.enable_thinking=true`. For the Inkling 2 entries follow
   vllm-sm70's
   [Inkling 2 client rules](https://github.com/charlie-horse/vllm-sm70/blob/main/docs/nix.md#inkling-2).
 
