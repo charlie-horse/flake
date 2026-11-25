@@ -10,7 +10,7 @@
   services.vllm-sm70 = {
     enable = true;
     # Only one model fits on the GPUs at a time.
-    activeModel = "inkling-2-mini";
+    activeModel = "inkling-2-mini-uncensored";
     # Interfaces the API is open on. The API has no authentication.
     firewallInterfaces = [
       "eno1"
