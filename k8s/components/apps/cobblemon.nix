@@ -17,6 +17,7 @@ let
     TYPE = "NEOFORGE";
     VERSION = "1.21.1";
     MODRINTH_PROJECTS = "cobblemon";
+    MODRINTH_DOWNLOAD_DEPENDENCIES = "required";
   };
 
   cobblemonContainer = {
