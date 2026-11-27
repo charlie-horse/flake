@@ -47,6 +47,11 @@
     m2mini-vendorfw.url = "path:./hosts/m2mini/vendorfw";
     m2mini-vendorfw.flake = false;
 
+    # Declarative disk layout for hosts installed with nixos-anywhere
+    # (modules/server/vps-disk.nix). docs/hosts/vps.md.
+    disko.url = "github:nix-community/disko";
+    disko.inputs.nixpkgs.follows = "nixpkgs";
+
     # Kubernetes manifests in Nix (k8s/ renders every in-cluster resource).
     catenix.url = "github:charlie-horse/catenix";
     # The renders (helm, kubeconform) use the servers' nixpkgs.
