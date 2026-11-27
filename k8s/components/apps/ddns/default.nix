@@ -6,7 +6,7 @@
 # Token: the ACME issuers' Secret cert-manager/cloudflare-api-token (sops,
 # key api-token). The namespace enforces `restricted`.
 # Docs: docs/k8s/apps.md#dynamic-dns
-{ lib, ... }:
+{ lib, cluster, ... }:
 let
   inherit (import ../../infra/cert-manager/settings.nix)
     namespace
@@ -16,7 +16,10 @@ let
     ;
   name = "ddns";
   zone = acmeZone;
-  records = [ "*.at.neuros.is" ];
+  records = [
+    "*.at.neuros.is"
+    cluster.cobblemon.host
+  ];
   labels."app.kubernetes.io/name" = name;
 in
 {

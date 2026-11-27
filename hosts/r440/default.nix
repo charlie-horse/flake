@@ -10,5 +10,6 @@
     ./firewall.nix
     ./containers.nix
     ./memory.nix
+    ./files.nix
   ];
 }
