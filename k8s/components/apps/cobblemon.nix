@@ -14,9 +14,9 @@ let
   env = {
     EULA = "TRUE";
     MEMORY = "16G";
-    TYPE = "NEOFORGE";
+    TYPE = "FABRIC";
     VERSION = "1.21.1";
-    MODRINTH_PROJECTS = "cobblemon";
+    MODRINTH_PROJECTS = "cobblemon,fabric-api";
     MODRINTH_DOWNLOAD_DEPENDENCIES = "required";
   };
 
