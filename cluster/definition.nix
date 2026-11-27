@@ -94,6 +94,12 @@
     serviceIP = "10.96.0.28";
   };
 
+  # Cobblemon
+  cobblemon = {
+    host = "mc.neuros.is";
+    serviceIP = "10.96.0.29";
+  };
+
   # The Nix binary cache on `node` (hosts/r440/cache.nix). Not a
   # Kubernetes Service: the tunnel forwards to the node's lanIP:port.
   # publicKey is the public half of the cache's signing key.
