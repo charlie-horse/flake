@@ -3,6 +3,7 @@
 { ... }:
 {
   networking.firewall = {
+    allowedTCPPorts = [ 25565 ];
     # modules/cluster/firewall.nix trusts tailscale0 on every node;
     # ./configuration.nix opens ssh on every interface.
     # tailscaled's WireGuard port, for direct (non-relayed) connections.
