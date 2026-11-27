@@ -217,7 +217,8 @@ in
       home=$(mktemp -d)
       trap 'rm -rf "$home"' EXIT
       failed=0
-      for f in ${lib.escapeShellArgs sopsFiles}; do
+      set -- ${lib.escapeShellArgs sopsFiles}
+      for f in "$@"; do
         # Only the host key: no ~/.config/sops, ~/.ssh or SOPS_AGE_* from
         # the caller's environment. The key goes through SOPS_AGE_KEY_CMD +
         # ssh-to-age (SOPS_AGE_SSH_PRIVATE_KEY_FILE does not work).
