@@ -3,7 +3,8 @@
 `nix flake check` builds every check the flake declares
 (`parts/checks.nix`). It is the gate: a commit is good when it passes. CI
 (GitHub Actions, `.github/workflows/checks.yml`) only runs
-`nix flake check`. Each workflow's header comment says what it does. Jobs
+`nix flake check`, on pull requests. Pushes to `main` are not re-checked;
+they only render and publish (`render.yml`). Each workflow's header comment says what it does. Jobs
 use r440's binary cache through `.github/actions/nix-cache`
 ([build-cache.md](build-cache.md#github-actions)).
 
@@ -38,9 +39,8 @@ To compare a host's config with what runs on it, on the host:
 The render is the Kubernetes manifests the flake builds from `k8s/`; Flux
 (the in-cluster deployer) applies it.
 
-- Every push to `main` publishes the render its `checks` run built;
-  dispatching `render.yml` on `main` builds and republishes the current
-  render. Flux accepts only artifacts signed by this
+- Every push to `main` builds and publishes the render; dispatching
+  `render.yml` on `main` rebuilds and republishes the current render. Flux accepts only artifacts signed by this
   workflow on `main`.
 - Secrets: `FLUX_WEBHOOK_TOKEN` must be the same bytes as the cluster
   Secret `flux-system/webhook-token`, no trailing newline.
