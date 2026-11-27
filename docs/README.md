@@ -21,6 +21,7 @@ tool these procedures use, except the root-CA tools in `ca-ceremony-tools`
 | [hosts/c4130.md](hosts/c4130.md) | Deploying c4130 |
 | [hosts/c4130-vllm.md](hosts/c4130-vllm.md) | vLLM rules, running a custom model, bumping vllm-fork, kill switches |
 | [hosts/m2mini.md](hosts/m2mini.md) | Deploying m2mini, vendor firmware |
+| [hosts/vps.md](hosts/vps.md) | Installing nether and phoenix with nixos-anywhere, enrolling them in sops |
 | [hosts/famine.md](hosts/famine.md) | Deploying Famine, YubiKey, enrolling it in sops |
 | [k8s/README.md](k8s/README.md) | Render, deployment, bootstrapping a fresh cluster |
 | [k8s/secrets.md](k8s/secrets.md) | In-cluster sops Secrets: rotating, adding, the Flux bootstrap key |

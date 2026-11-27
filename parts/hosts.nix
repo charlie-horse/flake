@@ -49,5 +49,14 @@ in
         { m2mini.vendorFirmware = inputs.m2mini-vendorfw; }
       ];
     })
+    # VPS outside the cluster (docs/hosts/vps.md).
+    (lib.system.x86_64-linux.mkServer {
+      path = ../hosts/nether;
+      nixpkgs = inputs.nixpkgs;
+    })
+    (lib.system.x86_64-linux.mkServer {
+      path = ../hosts/phoenix;
+      nixpkgs = inputs.nixpkgs;
+    })
   ];
 }
