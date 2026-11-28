@@ -59,6 +59,7 @@ in
 
       template.metadata = { inherit labels; };
       template.spec = {
+        serviceAccountName = "mc-router";
         nodeSelector."kubernetes.io/hostname" = "r440";
         containers = [
           {

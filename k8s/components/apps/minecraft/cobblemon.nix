@@ -20,6 +20,10 @@ in
     })
   ];
 
+  resources.core.v1.Namespace.${namespace}.metadata.labels = {
+    "pod-security.kubernetes.io/enforce" = "restricted";
+  };
+
   resources.core.v1.Service.${name} = {
     metadata = { inherit namespace; };
     metadata.annotations."mc-router.itzg.me/externalServerName" = cluster.minecraft.cobblemon.host;
