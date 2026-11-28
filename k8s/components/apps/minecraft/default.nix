@@ -22,15 +22,18 @@ let
   servers = map (server: server { inherit lib cluster; }) [ (import ./cobblemon.nix) ];
 in
 {
-  imports = [] ++
-  map (server: (k8sLib.localVolume
-  {
-    inherit (server) name;
-    inherit namespace;
-    node = "r440";
-    path = "/var/lib/minecraft/${server.name}";
-    size = "20Gi";
-  })) servers; 
+  imports =
+    [ ]
+    ++ map (
+      server:
+      (k8sLib.localVolume {
+        inherit (server) name;
+        inherit namespace;
+        node = "r440";
+        path = "/var/lib/minecraft/${server.name}";
+        size = "20Gi";
+      })
+    ) servers;
 
   validation.strict = true;
 
@@ -49,30 +52,33 @@ in
       template.metadata = { inherit labels; };
       template.spec = {
         nodeSelector."kubernetes.io/hostname" = "r440";
-        containers = map (container: container // { inherit securityContext; }) [
-          {
-            name = "router";
-            image = "itzg/mc-router:1.57.1";
+        containers =
+          map (container: container // { inherit securityContext; }) [
+            {
+              name = "router";
+              image = "itzg/mc-router:1.57.1";
 
-            env = [
-              {
-                name = "MAPPING";
-                value = ''
-                  ${cluster.minecraft.cobblemon.host}=localhost:${builtins.toString cluster.minecraft.cobblemon.port}
-                '';
-              }
-            ];
+              env = [
+                {
+                  name = "MAPPING";
+                  value = ''
+                    
+                                      ${cluster.minecraft.cobblemon.host}=localhost:${builtins.toString cluster.minecraft.cobblemon.port}
+                  '';
+                }
+              ];
 
-            ports = [
-              {
-                name = "minecraft";
-                containerPort = mcPort;
-                hostPort = mcPort;
-                hostIP = cluster.nodes.r440.lanIP;
-              }
-            ];
-          }
-        ] ++ servers;
+              ports = [
+                {
+                  name = "minecraft";
+                  containerPort = mcPort;
+                  hostPort = mcPort;
+                  hostIP = cluster.nodes.r440.lanIP;
+                }
+              ];
+            }
+          ]
+          ++ servers;
 
         volumes = map (server: {
           inherit (server) name;

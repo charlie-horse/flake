@@ -6,18 +6,21 @@
 rec {
   name = "cobblemon";
   image = "itzg/minecraft-server:2026.11.1-java21";
-  env = lib.mapAttrsToList (n: v: {
-    name = n;
-    value = v;
-  }) {
-    EULA = "TRUE";
-    MEMORY = "16G";
-    TYPE = "FABRIC";
-    VERSION = "1.21.1";
-    SERVER_PORT = builtins.toString cluster.minecraft.cobblemon.port;
-    MODRINTH_PROJECTS = "cobblemon,fabric-api";
-    MODRINTH_DOWNLOAD_DEPENDENCIES = "required";
-  };
+  env =
+    lib.mapAttrsToList
+      (n: v: {
+        name = n;
+        value = v;
+      })
+      {
+        EULA = "TRUE";
+        MEMORY = "16G";
+        TYPE = "FABRIC";
+        VERSION = "1.21.1";
+        SERVER_PORT = builtins.toString cluster.minecraft.cobblemon.port;
+        MODRINTH_PROJECTS = "cobblemon,fabric-api";
+        MODRINTH_DOWNLOAD_DEPENDENCIES = "required";
+      };
 
   ports = [
     {
