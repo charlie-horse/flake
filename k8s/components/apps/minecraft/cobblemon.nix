@@ -51,6 +51,23 @@ in
       template.metadata = { inherit labels; };
       template.spec = {
         nodeSelector."kubernetes.io/hostname" = "r440";
+        # Start only once no other pod named `minecraft` or `cobblemon` runs on
+        # the node, so two servers never open the same world at once.
+        affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution = [
+          {
+            topologyKey = "kubernetes.io/hostname";
+            labelSelector.matchExpressions = [
+              {
+                key = "app.kubernetes.io/name";
+                operator = "In";
+                values = [
+                  "minecraft"
+                  name
+                ];
+              }
+            ];
+          }
+        ];
         containers = [
           {
             inherit name;
@@ -101,8 +118,9 @@ in
 
             resources.requests = {
               cpu = "1";
-              memory = "16Gi";
+              memory = "20Gi";
             };
+            resources.limits.memory = "24Gi";
 
             volumeMounts = [
               {
@@ -123,7 +141,7 @@ in
         ];
         volumes = [
           {
-            name = name;
+            inherit name;
             persistentVolumeClaim.claimName = name;
           }
         ];
