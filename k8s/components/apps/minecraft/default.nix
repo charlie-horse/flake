@@ -5,43 +5,48 @@
   ...
 }:
 let
-  namespace = "minecraft";
+  name = "router";
+  namespace = "minecraft-router";
   labels."app.kubernetes.io/name" = namespace;
-
-  mcPort = 25565;
-
-  securityContext = {
-    runAsNonRoot = true;
-    runAsUser = 1000;
-    runAsGroup = 1000;
-    seccompProfile.type = "RuntimeDefault";
-    allowPrivilegeEscalation = false;
-    capabilities.drop = [ "ALL" ];
-  };
-
-  servers = map (server: server { inherit lib cluster; }) [ (import ./cobblemon.nix) ];
 in
 {
-  imports =
-    [ ]
-    ++ map (
-      server:
-      (k8sLib.localVolume {
-        inherit (server) name;
-        inherit namespace;
-        node = "r440";
-        path = "/var/lib/minecraft/${server.name}";
-        size = "50Gi";
-      })
-    ) servers;
-
+  imports = [ ./cobblemon.nix ];
   validation.strict = true;
 
   resources.core.v1.Namespace.${namespace}.metadata.labels = {
     "pod-security.kubernetes.io/enforce" = "privileged";
   };
 
-  resources.apps.v1.Deployment.minecraft = {
+  resources.core.v1.ServiceAccount.mc-router = {
+    metadata = { inherit namespace labels; };
+  };
+
+  resources."rbac.authorization.k8s.io".v1.ClusterRole.service-watcher = {
+    rules = [
+      {
+        apiGroups = [ "" ];
+        resources = [ "services" ];
+        verbs = [ "list" "watch" ];
+      }
+    ];
+  };
+
+  resources."rbac.authorization.k8s.io".v1.ClusterRoleBinding.mc-router-service-watcher = {
+    roleRef = {
+      apiGroup = "rbac.authorization.k8s.io";
+      kind = "ClusterRole";
+      name = "service-watcher";
+    };
+    subjects = [
+      {
+        inherit namespace;
+        kind = "ServiceAccount";
+        name = "mc-router";
+      }
+    ];
+  };
+
+  resources.apps.v1.Deployment.${name} = {
     metadata = { inherit namespace labels; };
 
     spec = {
@@ -52,37 +57,33 @@ in
       template.metadata = { inherit labels; };
       template.spec = {
         nodeSelector."kubernetes.io/hostname" = "r440";
-        containers =
-          map (container: container // { inherit securityContext; }) [
-            {
-              name = "router";
-              image = "itzg/mc-router:1.57.1";
-
-              env = [
-                {
-                  name = "MAPPING";
-                  value = ''
-                    ${cluster.minecraft.cobblemon.host}=localhost:${builtins.toString cluster.minecraft.cobblemon.port}
-                  '';
-                }
-              ];
-
-              ports = [
-                {
-                  name = "minecraft";
-                  containerPort = mcPort;
-                  hostPort = mcPort;
-                  hostIP = cluster.nodes.r440.lanIP;
-                }
-              ];
-            }
-          ]
-          ++ servers;
-
-        volumes = map (server: {
-          inherit (server) name;
-          persistentVolumeClaim.claimName = server.name;
-        }) servers;
+        containers = [
+          {
+            inherit name;
+            image = "itzg/mc-router:1.57.1";
+            args = [ "--in-kube-cluster" ];
+            ports = [
+              {
+                name = "minecraft";
+                containerPort = 25565;
+                hostPort = 25565;
+                hostIP = cluster.nodes.r440.lanIP;
+              }
+            ];
+            resources.requests = {
+              cpu = "100m";
+              memory = "50Mi";
+            };
+            securityContext = {
+              runAsNonRoot = true;
+              runAsUser = 1000;
+              runAsGroup = 1000;
+              seccompProfile.type = "RuntimeDefault";
+              allowPrivilegeEscalation = false;
+              capabilities.drop = [ "ALL" ];
+            };
+          }
+        ];
       };
     };
   };
