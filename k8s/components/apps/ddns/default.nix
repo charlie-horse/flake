@@ -18,7 +18,7 @@ let
   zone = acmeZone;
   records = [
     "*.at.neuros.is"
-    cluster.cobblemon.host
+    "*.mc.neuros.is"
   ];
   labels."app.kubernetes.io/name" = name;
 in

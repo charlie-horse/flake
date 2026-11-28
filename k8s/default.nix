@@ -46,7 +46,7 @@ let
     "apps/atproto" = ./components/apps/atproto;
     "apps/lldap" = ./components/apps/lldap;
     "apps/atproto-edge" = ./components/apps/atproto-edge;
-    "apps/cobblemon" = ./components/apps/cobblemon.nix;
+    "apps/minecraft" = ./components/apps/minecraft;
   };
 
   # Deferred components: rendered under <dir>/<component>/ and applied by a

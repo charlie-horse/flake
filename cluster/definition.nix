@@ -94,10 +94,10 @@
     serviceIP = "10.96.0.28";
   };
 
-  # Cobblemon
-  cobblemon = {
-    host = "mc.neuros.is";
-    serviceIP = "10.96.0.29";
+  # Minecraft
+  minecraft = {
+    cobblemon.host = "cobblemon.mc.neuros.is";
+    cobblemon.port = 30000;
   };
 
   # The Nix binary cache on `node` (hosts/r440/cache.nix). Not a
