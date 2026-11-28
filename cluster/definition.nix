@@ -97,7 +97,7 @@
   # Minecraft
   minecraft = {
     cobblemon.host = "cobblemon.mc.neuros.is";
-    cobblemon.port = 25575;
+    cobblemon.port = 30000;
   };
 
   # The Nix binary cache on `node` (hosts/r440/cache.nix). Not a

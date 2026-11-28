@@ -31,7 +31,7 @@ in
         inherit namespace;
         node = "r440";
         path = "/var/lib/minecraft/${server.name}";
-        size = "20Gi";
+        size = "50Gi";
       })
     ) servers;
 
@@ -62,8 +62,7 @@ in
                 {
                   name = "MAPPING";
                   value = ''
-                    
-                                      ${cluster.minecraft.cobblemon.host}=localhost:${builtins.toString cluster.minecraft.cobblemon.port}
+                    ${cluster.minecraft.cobblemon.host}=localhost:${builtins.toString cluster.minecraft.cobblemon.port}
                   '';
                 }
               ];
