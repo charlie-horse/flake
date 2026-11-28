@@ -26,7 +26,10 @@ in
       {
         apiGroups = [ "" ];
         resources = [ "services" ];
-        verbs = [ "list" "watch" ];
+        verbs = [
+          "list"
+          "watch"
+        ];
       }
     ];
   };

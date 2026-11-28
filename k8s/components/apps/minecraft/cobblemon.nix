@@ -13,10 +13,10 @@ in
 {
   imports = [
     (k8sLib.localVolume {
-        inherit name namespace;
-        node = "r440";
-        path = "/var/lib/minecraft/${name}";
-        size = "50Gi";
+      inherit name namespace;
+      node = "r440";
+      path = "/var/lib/minecraft/${name}";
+      size = "50Gi";
     })
   ];
 
@@ -47,7 +47,7 @@ in
       template.metadata = { inherit labels; };
       template.spec = {
         nodeSelector."kubernetes.io/hostname" = "r440";
-        containers = [ 
+        containers = [
           {
             inherit name;
             image = "itzg/minecraft-server:2026.11.1-java21";
@@ -116,7 +116,7 @@ in
               capabilities.drop = [ "ALL" ];
             };
           }
-         ];
+        ];
         volumes = [
           {
             name = name;
