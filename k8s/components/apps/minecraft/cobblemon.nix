@@ -79,6 +79,7 @@ in
                   value = v;
                 })
                 {
+                  SERVER_PORT = "25565";
                   MOTD = "Neuros.is Cobblemon Server";
                   EULA = "TRUE";
                   MEMORY = "16G";
