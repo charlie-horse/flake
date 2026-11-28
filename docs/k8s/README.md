@@ -43,12 +43,13 @@ one line to `components` in `k8s/default.nix` (or to `deferred.modules`,
 
 ## Deployment
 
-Merging to `main` deploys:
+Merging to `main` deploys (the PR's `checks.yml` run already built the
+render with `nix flake check`):
 
-1. `checks.yml` renders (`nix flake check`).
-2. `render.yml` pushes the render as an OCI artifact, signs it with cosign
-   and calls Flux's Receiver (a webhook that makes Flux fetch at once).
-3. Flux applies the artifact.
+1. `render.yml` builds the render, pushes it as an OCI artifact, signs it
+   with cosign and calls Flux's Receiver (a webhook that makes Flux fetch
+   at once).
+2. Flux applies the artifact.
 
 Flux applies only artifacts that `render.yml` signed on `main`. It
 re-applies the render on the interval in `k8s/components/flux/sync.nix`,

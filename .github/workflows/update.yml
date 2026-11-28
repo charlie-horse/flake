@@ -6,7 +6,7 @@
 # on failure nothing is pushed and the failed run is the signal.
 #
 # GITHUB_TOKEN pushes trigger no workflows, so the job then dispatches
-# checks.yml and render.yml on main. A vllm-fork bump is flagged in the
+# render.yml on main. A vllm-fork bump is flagged in the
 # commit message and run summary. Needs main to allow pushes by
 # github-actions[bot]. Details: docs/ci.md#updateyml
 name: update
@@ -18,7 +18,7 @@ on:
 
 permissions:
   contents: write # push to main
-  actions: write # dispatch checks.yml and render.yml after the push
+  actions: write # dispatch render.yml after the push
 
 concurrency:
   group: update
@@ -128,11 +128,8 @@ jobs:
           exit 1
 
       # GITHUB_TOKEN pushes trigger no workflows; dispatch is the exception.
-      - name: Run checks and render on main
+      - name: Render on main
         if: steps.update.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          gh workflow run checks.yml --ref main
-          gh workflow run render.yml --ref main
+        run: gh workflow run render.yml --ref main
